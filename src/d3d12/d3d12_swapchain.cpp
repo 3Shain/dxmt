@@ -7,6 +7,8 @@
 
 #define SCTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, "SwapChain::" fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
 
+static uint64_t g_sc_enc_id = 0;
+
 namespace dxmt {
 
 static WMTPixelFormat DXGIToMTL(DXGI_FORMAT fmt) {
@@ -168,6 +170,8 @@ MTLD3D12SwapChain::GetDesc(DXGI_SWAP_CHAIN_DESC *desc) {
 HRESULT STDMETHODCALLTYPE
 MTLD3D12SwapChain::ResizeBuffers(UINT buffer_count, UINT width, UINT height,
                                  DXGI_FORMAT format, UINT flags) {
+  SCTRACE("ResizeBuffers count=%u w=%u h=%u fmt=%u flags=0x%x (old: w=%u h=%u)",
+    buffer_count, width, height, (unsigned)format, flags, m_desc.Width, m_desc.Height);
   for (uint32_t i = 0; i < 4; i++)
     m_backbuffers[i] = nullptr;
 
@@ -217,6 +221,7 @@ MTLD3D12SwapChain::ResizeBuffers(UINT buffer_count, UINT width, UINT height,
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D12SwapChain::ResizeTarget(const DXGI_MODE_DESC *new_target_params) {
+  SCTRACE("ResizeTarget w=%u h=%u", new_target_params ? new_target_params->Width : 0, new_target_params ? new_target_params->Height : 0);
   return S_OK;
 }
 
@@ -277,8 +282,10 @@ MTLD3D12SwapChain::Present1(UINT sync_interval, UINT flags,
                             const DXGI_PRESENT_PARAMETERS *params) {
   m_present_count++;
 
-  if (!m_backbuffers[m_current_buffer])
+  if (!m_backbuffers[m_current_buffer]) {
+    SCTRACE("SwapChain::Present sync=%u flags=0x%x NO BACKBUFFER idx=%u", sync_interval, flags, m_current_buffer);
     return S_OK;
+  }
 
   if (!m_present_queue.handle) {
     auto wmt_device = m_dxgi_device->GetMTLDevice();
@@ -289,6 +296,7 @@ MTLD3D12SwapChain::Present1(UINT sync_interval, UINT flags,
 
   auto drawable = m_layer.nextDrawable();
   if (!drawable.handle) {
+    SCTRACE("SwapChain::Present sync=%u flags=0x%x NO DRAWABLE", sync_interval, flags);
     cmdbuf.commit();
     return S_OK;
   }
@@ -297,8 +305,13 @@ MTLD3D12SwapChain::Present1(UINT sync_interval, UINT flags,
   auto *res = static_cast<MTLD3D12Resource *>(m_backbuffers[m_current_buffer].ptr());
   auto src_texture = res->GetMTLTexture();
 
+  SCTRACE("SwapChain::Present blit: idx=%u src=%p dst=%p w=%u h=%u",
+    m_current_buffer, src_texture.handle, dst_texture.handle, m_desc.Width, m_desc.Height);
+
   if (src_texture.handle && dst_texture.handle) {
     auto blit = cmdbuf.blitCommandEncoder();
+    uint64_t _sc_eid = __atomic_add_fetch(&g_sc_enc_id, 1, __ATOMIC_SEQ_CST);
+    SCTRACE("[SC_ENC+%llu] CREATE blit handle=%llu", (unsigned long long)_sc_eid, (unsigned long long)blit.handle);
     struct wmtcmd_blit_copy_from_texture_to_texture copy = {};
     copy.type = WMTBlitCommandCopyFromTextureToTexture;
     copy.next.set(nullptr);
@@ -312,10 +325,12 @@ MTLD3D12SwapChain::Present1(UINT sync_interval, UINT flags,
     copy.dst_level = 0;
     copy.dst_origin = {0, 0, 0};
     blit.encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&copy));
+    SCTRACE("[SC_ENC] END handle=%llu", (unsigned long long)blit.handle);
     blit.endEncoding();
   }
 
   cmdbuf.presentDrawable(drawable);
+  SCTRACE("[SC_ENC] COMMIT cmdbuf=%llu", (unsigned long long)cmdbuf.handle);
   cmdbuf.commit();
 
   m_current_buffer = (m_current_buffer + 1) % (m_desc.BufferCount ? m_desc.BufferCount : 2);

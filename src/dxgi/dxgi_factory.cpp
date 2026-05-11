@@ -26,6 +26,11 @@ public:
       return E_POINTER;
 
     *ppvObject = nullptr;
+    
+    {
+      FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+      if (f) { fprintf(f, "DXGIFactory::QI riid=%s\n", str::format(riid).c_str()); fclose(f); }
+    }
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(IDXGIObject) ||
         riid == __uuidof(IDXGIFactory) || riid == __uuidof(IDXGIFactory1) ||
@@ -164,6 +169,10 @@ public:
 
   HRESULT STDMETHODCALLTYPE EnumAdapters(UINT Adapter,
                                          IDXGIAdapter **ppAdapter) final {
+    {
+      FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+      if (f) { fprintf(f, "EnumAdapters(%u, %p)\n", Adapter, ppAdapter); fclose(f); }
+    }
     InitReturnPtr(ppAdapter);
 
     if (ppAdapter == nullptr)
@@ -172,18 +181,37 @@ public:
     IDXGIAdapter1 *handle = nullptr;
     HRESULT hr = this->EnumAdapters1(Adapter, &handle);
     *ppAdapter = handle;
+    {
+      FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+      if (f) { fprintf(f, "EnumAdapters(%u) -> hr=0x%lx adapter=%p\n", Adapter, hr, *ppAdapter); fclose(f); }
+    }
     return hr;
   }
 
   HRESULT STDMETHODCALLTYPE EnumAdapters1(UINT Adapter,
                                           IDXGIAdapter1 **ppAdapter) final {
+    {
+      FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+      if (f) { fprintf(f, "EnumAdapters1(%u, %p)\n", Adapter, ppAdapter); fclose(f); }
+    }
     InitReturnPtr(ppAdapter);
 
     auto devices = WMT::CopyAllDevices();
     UINT adapter_count = devices.count();
+    {
+      FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+      if (f) { fprintf(f, "EnumAdapters1: adapter_count=%u\n", adapter_count); fclose(f); }
+    }
 
-    if (Adapter >= adapter_count)
-      return DXGI_ERROR_NOT_FOUND;
+    if (Adapter >= adapter_count) {
+      if (adapter_count == 1 && Adapter == 1) {
+        FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+        if (f) { fprintf(f, "EnumAdapters1: mapping index 1 -> 0 (single adapter)\n"); fclose(f); }
+        Adapter = 0;
+      } else {
+        return DXGI_ERROR_NOT_FOUND;
+      }
+    }
 
     UINT adjusted_adapter = Adapter;
     if (adapter_count > 1) {
@@ -320,7 +348,7 @@ extern "C" HRESULT __stdcall CreateDXGIFactory2(UINT Flags, REFIID riid,
                                                 void **ppFactory) {
   {
     FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
-    if (f) { fprintf(f, "CreateDXGIFactory2 called\n"); fclose(f); }
+    if (f) { fprintf(f, "CreateDXGIFactory2 called Flags=0x%x riid=%s\n", Flags, str::format(riid).c_str()); fclose(f); }
   }
   try {
     MTLDXGIFactory* factory = new MTLDXGIFactory(Flags);

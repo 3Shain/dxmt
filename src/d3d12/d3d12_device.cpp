@@ -200,6 +200,8 @@ MTLD3D12Device::QueryInterface(REFIID riid, void **ppvObject) {
     return E_POINTER;
   *ppvObject = nullptr;
 
+  TRACE("D3D12Device::QI(%s)", str::format(riid).c_str());
+
   if (riid == IID_IUnknown || riid == IID_ID3D12Object ||
       riid == IID_ID3D12DeviceChild || riid == IID_ID3D12Pageable ||
       riid == IID_ID3D12Device || riid == IID_ID3D12Device1 ||
@@ -210,15 +212,24 @@ MTLD3D12Device::QueryInterface(REFIID riid, void **ppvObject) {
       riid == IID_ID3D12Device10_ || riid == IID_ID3D12Device11_ ||
       riid == IID_ID3D12Device12_) {
     *ppvObject = ref(this);
+    TRACE("D3D12Device::QI(%s) -> S_OK (device)", str::format(riid).c_str());
     return S_OK;
   }
 
   if (riid == __uuidof(IMTLDXGIDevice) && m_dxgi_device) {
+    TRACE("D3D12Device::QI(%s) -> delegating to dxgi_device", str::format(riid).c_str());
     return m_dxgi_device->QueryInterface(riid, ppvObject);
   }
 
+  if (m_dxgi_device) {
+    if (riid == IID_IDXGIDevice) {
+      TRACE("D3D12Device::QI(%s) -> delegating DXGI to dxgi_device", str::format(riid).c_str());
+      return m_dxgi_device->QueryInterface(riid, ppvObject);
+    }
+  }
+
   Logger::warn(str::format("D3D12Device::QueryInterface: unknown IID ", riid));
-  TRACE("D3D12Device::QI unknown IID %s -> E_NOINTERFACE", str::format(riid).c_str());
+  TRACE("D3D12Device::QI(%s) -> E_NOINTERFACE", str::format(riid).c_str());
   return E_NOINTERFACE;
 }
 
@@ -393,6 +404,12 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     opts->CrossAdapterRowMajorTextureSupported = FALSE;
     opts->VPAndRTArrayIndexFromAnyShaderFeedingRasterizerSupportedWithoutGSEmulation = TRUE;
     opts->ResourceHeapTier = D3D12_RESOURCE_HEAP_TIER_2;
+    TRACE("  OPTIONS: DoubleFP=%d LogicOp=%d TiledTier=%u BindingTier=%u PSStencilRef=%d TypedUAV=%d ROV=%d ConsRaster=%u VAbit=%u HeapTier=%u",
+          opts->DoublePrecisionFloatShaderOps, opts->OutputMergerLogicOp,
+          opts->TiledResourcesTier, opts->ResourceBindingTier,
+          opts->PSSpecifiedStencilRefSupported, opts->TypedUAVLoadAdditionalFormats,
+          opts->ROVsSupported, opts->ConservativeRasterizationTier,
+          opts->MaxGPUVirtualAddressBitsPerResource, opts->ResourceHeapTier);
     return S_OK;
   }
   case D3D12_FEATURE_ARCHITECTURE: {
@@ -416,6 +433,7 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
         fl->MaxSupportedFeatureLevel = fl->pFeatureLevelsRequested[i];
       }
     }
+    TRACE("  FEATURE_LEVELS: MaxSupported=%u (from %u requested)", (unsigned)fl->MaxSupportedFeatureLevel, fl->NumFeatureLevels);
     return S_OK;
   }
   case D3D12_FEATURE_FORMAT_SUPPORT: {
@@ -444,6 +462,8 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
         D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_EXCHANGE |
         D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_SIGNED_MIN_OR_MAX |
         D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX);
+    TRACE("  FORMAT_SUPPORT: format=%u Support1=0x%x Support2=0x%x",
+          (unsigned)fmt->Format, (unsigned)fmt->Support1, (unsigned)fmt->Support2);
     return S_OK;
   }
   case D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS: {
@@ -474,6 +494,7 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     if (feature_data_size < sizeof(*sm))
       return E_INVALIDARG;
     sm->HighestShaderModel = D3D_SHADER_MODEL_6_5;
+    TRACE("  SHADER_MODEL: HighestSM=%u", (unsigned)sm->HighestShaderModel);
     return S_OK;
   }
   case D3D12_FEATURE_D3D12_OPTIONS1: {
@@ -530,6 +551,9 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     o->WriteBufferImmediateSupportFlags = D3D12_COMMAND_LIST_SUPPORT_FLAG_DIRECT;
     o->ViewInstancingTier = D3D12_VIEW_INSTANCING_TIER_NOT_SUPPORTED;
     o->BarycentricsSupported = FALSE;
+    TRACE("  OPTIONS3: CopyQueueTS=%d CastFullyTyped=%d WriteBufImm=0x%x ViewInstTier=%u Bary=%d",
+          o->CopyQueueTimestampQueriesSupported, o->CastingFullyTypedFormatSupported,
+          o->WriteBufferImmediateSupportFlags, o->ViewInstancingTier, o->BarycentricsSupported);
     return S_OK;
   }
   case D3D12_FEATURE_D3D12_OPTIONS4: {
@@ -553,8 +577,10 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     if (feature_data_size < sizeof(*o))
       return E_INVALIDARG;
     o->SRVOnlyTiledResourceTier3 = FALSE;
-    o->RenderPassesTier = D3D12_RENDER_PASS_TIER_0;
+    o->RenderPassesTier = D3D12_RENDER_PASS_TIER_1;
     o->RaytracingTier = D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
+    TRACE("  OPTIONS5: SRVTiled3=%d RenderPassesTier=%u RayTier=%u",
+          o->SRVOnlyTiledResourceTier3, o->RenderPassesTier, o->RaytracingTier);
     return S_OK;
   }
   case D3D12_FEATURE_D3D12_OPTIONS6: {
@@ -669,6 +695,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateRootSignature(
   HRESULT hr = rs->QueryInterface(riid, root_signature);
   if (FAILED(hr))
     rs->Release();
+  TRACE("CreateRootSignature DONE hr=0x%lx rs=%p out=%p", hr, (void*)rs, root_signature ? *root_signature : nullptr);
   return hr;
 }
 
@@ -1109,6 +1136,424 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::SetResidencyPriority(
     UINT object_count, ID3D12Pageable *const *objects,
     const D3D12_RESIDENCY_PRIORITY *priorities) {
   return S_OK;
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreatePipelineState(
+    const D3D12_PIPELINE_STATE_STREAM_DESC *desc, REFIID riid,
+    void **ppPipelineState) {
+  TRACE("ID3D12Device2::CreatePipelineState ENTER: size=%zu", desc ? desc->SizeInBytes : 0);
+
+  if (!desc || !desc->pPipelineStateSubobjectStream || !ppPipelineState)
+    return E_INVALIDARG;
+
+  *ppPipelineState = nullptr;
+
+  struct SubobjectHeader {
+    UINT Type;
+    UINT Size;
+  };
+
+  auto *stream = (uint8_t *)desc->pPipelineStateSubobjectStream;
+  auto *end = stream + desc->SizeInBytes;
+
+  D3D12_GRAPHICS_PIPELINE_STATE_DESC graphics_desc = {};
+  D3D12_COMPUTE_PIPELINE_STATE_DESC compute_desc = {};
+  bool has_cs = false;
+  bool has_vs = false;
+  bool is_compute = true;
+
+  while (stream + sizeof(SubobjectHeader) <= end) {
+    auto *header = (SubobjectHeader *)stream;
+    stream += sizeof(SubobjectHeader);
+
+    if (stream + header->Size > end)
+      break;
+
+    switch (header->Type) {
+    case 0: { // D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_ROOT_SIGNATURE
+      if (header->Size >= sizeof(ID3D12RootSignature*))
+        graphics_desc.pRootSignature = *(ID3D12RootSignature**)stream;
+      break;
+    }
+    case 1: { // VS
+      if (header->Size >= sizeof(D3D12_SHADER_BYTECODE)) {
+        graphics_desc.VS = *(D3D12_SHADER_BYTECODE*)stream;
+        has_vs = true;
+        is_compute = false;
+      }
+      break;
+    }
+    case 2: { // PS
+      if (header->Size >= sizeof(D3D12_SHADER_BYTECODE))
+        graphics_desc.PS = *(D3D12_SHADER_BYTECODE*)stream;
+      break;
+    }
+    case 3: { // DS
+      if (header->Size >= sizeof(D3D12_SHADER_BYTECODE))
+        graphics_desc.DS = *(D3D12_SHADER_BYTECODE*)stream;
+      break;
+    }
+    case 4: { // HS
+      if (header->Size >= sizeof(D3D12_SHADER_BYTECODE))
+        graphics_desc.HS = *(D3D12_SHADER_BYTECODE*)stream;
+      break;
+    }
+    case 5: { // GS
+      if (header->Size >= sizeof(D3D12_SHADER_BYTECODE))
+        graphics_desc.GS = *(D3D12_SHADER_BYTECODE*)stream;
+      break;
+    }
+    case 6: { // CS
+      if (header->Size >= sizeof(D3D12_SHADER_BYTECODE)) {
+        compute_desc.CS = *(D3D12_SHADER_BYTECODE*)stream;
+        has_cs = true;
+      }
+      break;
+    }
+    case 7: { // STREAM_OUTPUT
+      if (header->Size >= sizeof(D3D12_STREAM_OUTPUT_DESC))
+        graphics_desc.StreamOutput = *(D3D12_STREAM_OUTPUT_DESC*)stream;
+      break;
+    }
+    case 8: { // BLEND
+      if (header->Size >= sizeof(D3D12_BLEND_DESC))
+        graphics_desc.BlendState = *(D3D12_BLEND_DESC*)stream;
+      break;
+    }
+    case 9: { // SAMPLE_MASK
+      if (header->Size >= sizeof(UINT))
+        graphics_desc.SampleMask = *(UINT*)stream;
+      break;
+    }
+    case 10: { // RASTERIZER
+      if (header->Size >= sizeof(D3D12_RASTERIZER_DESC))
+        graphics_desc.RasterizerState = *(D3D12_RASTERIZER_DESC*)stream;
+      break;
+    }
+    case 11: { // DEPTH_STENCIL
+      if (header->Size >= sizeof(D3D12_DEPTH_STENCIL_DESC))
+        graphics_desc.DepthStencilState = *(D3D12_DEPTH_STENCIL_DESC*)stream;
+      break;
+    }
+    case 12: { // INPUT_LAYOUT
+      if (header->Size >= sizeof(D3D12_INPUT_LAYOUT_DESC))
+        graphics_desc.InputLayout = *(D3D12_INPUT_LAYOUT_DESC*)stream;
+      break;
+    }
+    case 13: { // IB_STRIP_CUT_VALUE
+      if (header->Size >= sizeof(D3D12_INDEX_BUFFER_STRIP_CUT_VALUE))
+        graphics_desc.IBStripCutValue = *(D3D12_INDEX_BUFFER_STRIP_CUT_VALUE*)stream;
+      break;
+    }
+    case 14: { // PRIMITIVE_TOPOLOGY
+      if (header->Size >= sizeof(D3D12_PRIMITIVE_TOPOLOGY_TYPE))
+        graphics_desc.PrimitiveTopologyType = *(D3D12_PRIMITIVE_TOPOLOGY_TYPE*)stream;
+      break;
+    }
+    case 15: { // RENDER_TARGET_FORMATS
+      struct RTVFormats { UINT NumRenderTargets; DXGI_FORMAT RTFormats[8]; };
+      if (header->Size >= sizeof(RTVFormats)) {
+        auto *fmt = (RTVFormats*)stream;
+        graphics_desc.NumRenderTargets = fmt->NumRenderTargets;
+        for (UINT i = 0; i < 8 && i < fmt->NumRenderTargets; i++)
+          graphics_desc.RTVFormats[i] = fmt->RTFormats[i];
+      }
+      break;
+    }
+    case 16: { // DEPTH_STENCIL_FORMAT
+      if (header->Size >= sizeof(DXGI_FORMAT))
+        graphics_desc.DSVFormat = *(DXGI_FORMAT*)stream;
+      break;
+    }
+    case 17: { // SAMPLE_DESC
+      if (header->Size >= sizeof(DXGI_SAMPLE_DESC))
+        graphics_desc.SampleDesc = *(DXGI_SAMPLE_DESC*)stream;
+      break;
+    }
+    case 18: { // NODE_MASK
+      if (header->Size >= sizeof(UINT))
+        graphics_desc.NodeMask = *(UINT*)stream;
+      break;
+    }
+    case 19: { // CACHED_PSO
+      if (header->Size >= sizeof(D3D12_CACHED_PIPELINE_STATE))
+        graphics_desc.CachedPSO = *(D3D12_CACHED_PIPELINE_STATE*)stream;
+      break;
+    }
+    case 20: { // FLAGS
+      if (header->Size >= sizeof(D3D12_PIPELINE_STATE_FLAGS))
+        graphics_desc.Flags = *(D3D12_PIPELINE_STATE_FLAGS*)stream;
+      break;
+    }
+    default:
+      TRACE("CreatePipelineState: unknown subobject type %u size %u", header->Type, header->Size);
+      break;
+    }
+    stream += header->Size;
+  }
+
+  if (has_cs && is_compute) {
+    compute_desc.pRootSignature = graphics_desc.pRootSignature;
+    TRACE("ID3D12Device2::CreatePipelineState -> delegating to CreateComputePSO CS=%p", compute_desc.CS.pShaderBytecode);
+    return CreateComputePipelineState(&compute_desc, riid, ppPipelineState);
+  }
+
+  TRACE("ID3D12Device2::CreatePipelineState -> delegating to CreateGraphicsPSO VS=%p PS=%p NumRT=%u",
+        graphics_desc.VS.pShaderBytecode, graphics_desc.PS.pShaderBytecode, graphics_desc.NumRenderTargets);
+  return CreateGraphicsPipelineState(&graphics_desc, riid, ppPipelineState);
+}
+
+/*** ID3D12Device3 ***/
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::OpenExistingHeapFromAddress(
+    const void *address, REFIID riid, void **heap) {
+  TRACE("ID3D12Device3::OpenExistingHeapFromAddress -> E_NOTIMPL");
+  return E_NOTIMPL;
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::OpenExistingHeapFromFileMapping(
+    HANDLE file_mapping, REFIID riid, void **heap) {
+  TRACE("ID3D12Device3::OpenExistingHeapFromFileMapping -> E_NOTIMPL");
+  return E_NOTIMPL;
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::EnqueueMakeResident(
+    D3D12_RESIDENCY_FLAGS flags, UINT num_objects,
+    ID3D12Pageable *const *objects, ID3D12Fence *fence,
+    UINT64 fence_value) {
+  TRACE("ID3D12Device3::EnqueueMakeResident -> S_OK (delegating to MakeResident)");
+  HRESULT hr = MakeResident(num_objects, objects);
+  if (SUCCEEDED(hr) && fence) {
+    fence->Signal(fence_value);
+  }
+  return hr;
+}
+
+/*** ID3D12Device4 ***/
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateCommandList1(
+    UINT node_mask, D3D12_COMMAND_LIST_TYPE type,
+    D3D12_COMMAND_LIST_FLAGS flags, REFIID riid,
+    void **command_list) {
+  TRACE("ID3D12Device4::CreateCommandList1 -> delegating to CreateCommandList");
+  return CreateCommandList(node_mask, type, nullptr, nullptr, riid, command_list);
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateProtectedResourceSession(
+    const D3D12_PROTECTED_RESOURCE_SESSION_DESC *desc, REFIID riid,
+    void **session) {
+  TRACE("ID3D12Device4::CreateProtectedResourceSession -> E_NOTIMPL");
+  return E_NOTIMPL;
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateCommittedResource1(
+    const D3D12_HEAP_PROPERTIES *heap_properties,
+    D3D12_HEAP_FLAGS heap_flags, const D3D12_RESOURCE_DESC *desc,
+    D3D12_RESOURCE_STATES initial_resource_state,
+    const D3D12_CLEAR_VALUE *optimized_clear_value,
+    ID3D12ProtectedResourceSession *protected_session,
+    REFIID riid_resource, void **resource) {
+  if (protected_session) {
+    TRACE("ID3D12Device4::CreateCommittedResource1 -> E_NOTIMPL (protected session)");
+    return E_NOTIMPL;
+  }
+  return CreateCommittedResource(heap_properties, heap_flags, desc,
+      initial_resource_state, optimized_clear_value, riid_resource, resource);
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateHeap1(
+    const D3D12_HEAP_DESC *desc,
+    ID3D12ProtectedResourceSession *protected_session,
+    REFIID riid, void **heap) {
+  if (protected_session) {
+    TRACE("ID3D12Device4::CreateHeap1 -> E_NOTIMPL (protected session)");
+    return E_NOTIMPL;
+  }
+  return CreateHeap(desc, riid, heap);
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateReservedResource1(
+    const D3D12_RESOURCE_DESC *desc, D3D12_RESOURCE_STATES initial_state,
+    const D3D12_CLEAR_VALUE *optimized_clear_value,
+    ID3D12ProtectedResourceSession *protected_session,
+    REFIID riid, void **resource) {
+  if (protected_session) {
+    TRACE("ID3D12Device4::CreateReservedResource1 -> E_NOTIMPL (protected session)");
+    return E_NOTIMPL;
+  }
+  return CreateReservedResource(desc, initial_state, optimized_clear_value, riid, resource);
+}
+
+D3D12_RESOURCE_ALLOCATION_INFO* STDMETHODCALLTYPE MTLD3D12Device::GetResourceAllocationInfo1(
+    D3D12_RESOURCE_ALLOCATION_INFO *__ret, UINT visible_mask,
+    UINT resource_descs_count, const D3D12_RESOURCE_DESC *resource_descs,
+    D3D12_RESOURCE_ALLOCATION_INFO1 *resource_allocation_info1) {
+  TRACE("ID3D12Device4::GetResourceAllocationInfo1 -> delegating");
+  return GetResourceAllocationInfo(__ret, visible_mask, resource_descs_count, resource_descs);
+}
+
+/*** ID3D12Device5 ***/
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateLifetimeTracker(
+    ID3D12LifetimeOwner *owner, REFIID riid, void **tracker) {
+  TRACE("ID3D12Device5::CreateLifetimeTracker -> E_NOTIMPL");
+  return E_NOTIMPL;
+}
+
+void STDMETHODCALLTYPE MTLD3D12Device::RemoveDevice() {
+  TRACE("ID3D12Device5::RemoveDevice");
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::EnumerateMetaCommands(
+    UINT *meta_commands_count, D3D12_META_COMMAND_DESC *descs) {
+  TRACE("ID3D12Device5::EnumerateMetaCommands -> E_NOTIMPL");
+  if (meta_commands_count) *meta_commands_count = 0;
+  return E_NOTIMPL;
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::EnumerateMetaCommandParameters(
+    REFGUID command_id, D3D12_META_COMMAND_PARAMETER_STAGE stage,
+    UINT *total_structure_size_in_bytes, UINT *parameter_count,
+    D3D12_META_COMMAND_PARAMETER_DESC *parameter_descs) {
+  TRACE("ID3D12Device5::EnumerateMetaCommandParameters -> E_NOTIMPL");
+  return E_NOTIMPL;
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateMetaCommand(
+    REFGUID command_id, UINT node_mask,
+    const void *creation_parameters_data,
+    SIZE_T creation_parameters_data_size_in_bytes,
+    REFIID riid, void **meta_command) {
+  TRACE("ID3D12Device5::CreateMetaCommand -> E_NOTIMPL");
+  return E_NOTIMPL;
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateStateObject(
+    const D3D12_STATE_OBJECT_DESC *desc, REFIID riid,
+    void **state_object) {
+  TRACE("ID3D12Device5::CreateStateObject -> E_NOTIMPL");
+  return E_NOTIMPL;
+}
+
+void STDMETHODCALLTYPE MTLD3D12Device::GetRaytracingAccelerationStructurePrebuildInfo(
+    const D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS *desc,
+    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO *info) {
+  TRACE("ID3D12Device5::GetRaytracingAccelerationStructurePrebuildInfo");
+  if (info) {
+    memset(info, 0, sizeof(*info));
+  }
+}
+
+D3D12_DRIVER_MATCHING_IDENTIFIER_STATUS STDMETHODCALLTYPE MTLD3D12Device::CheckDriverMatchingIdentifier(
+    D3D12_SERIALIZED_DATA_TYPE serialized_data_type,
+    const D3D12_SERIALIZED_DATA_DRIVER_MATCHING_IDENTIFIER *identifier_to_check) {
+  TRACE("ID3D12Device5::CheckDriverMatchingIdentifier -> UNRECOGNIZED");
+  return D3D12_DRIVER_MATCHING_IDENTIFIER_UNRECOGNIZED;
+}
+
+/*** ID3D12Device6 ***/
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::SetBackgroundProcessingMode(
+    D3D12_BACKGROUND_PROCESSING_MODE mode,
+    D3D12_MEASUREMENTS_ACTION action, HANDLE event,
+    WINBOOL *further_measurements_desired) {
+  TRACE("ID3D12Device6::SetBackgroundProcessingMode -> E_NOTIMPL");
+  return E_NOTIMPL;
+}
+
+/*** ID3D12Device7 ***/
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::AddToStateObject(
+    const D3D12_STATE_OBJECT_DESC *addition,
+    ID3D12StateObject *state_object_to_grow_from,
+    REFIID riid, void **new_state_object) {
+  TRACE("ID3D12Device7::AddToStateObject -> E_NOTIMPL");
+  return E_NOTIMPL;
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateProtectedResourceSession1(
+    const D3D12_PROTECTED_RESOURCE_SESSION_DESC1 *desc,
+    REFIID riid, void **session) {
+  TRACE("ID3D12Device7::CreateProtectedResourceSession1 -> E_NOTIMPL");
+  return E_NOTIMPL;
+}
+
+/*** ID3D12Device8 ***/
+static const int MAX_DESCS = 256;
+
+D3D12_RESOURCE_ALLOCATION_INFO* STDMETHODCALLTYPE MTLD3D12Device::GetResourceAllocationInfo2(
+    D3D12_RESOURCE_ALLOCATION_INFO *__ret, UINT visible_mask,
+    UINT resource_descs_count, const D3D12_RESOURCE_DESC1 *resource_descs,
+    D3D12_RESOURCE_ALLOCATION_INFO1 *resource_allocation_info1) {
+  TRACE("ID3D12Device8::GetResourceAllocationInfo2 -> delegating");
+  D3D12_RESOURCE_DESC descs_compat[MAX_DESCS];
+  for (UINT i = 0; i < resource_descs_count && i < MAX_DESCS; i++) {
+    memcpy(&descs_compat[i], &resource_descs[i], sizeof(D3D12_RESOURCE_DESC));
+  }
+  return GetResourceAllocationInfo(__ret, visible_mask, resource_descs_count, descs_compat);
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateCommittedResource2(
+    const D3D12_HEAP_PROPERTIES *heap_properties,
+    D3D12_HEAP_FLAGS heap_flags, const D3D12_RESOURCE_DESC1 *desc,
+    D3D12_RESOURCE_STATES initial_resource_state,
+    const D3D12_CLEAR_VALUE *optimized_clear_value,
+    ID3D12ProtectedResourceSession *protected_session,
+    REFIID riid_resource, void **resource) {
+  if (protected_session) {
+    TRACE("ID3D12Device8::CreateCommittedResource2 -> E_NOTIMPL (protected session)");
+    return E_NOTIMPL;
+  }
+  D3D12_RESOURCE_DESC desc_compat;
+  memcpy(&desc_compat, desc, sizeof(D3D12_RESOURCE_DESC));
+  return CreateCommittedResource(heap_properties, heap_flags, &desc_compat,
+      initial_resource_state, optimized_clear_value, riid_resource, resource);
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreatePlacedResource1(
+    ID3D12Heap *heap, UINT64 heap_offset,
+    const D3D12_RESOURCE_DESC1 *desc,
+    D3D12_RESOURCE_STATES initial_state,
+    const D3D12_CLEAR_VALUE *optimized_clear_value,
+    REFIID riid, void **resource) {
+  D3D12_RESOURCE_DESC desc_compat;
+  memcpy(&desc_compat, desc, sizeof(D3D12_RESOURCE_DESC));
+  return CreatePlacedResource(heap, heap_offset, &desc_compat,
+      initial_state, optimized_clear_value, riid, resource);
+}
+
+void STDMETHODCALLTYPE MTLD3D12Device::CreateSamplerFeedbackUnorderedAccessView(
+    ID3D12Resource *targeted_resource, ID3D12Resource *feedback_resource,
+    D3D12_CPU_DESCRIPTOR_HANDLE dst_descriptor) {
+  TRACE("ID3D12Device8::CreateSamplerFeedbackUnorderedAccessView -> noop");
+}
+
+void STDMETHODCALLTYPE MTLD3D12Device::GetCopyableFootprints1(
+    const D3D12_RESOURCE_DESC1 *resource_desc, UINT first_subresource,
+    UINT subresources_count, UINT64 base_offset,
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT *layouts, UINT *rows_count,
+    UINT64 *row_size_in_bytes, UINT64 *total_bytes) {
+  D3D12_RESOURCE_DESC desc_compat;
+  memcpy(&desc_compat, resource_desc, sizeof(D3D12_RESOURCE_DESC));
+  GetCopyableFootprints(&desc_compat, first_subresource, subresources_count,
+      base_offset, layouts, rows_count, row_size_in_bytes, total_bytes);
+}
+
+/*** ID3D12Device9 ***/
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateShaderCacheSession(
+    const D3D12_SHADER_CACHE_SESSION_DESC *desc, REFIID riid,
+    void **session) {
+  TRACE("ID3D12Device9::CreateShaderCacheSession -> E_NOTIMPL");
+  return E_NOTIMPL;
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::ShaderCacheControl(
+    D3D12_SHADER_CACHE_KIND_FLAGS kinds,
+    D3D12_SHADER_CACHE_CONTROL_FLAGS control) {
+  TRACE("ID3D12Device9::ShaderCacheControl -> E_NOTIMPL");
+  return E_NOTIMPL;
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateCommandQueue1(
+    const D3D12_COMMAND_QUEUE_DESC *desc, REFIID creator_id,
+    REFIID riid, void **command_queue) {
+  TRACE("ID3D12Device9::CreateCommandQueue1 -> delegating to CreateCommandQueue");
+  return CreateCommandQueue(desc, riid, command_queue);
 }
 
 } // namespace dxmt

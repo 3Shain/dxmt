@@ -3,5 +3,7 @@ EXPORTS
     D3D12CreateDevice
     D3D12CreateRootSignatureDeserializer
     D3D12GetDebugInterface
+    D3D12GetInterface
+    D3D12SDKVersion DATA
     D3D12SerializeRootSignature
     D3D12SerializeVersionedRootSignature

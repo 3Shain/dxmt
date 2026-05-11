@@ -635,4 +635,76 @@ void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::WriteBufferImmediate(
     UINT count, const D3D12_WRITEBUFFERIMMEDIATE_PARAMETER *parameters,
     const D3D12_WRITEBUFFERIMMEDIATE_MODE *modes) {}
 
+/*** ID3D12GraphicsCommandList3 ***/
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetProtectedResourceSession(
+    ID3D12ProtectedResourceSession *protected_session) {
+  CLTRACE("SetProtectedResourceSession -> noop");
+}
+
+/*** ID3D12GraphicsCommandList4 ***/
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::BeginRenderPass(
+    UINT num_render_targets,
+    const D3D12_RENDER_PASS_RENDER_TARGET_DESC *render_targets,
+    const D3D12_RENDER_PASS_DEPTH_STENCIL_DESC *depth_stencil,
+    D3D12_RENDER_PASS_FLAGS flags) {
+  CLTRACE("BeginRenderPass numRT=%u flags=0x%x", num_render_targets, (unsigned)flags);
+
+  if (render_targets && num_render_targets > 0) {
+    D3D12_CPU_DESCRIPTOR_HANDLE rt_handles[8];
+    for (UINT i = 0; i < num_render_targets && i < 8; i++) {
+      rt_handles[i] = render_targets[i].cpuDescriptor;
+    }
+    OMSetRenderTargets(num_render_targets, rt_handles, FALSE,
+                       depth_stencil ? &depth_stencil->cpuDescriptor : nullptr);
+  }
+}
+
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::EndRenderPass() {
+  CLTRACE("EndRenderPass");
+}
+
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::InitializeMetaCommand(
+    ID3D12MetaCommand *meta_command, const void *initialization_parameters_data,
+    SIZE_T initialization_parameters_data_size_in_bytes) {}
+
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ExecuteMetaCommand(
+    ID3D12MetaCommand *meta_command, const void *execution_parameters_data,
+    SIZE_T execution_parameters_data_size_in_bytes) {}
+
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::BuildRaytracingAccelerationStructure(
+    const D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC *desc,
+    UINT num_post_build_info_descs,
+    const D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_DESC *post_build_info_descs) {}
+
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::EmitRaytracingAccelerationStructurePostbuildInfo(
+    const D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_DESC *descs,
+    UINT num_acceleration_structures,
+    const D3D12_GPU_VIRTUAL_ADDRESS *source_acceleration_structure_data) {}
+
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::CopyRaytracingAccelerationStructure(
+    D3D12_GPU_VIRTUAL_ADDRESS dest_acceleration_structure_data,
+    D3D12_GPU_VIRTUAL_ADDRESS source_acceleration_structure_data,
+    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_COPY_MODE mode) {}
+
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetPipelineState1(
+    ID3D12StateObject *state_object) {
+  CLTRACE("SetPipelineState1 -> noop (raytracing)");
+}
+
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::DispatchRays(
+    const D3D12_DISPATCH_RAYS_DESC *desc) {}
+
+/*** ID3D12GraphicsCommandList5 ***/
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::RSSetShadingRate(
+    D3D12_SHADING_RATE base_shading_rate,
+    const D3D12_SHADING_RATE_COMBINER *combiners) {}
+
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::RSSetShadingRateImage(
+    ID3D12Resource *shading_rate_image) {}
+
+/*** ID3D12GraphicsCommandList6 ***/
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::DispatchMesh(
+    UINT thread_group_count_x, UINT thread_group_count_y,
+    UINT thread_group_count_z) {}
+
 } // namespace dxmt

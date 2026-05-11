@@ -152,7 +152,7 @@ public:
     if (options_.customVendorId >= 0) {
       pDesc->VendorId = options_.customVendorId;
     } else {
-      pDesc->VendorId = 0x106B;
+      pDesc->VendorId = 0x1002;
       if (g_extension_enabled == VendorExtension::Nvidia) {
         pDesc->VendorId = 0x10DE;
       }

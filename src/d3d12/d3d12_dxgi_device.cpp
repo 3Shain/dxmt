@@ -58,7 +58,7 @@ HRESULT STDMETHODCALLTYPE
 MTLD3D12DXGIDevice::QueryInterface(REFIID riid, void **ppvObject) {
   {
     FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
-    if (f) { fprintf(f, "DXGIDevice::QI %08lx-%04x-%04x\n", riid.Data1, riid.Data2, riid.Data3); fclose(f); }
+    if (f) { fprintf(f, "DXGIDevice::QI(%s)\n", str::format(riid).c_str()); fclose(f); }
   }
   if (!ppvObject)
     return E_POINTER;

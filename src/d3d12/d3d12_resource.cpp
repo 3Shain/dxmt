@@ -154,7 +154,8 @@ MTLD3D12Resource::QueryInterface(REFIID riid, void **ppvObject) {
 
   if (riid == IID_IUnknown || riid == IID_ID3D12Object ||
       riid == IID_ID3D12DeviceChild || riid == IID_ID3D12Pageable ||
-      riid == IID_ID3D12Resource) {
+      riid == IID_ID3D12Resource || riid == IID_ID3D12Resource1 ||
+      riid == IID_ID3D12Resource2) {
     *ppvObject = ref(this);
     return S_OK;
   }
@@ -233,7 +234,7 @@ MTLD3D12Resource::GetDesc(D3D12_RESOURCE_DESC *__ret) {
 
 D3D12_GPU_VIRTUAL_ADDRESS STDMETHODCALLTYPE
 MTLD3D12Resource::GetGPUVirtualAddress() {
-  RTRACE("GetGPUVirtualAddress -> 0x%llx this=%p", (unsigned long long)m_gpu_addr, (void*)this);
+  RTRACE("GetGPUVirtualAddress -> 0x%llx this=%p is_buffer=%d", (unsigned long long)m_gpu_addr, (void*)this, IsBuffer());
   return m_gpu_addr;
 }
 

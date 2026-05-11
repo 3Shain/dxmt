@@ -13,7 +13,7 @@ namespace dxmt {
 
 class MTLD3D12Resource;
 
-class MTLD3D12Device : public ID3D12Device1 {
+class MTLD3D12Device : public ID3D12Device9 {
 public:
   MTLD3D12Device(std::unique_ptr<Device> &&device,
                    IMTLDXGIAdapter *pAdapter);
@@ -227,6 +227,127 @@ public:
   HRESULT STDMETHODCALLTYPE SetResidencyPriority(
       UINT object_count, ID3D12Pageable *const *objects,
       const D3D12_RESIDENCY_PRIORITY *priorities) override;
+
+  /*** ID3D12Device2 ***/
+  HRESULT STDMETHODCALLTYPE CreatePipelineState(
+      const D3D12_PIPELINE_STATE_STREAM_DESC *desc, REFIID riid,
+      void **ppPipelineState) override;
+
+  /*** ID3D12Device3 ***/
+  HRESULT STDMETHODCALLTYPE OpenExistingHeapFromAddress(
+      const void *address, REFIID riid, void **heap) override;
+  HRESULT STDMETHODCALLTYPE OpenExistingHeapFromFileMapping(
+      HANDLE file_mapping, REFIID riid, void **heap) override;
+  HRESULT STDMETHODCALLTYPE EnqueueMakeResident(
+      D3D12_RESIDENCY_FLAGS flags, UINT num_objects,
+      ID3D12Pageable *const *objects, ID3D12Fence *fence,
+      UINT64 fence_value) override;
+
+  /*** ID3D12Device4 ***/
+  HRESULT STDMETHODCALLTYPE CreateCommandList1(
+      UINT node_mask, D3D12_COMMAND_LIST_TYPE type,
+      D3D12_COMMAND_LIST_FLAGS flags, REFIID riid,
+      void **command_list) override;
+  HRESULT STDMETHODCALLTYPE CreateProtectedResourceSession(
+      const D3D12_PROTECTED_RESOURCE_SESSION_DESC *desc, REFIID riid,
+      void **session) override;
+  HRESULT STDMETHODCALLTYPE CreateCommittedResource1(
+      const D3D12_HEAP_PROPERTIES *heap_properties,
+      D3D12_HEAP_FLAGS heap_flags, const D3D12_RESOURCE_DESC *desc,
+      D3D12_RESOURCE_STATES initial_resource_state,
+      const D3D12_CLEAR_VALUE *optimized_clear_value,
+      ID3D12ProtectedResourceSession *protected_session,
+      REFIID riid_resource, void **resource) override;
+  HRESULT STDMETHODCALLTYPE CreateHeap1(const D3D12_HEAP_DESC *desc,
+      ID3D12ProtectedResourceSession *protected_session,
+      REFIID riid, void **heap) override;
+  HRESULT STDMETHODCALLTYPE CreateReservedResource1(
+      const D3D12_RESOURCE_DESC *desc, D3D12_RESOURCE_STATES initial_state,
+      const D3D12_CLEAR_VALUE *optimized_clear_value,
+      ID3D12ProtectedResourceSession *protected_session,
+      REFIID riid, void **resource) override;
+  D3D12_RESOURCE_ALLOCATION_INFO* STDMETHODCALLTYPE GetResourceAllocationInfo1(
+      D3D12_RESOURCE_ALLOCATION_INFO *__ret, UINT visible_mask,
+      UINT resource_descs_count, const D3D12_RESOURCE_DESC *resource_descs,
+      D3D12_RESOURCE_ALLOCATION_INFO1 *resource_allocation_info1) override;
+
+  /*** ID3D12Device5 ***/
+  HRESULT STDMETHODCALLTYPE CreateLifetimeTracker(
+      ID3D12LifetimeOwner *owner, REFIID riid, void **tracker) override;
+  void STDMETHODCALLTYPE RemoveDevice() override;
+  HRESULT STDMETHODCALLTYPE EnumerateMetaCommands(
+      UINT *meta_commands_count, D3D12_META_COMMAND_DESC *descs) override;
+  HRESULT STDMETHODCALLTYPE EnumerateMetaCommandParameters(
+      REFGUID command_id, D3D12_META_COMMAND_PARAMETER_STAGE stage,
+      UINT *total_structure_size_in_bytes, UINT *parameter_count,
+      D3D12_META_COMMAND_PARAMETER_DESC *parameter_descs) override;
+  HRESULT STDMETHODCALLTYPE CreateMetaCommand(
+      REFGUID command_id, UINT node_mask,
+      const void *creation_parameters_data,
+      SIZE_T creation_parameters_data_size_in_bytes,
+      REFIID riid, void **meta_command) override;
+  HRESULT STDMETHODCALLTYPE CreateStateObject(
+      const D3D12_STATE_OBJECT_DESC *desc, REFIID riid,
+      void **state_object) override;
+  void STDMETHODCALLTYPE GetRaytracingAccelerationStructurePrebuildInfo(
+      const D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS *desc,
+      D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO *info) override;
+  D3D12_DRIVER_MATCHING_IDENTIFIER_STATUS STDMETHODCALLTYPE CheckDriverMatchingIdentifier(
+      D3D12_SERIALIZED_DATA_TYPE serialized_data_type,
+      const D3D12_SERIALIZED_DATA_DRIVER_MATCHING_IDENTIFIER *identifier_to_check) override;
+
+  /*** ID3D12Device6 ***/
+  HRESULT STDMETHODCALLTYPE SetBackgroundProcessingMode(
+      D3D12_BACKGROUND_PROCESSING_MODE mode,
+      D3D12_MEASUREMENTS_ACTION action, HANDLE event,
+      WINBOOL *further_measurements_desired) override;
+
+  /*** ID3D12Device7 ***/
+  HRESULT STDMETHODCALLTYPE AddToStateObject(
+      const D3D12_STATE_OBJECT_DESC *addition,
+      ID3D12StateObject *state_object_to_grow_from,
+      REFIID riid, void **new_state_object) override;
+  HRESULT STDMETHODCALLTYPE CreateProtectedResourceSession1(
+      const D3D12_PROTECTED_RESOURCE_SESSION_DESC1 *desc,
+      REFIID riid, void **session) override;
+
+  /*** ID3D12Device8 ***/
+  D3D12_RESOURCE_ALLOCATION_INFO* STDMETHODCALLTYPE GetResourceAllocationInfo2(
+      D3D12_RESOURCE_ALLOCATION_INFO *__ret, UINT visible_mask,
+      UINT resource_descs_count, const D3D12_RESOURCE_DESC1 *resource_descs,
+      D3D12_RESOURCE_ALLOCATION_INFO1 *resource_allocation_info1) override;
+  HRESULT STDMETHODCALLTYPE CreateCommittedResource2(
+      const D3D12_HEAP_PROPERTIES *heap_properties,
+      D3D12_HEAP_FLAGS heap_flags, const D3D12_RESOURCE_DESC1 *desc,
+      D3D12_RESOURCE_STATES initial_resource_state,
+      const D3D12_CLEAR_VALUE *optimized_clear_value,
+      ID3D12ProtectedResourceSession *protected_session,
+      REFIID riid_resource, void **resource) override;
+  HRESULT STDMETHODCALLTYPE CreatePlacedResource1(
+      ID3D12Heap *heap, UINT64 heap_offset,
+      const D3D12_RESOURCE_DESC1 *desc,
+      D3D12_RESOURCE_STATES initial_state,
+      const D3D12_CLEAR_VALUE *optimized_clear_value,
+      REFIID riid, void **resource) override;
+  void STDMETHODCALLTYPE CreateSamplerFeedbackUnorderedAccessView(
+      ID3D12Resource *targeted_resource, ID3D12Resource *feedback_resource,
+      D3D12_CPU_DESCRIPTOR_HANDLE dst_descriptor) override;
+  void STDMETHODCALLTYPE GetCopyableFootprints1(
+      const D3D12_RESOURCE_DESC1 *resource_desc, UINT first_subresource,
+      UINT subresources_count, UINT64 base_offset,
+      D3D12_PLACED_SUBRESOURCE_FOOTPRINT *layouts, UINT *rows_count,
+      UINT64 *row_size_in_bytes, UINT64 *total_bytes) override;
+
+  /*** ID3D12Device9 ***/
+  HRESULT STDMETHODCALLTYPE CreateShaderCacheSession(
+      const D3D12_SHADER_CACHE_SESSION_DESC *desc, REFIID riid,
+      void **session) override;
+  HRESULT STDMETHODCALLTYPE ShaderCacheControl(
+      D3D12_SHADER_CACHE_KIND_FLAGS kinds,
+      D3D12_SHADER_CACHE_CONTROL_FLAGS control) override;
+  HRESULT STDMETHODCALLTYPE CreateCommandQueue1(
+      const D3D12_COMMAND_QUEUE_DESC *desc, REFIID creator_id,
+      REFIID riid, void **command_queue) override;
 
 private:
   std::unique_ptr<Device> m_device;

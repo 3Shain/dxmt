@@ -226,7 +226,7 @@ struct CmdResolveSubresource {
   DXGI_FORMAT format;
 };
 
-class MTLD3D12GraphicsCommandList : public ID3D12GraphicsCommandList2 {
+class MTLD3D12GraphicsCommandList : public ID3D12GraphicsCommandList6 {
 public:
   MTLD3D12GraphicsCommandList(MTLD3D12Device *device,
                               MTLD3D12CommandAllocator *allocator,
@@ -428,6 +428,52 @@ public:
   void STDMETHODCALLTYPE WriteBufferImmediate(
       UINT count, const D3D12_WRITEBUFFERIMMEDIATE_PARAMETER *parameters,
       const D3D12_WRITEBUFFERIMMEDIATE_MODE *modes) override;
+
+  /*** ID3D12GraphicsCommandList3 ***/
+  void STDMETHODCALLTYPE SetProtectedResourceSession(
+      ID3D12ProtectedResourceSession *protected_session) override;
+
+  /*** ID3D12GraphicsCommandList4 ***/
+  void STDMETHODCALLTYPE BeginRenderPass(
+      UINT num_render_targets,
+      const D3D12_RENDER_PASS_RENDER_TARGET_DESC *render_targets,
+      const D3D12_RENDER_PASS_DEPTH_STENCIL_DESC *depth_stencil,
+      D3D12_RENDER_PASS_FLAGS flags) override;
+  void STDMETHODCALLTYPE EndRenderPass() override;
+  void STDMETHODCALLTYPE InitializeMetaCommand(
+      ID3D12MetaCommand *meta_command, const void *initialization_parameters_data,
+      SIZE_T initialization_parameters_data_size_in_bytes) override;
+  void STDMETHODCALLTYPE ExecuteMetaCommand(
+      ID3D12MetaCommand *meta_command, const void *execution_parameters_data,
+      SIZE_T execution_parameters_data_size_in_bytes) override;
+  void STDMETHODCALLTYPE BuildRaytracingAccelerationStructure(
+      const D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC *desc,
+      UINT num_post_build_info_descs,
+      const D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_DESC *post_build_info_descs) override;
+  void STDMETHODCALLTYPE EmitRaytracingAccelerationStructurePostbuildInfo(
+      const D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_DESC *descs,
+      UINT num_acceleration_structures,
+      const D3D12_GPU_VIRTUAL_ADDRESS *source_acceleration_structure_data) override;
+  void STDMETHODCALLTYPE CopyRaytracingAccelerationStructure(
+      D3D12_GPU_VIRTUAL_ADDRESS dest_acceleration_structure_data,
+      D3D12_GPU_VIRTUAL_ADDRESS source_acceleration_structure_data,
+      D3D12_RAYTRACING_ACCELERATION_STRUCTURE_COPY_MODE mode) override;
+  void STDMETHODCALLTYPE SetPipelineState1(
+      ID3D12StateObject *state_object) override;
+  void STDMETHODCALLTYPE DispatchRays(
+      const D3D12_DISPATCH_RAYS_DESC *desc) override;
+
+  /*** ID3D12GraphicsCommandList5 ***/
+  void STDMETHODCALLTYPE RSSetShadingRate(
+      D3D12_SHADING_RATE base_shading_rate,
+      const D3D12_SHADING_RATE_COMBINER *combiners) override;
+  void STDMETHODCALLTYPE RSSetShadingRateImage(
+      ID3D12Resource *shading_rate_image) override;
+
+  /*** ID3D12GraphicsCommandList6 ***/
+  void STDMETHODCALLTYPE DispatchMesh(
+      UINT thread_group_count_x, UINT thread_group_count_y,
+      UINT thread_group_count_z) override;
 
   const std::vector<uint8_t> &GetCommands() const { return m_cmds; }
   void ClearCommands() { m_cmds.clear(); }

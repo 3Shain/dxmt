@@ -151,7 +151,7 @@ D3D12CreateDevice(IUnknown *pAdapter, D3D_FEATURE_LEVEL MinimumFeatureLevel,
                   REFIID riid, void **ppDevice) {
   {
     FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
-    if (f) { fprintf(f, "D3D12CreateDevice called FL=%d adapter=%p\n", MinimumFeatureLevel, pAdapter); fclose(f); }
+    if (f) { fprintf(f, "=== D3D12CreateDevice CALLED FL=%d adapter=%p riid=%s ===\n", MinimumFeatureLevel, pAdapter, str::format(riid).c_str()); fclose(f); }
   }
   if (!ppDevice)
     return E_POINTER;
@@ -307,13 +307,46 @@ extern "C" HRESULT WINAPI D3D12GetDebugInterface(REFIID riid,
   return E_NOINTERFACE;
 }
 
+extern "C" UINT WINAPI D3D12SDKVersion() {
+  FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+  if (f) { fprintf(f, "D3D12SDKVersion() -> 606\n"); fclose(f); }
+  return 606;
+}
+
+extern "C" HRESULT WINAPI D3D12GetInterface(REFCLSID clsid, REFIID riid, void **ppv) {
+  if (!ppv)
+    return E_POINTER;
+  *ppv = nullptr;
+  Logger::warn(str::format("D3D12GetInterface: clsid=", clsid, " riid=", riid, " -> E_NOINTERFACE"));
+  {
+    FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+    if (f) { fprintf(f, "D3D12GetInterface clsid=%s riid=%s -> E_NOINTERFACE\n", str::format(clsid).c_str(), str::format(riid).c_str()); fclose(f); }
+  }
+  return E_NOINTERFACE;
+}
+
 #ifdef _WIN32
 extern void install_crash_handler();
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {
-  if (reason != DLL_PROCESS_ATTACH)
-    return TRUE;
-  DisableThreadLibraryCalls(instance);
-  install_crash_handler();
+  if (reason == DLL_PROCESS_ATTACH) {
+    DisableThreadLibraryCalls(instance);
+    install_crash_handler();
+    FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+    if (f) {
+      char exe[MAX_PATH];
+      GetModuleFileNameA(NULL, exe, MAX_PATH);
+      fprintf(f, "=== d3d12.dll DllMain PROCESS_ATTACH pid=%lu exe=[%s] ===\n", GetCurrentProcessId(), exe);
+      fclose(f);
+    }
+  } else if (reason == DLL_PROCESS_DETACH) {
+    FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+    if (f) {
+      char exe[MAX_PATH];
+      GetModuleFileNameA(NULL, exe, MAX_PATH);
+      fprintf(f, "=== d3d12.dll DllMain PROCESS_DETACH pid=%lu exe=[%s] ===\n", GetCurrentProcessId(), exe);
+      fclose(f);
+    }
+  }
   return TRUE;
 }
 #endif

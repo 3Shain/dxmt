@@ -11,6 +11,11 @@
 
 #define QTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
 
+static uint64_t g_enc_id = 0;
+#define ENC_CREATE(type, handle) do { uint64_t _eid = __atomic_add_fetch(&g_enc_id, 1, __ATOMIC_SEQ_CST); QTRACE("[ENC+%llu] CREATE %s handle=%llu", (unsigned long long)_eid, type, (unsigned long long)(handle)); } while(0)
+#define ENC_END(handle) do { QTRACE("[ENC] END handle=%llu", (unsigned long long)(handle)); } while(0)
+#define ENC_COMMIT(cmdbuf_handle) do { QTRACE("[ENC] COMMIT cmdbuf=%llu", (unsigned long long)(cmdbuf_handle)); } while(0)
+
 namespace dxmt {
 
 namespace {
@@ -62,6 +67,7 @@ struct ReplayState {
 
   void CloseRenderEncoder() {
     if (render_enc_open) {
+      ENC_END(render_enc.handle);
       render_enc.endEncoding();
       render_enc_open = false;
     }
@@ -134,6 +140,7 @@ struct ReplayState {
 
     QTRACE("EnsureRenderEncoder: creating render encoder rt_count=%u", rt_count);
     render_enc = cmdbuf.renderCommandEncoder(rp);
+    ENC_CREATE("render_ensure", render_enc.handle);
     if (!render_enc.handle) {
       QTRACE("EnsureRenderEncoder: FAILED to create render encoder!");
       return;
@@ -437,6 +444,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
             st.pso->GetComputePSO().handle) {
           st.CloseRenderEncoder();
           auto comp = cmdbuf.computeCommandEncoder(false);
+          ENC_CREATE("compute_dispatch", comp.handle);
 
           uint8_t cmd_buf[4096];
           uint8_t *cmd_ptr = cmd_buf;
@@ -587,6 +595,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
 
           if (chain_head)
             comp.encodeCommands(chain_head);
+          ENC_END(comp.handle);
           comp.endEncoding();
         }
         break;
@@ -600,6 +609,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
           auto *src_res = static_cast<MTLD3D12Resource *>(cmd->src);
           if (dst_res->GetMTLBuffer().handle && src_res->GetMTLBuffer().handle) {
             auto blit = cmdbuf.blitCommandEncoder();
+            ENC_CREATE("blit_copybuf", blit.handle);
             struct wmtcmd_blit_copy_from_buffer_to_buffer copy = {};
             copy.type = WMTBlitCommandCopyFromBufferToBuffer;
             copy.next.set(nullptr);
@@ -609,6 +619,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
             copy.dst_offset = cmd->dst_offset;
             copy.copy_length = cmd->byte_count;
             blit.encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&copy));
+            ENC_END(blit.handle);
             blit.endEncoding();
           }
         }
@@ -629,6 +640,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
 
         st.CloseRenderEncoder();
         auto blit = cmdbuf.blitCommandEncoder();
+        ENC_CREATE("blit_copytex", blit.handle);
         if (!blit.handle) {
           QTRACE("CopyTextureRegion: FAILED to create blit encoder");
           break;
@@ -732,6 +744,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
 
         QTRACE("CopyTextureRegion: blit.endEncoding src_buf=%d dst_buf=%d w=%u h=%u d=%u",
           src_is_buffer, dst_is_buffer, copy_w, copy_h, copy_d);
+        ENC_END(blit.handle);
         blit.endEncoding();
         break;
       }
@@ -744,6 +757,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
 
         if (dst_res->GetMTLBuffer().handle && src_res->GetMTLBuffer().handle) {
           auto blit = cmdbuf.blitCommandEncoder();
+          ENC_CREATE("blit_copyres_buf", blit.handle);
           struct wmtcmd_blit_copy_from_buffer_to_buffer copy = {};
           copy.type = WMTBlitCommandCopyFromBufferToBuffer;
           copy.next.set(nullptr);
@@ -755,9 +769,11 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
           src_res->GetDesc(&src_desc);
           copy.copy_length = src_desc.Width;
           blit.encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&copy));
+          ENC_END(blit.handle);
           blit.endEncoding();
         } else if (dst_res->GetMTLTexture().handle && src_res->GetMTLTexture().handle) {
           auto blit = cmdbuf.blitCommandEncoder();
+          ENC_CREATE("blit_copyres_tex", blit.handle);
           D3D12_RESOURCE_DESC src_desc;
           src_res->GetDesc(&src_desc);
           struct wmtcmd_blit_copy_from_texture_to_texture copy = {};
@@ -773,6 +789,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
           copy.dst_level = 0;
           copy.dst_origin = {0, 0, 0};
           blit.encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&copy));
+          ENC_END(blit.handle);
           blit.endEncoding();
         }
         break;
@@ -849,6 +866,8 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         }
 
         auto enc = cmdbuf.renderCommandEncoder(rp);
+        ENC_CREATE("render_clearrtv", enc.handle);
+        ENC_END(enc.handle);
         enc.endEncoding();
         break;
       }
@@ -1039,6 +1058,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
 
     st.CloseRenderEncoder();
     QTRACE("ExecuteCommandLists: committing cmdbuf");
+    ENC_COMMIT(cmdbuf.handle);
     cmdbuf.commit();
     cmdbuf.waitUntilCompleted();
 

@@ -70,6 +70,17 @@ Allocation::decRef() {
   if (g_d3d12_device_addr != nullptr &&
       (uintptr_t)this >= (uintptr_t)g_d3d12_device_addr &&
       (uintptr_t)this < (uintptr_t)g_d3d12_device_addr + g_d3d12_device_size) {
+    FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+    if (f) {
+      fprintf(f, "!!! decRef BLOCKED on DEVICE this=%p vtable=%p refcount=%u tid=%lu\n",
+        (void*)this, *(void**)this, refcount_.load(), (unsigned long)GetCurrentThreadId());
+      void *buf[16];
+      ULONG n = RtlCaptureStackBackTrace(1, 16, buf, nullptr);
+      fprintf(f, "  stack[%lu]=", (unsigned long)n);
+      for (ULONG i = 0; i < n; i++) fprintf(f, "%p ", buf[i]);
+      fprintf(f, "\n");
+      fclose(f);
+    }
     return;
   }
   uint32_t prev = refcount_.fetch_sub(1u, std::memory_order_release);

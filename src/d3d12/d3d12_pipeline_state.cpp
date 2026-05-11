@@ -56,6 +56,20 @@ WMTPixelFormat MTLD3D12PipelineState::DXGIToMTLPixelFormat(DXGI_FORMAT format) {
   case DXGI_FORMAT_R16G16_FLOAT: return WMTPixelFormatRG16Float;
   case DXGI_FORMAT_R16G16_UNORM: return WMTPixelFormatRG16Unorm;
   case DXGI_FORMAT_R8G8_UNORM: return WMTPixelFormatRG8Unorm;
+  case DXGI_FORMAT_BC1_UNORM: return WMTPixelFormatBC1_RGBA;
+  case DXGI_FORMAT_BC1_UNORM_SRGB: return WMTPixelFormatBC1_RGBA_sRGB;
+  case DXGI_FORMAT_BC2_UNORM: return WMTPixelFormatBC2_RGBA;
+  case DXGI_FORMAT_BC2_UNORM_SRGB: return WMTPixelFormatBC2_RGBA_sRGB;
+  case DXGI_FORMAT_BC3_UNORM: return WMTPixelFormatBC3_RGBA;
+  case DXGI_FORMAT_BC3_UNORM_SRGB: return WMTPixelFormatBC3_RGBA_sRGB;
+  case DXGI_FORMAT_BC4_UNORM: return WMTPixelFormatBC4_RUnorm;
+  case DXGI_FORMAT_BC4_SNORM: return WMTPixelFormatBC4_RSnorm;
+  case DXGI_FORMAT_BC5_UNORM: return WMTPixelFormatBC5_RGUnorm;
+  case DXGI_FORMAT_BC5_SNORM: return WMTPixelFormatBC5_RGSnorm;
+  case DXGI_FORMAT_BC6H_UF16: return WMTPixelFormatBC6H_RGBUfloat;
+  case DXGI_FORMAT_BC6H_SF16: return WMTPixelFormatBC6H_RGBFloat;
+  case DXGI_FORMAT_BC7_UNORM: return WMTPixelFormatBC7_RGBAUnorm;
+  case DXGI_FORMAT_BC7_UNORM_SRGB: return WMTPixelFormatBC7_RGBAUnorm_sRGB;
   default: return WMTPixelFormatInvalid;
   }
 }
