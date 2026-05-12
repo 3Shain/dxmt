@@ -67,8 +67,9 @@ MTLD3D12Resource::MTLD3D12Resource(
     RTRACE("ctor: about to newTexture type=%u fmt=%u %ux%u depth=%u arr=%u mip=%u sample=%u opts=%u",
       tex_info.type, tex_info.pixel_format, (unsigned)tex_info.width, (unsigned)tex_info.height,
       (unsigned)tex_info.depth, (unsigned)tex_info.array_length,
-      (unsigned)tex_info.mipmap_level_count, (unsigned)tex_info.sample_count, (unsigned)tex_info.options);
+       (unsigned)tex_info.mipmap_level_count, (unsigned)tex_info.sample_count, (unsigned)tex_info.options);
     m_mtl_texture = wmt_device.newTexture(tex_info);
+    m_tex_gpu_resource_id = tex_info.gpu_resource_id;
     if (!m_mtl_texture.handle) {
       RTRACE("ctor: texture creation FAILED type=%u fmt=%u %ux%u arr=%u",
         tex_info.type, tex_info.pixel_format, (unsigned)tex_info.width, (unsigned)tex_info.height, (unsigned)tex_info.array_length);
@@ -130,6 +131,7 @@ WMT::Reference<WMT::Texture> MTLD3D12Resource::GetMTLTexture() {
       (unsigned)tex_info.depth, (unsigned)tex_info.array_length, (unsigned)tex_info.mipmap_level_count,
       (unsigned)tex_info.sample_count, (unsigned)tex_info.options);
     m_mtl_texture = wmt_device.newTexture(tex_info);
+    m_tex_gpu_resource_id = tex_info.gpu_resource_id;
     if (!m_mtl_texture.handle) {
       RTRACE("GetMTLTexture: newTexture returned NULL handle");
       return m_mtl_texture;

@@ -851,6 +851,7 @@ MTLD3D12Device::CreateSampler(const D3D12_SAMPLER_DESC *desc,
     info.lod_min_clamp = desc->MinLOD;
     info.lod_max_clamp = desc->MaxLOD;
     info.normalized_coords = true;
+    info.support_argument_buffers = true;
     if (desc->Filter == D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR ||
         desc->Filter == D3D12_FILTER_COMPARISON_MIN_MAG_POINT_MIP_LINEAR ||
         desc->Filter == D3D12_FILTER_COMPARISON_MIN_LINEAR_MAG_MIP_POINT) {
@@ -861,6 +862,7 @@ MTLD3D12Device::CreateSampler(const D3D12_SAMPLER_DESC *desc,
     }
 
     d->metal_sampler = GetMTLDevice().newSamplerState(info);
+    d->metal_sampler_gpu_id = info.gpu_resource_id;
   }
 }
 

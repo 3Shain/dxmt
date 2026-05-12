@@ -65,6 +65,119 @@ struct ReplayState {
   bool comp_table_set[16] = {};
   bool comp_uav_root[16] = {};
 
+  static constexpr uint32_t kArgBufSlot = 30;
+  static constexpr uint32_t kArgBufMaxQwords = 128;
+  uint64_t arg_buf_data[kArgBufMaxQwords] = {};
+  WMT::Reference<WMT::Buffer> arg_buf;
+
+  void BuildArgumentBuffer(MTLD3D12Device *device) {
+    if (!pso || pso->GetPSArguments().empty()) {
+      QTRACE("BuildArgumentBuffer: no PSO or no args");
+      return;
+    }
+    auto &args = pso->GetPSArguments();
+    uint32_t qword_count = pso->GetPSReflection().ArgumentTableQwords;
+    QTRACE("BuildArgumentBuffer: %u args, %u qwords, NumArguments=%u", (unsigned)args.size(), qword_count, (unsigned)pso->GetPSReflection().NumArguments);
+    if (qword_count == 0 || qword_count > kArgBufMaxQwords) {
+      QTRACE("BuildArgumentBuffer: invalid qword_count=%u", qword_count);
+      return;
+    }
+    memset(arg_buf_data, 0, qword_count * 8);
+
+    auto *root_sig = pso->GetRootSignature();
+    auto *dxmt_sig = root_sig ? static_cast<MTLD3D12RootSignature *>(root_sig) : nullptr;
+
+    for (auto &arg : args) {
+      uint32_t root_idx = ~0u;
+      if (dxmt_sig) {
+        auto &params = dxmt_sig->GetParameters();
+        for (uint32_t p = 0; p < params.size() && p < 16; p++) {
+          if (params[p].register_index == arg.SM50BindingSlot) {
+            bool match = false;
+            if (arg.Type == SM50BindingType::SRV &&
+                (params[p].range_type == D3D12_DESCRIPTOR_RANGE_TYPE_SRV))
+              match = true;
+            if (arg.Type == SM50BindingType::Sampler &&
+                (params[p].range_type == D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER))
+              match = true;
+            if (match) { root_idx = p; break; }
+          }
+        }
+      }
+      if (root_idx == ~0u || !root_table_set[root_idx] || desc_heap_count == 0) {
+        QTRACE("BuildArgBuf: arg type=%d slot=%u root_idx=%u table_set=%d heaps=%u skip",
+          (int)arg.Type, arg.SM50BindingSlot, root_idx, root_idx != ~0u ? root_table_set[root_idx] : 0, desc_heap_count);
+        continue;
+      }
+
+      for (uint32_t h = 0; h < desc_heap_count; h++) {
+        auto *heap = static_cast<MTLD3D12DescriptorHeap *>(desc_heaps[h]);
+        if (!heap) continue;
+        auto *desc = heap->GetDescriptorFromGPUHandle(root_tables[root_idx]);
+        if (!desc) continue;
+
+        if (arg.Type == SM50BindingType::SRV) {
+          QTRACE("BuildArgBuf: SRV root=%u desc=%p res=%p flags=0x%x offset=%u",
+            root_idx, (void*)desc, desc->resource ? (void*)desc->resource : nullptr, arg.Flags, arg.StructurePtrOffset);
+          if ((arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) && desc->resource) {
+            auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
+            if (res->GetMTLBuffer().handle) {
+              arg_buf_data[arg.StructurePtrOffset] = res->GetGPUVirtualAddress();
+              arg_buf_data[arg.StructurePtrOffset + 1] = 0;
+              if (render_enc_open) {
+                render_enc.useResource(res->GetMTLBuffer(), WMTResourceUsageRead, (WMTRenderStages)(WMTRenderStageVertex | WMTRenderStageFragment));
+              }
+            }
+          } else if (desc->resource) {
+            auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
+            if (res->GetMTLTexture().handle) {
+              uint64_t gpu_id = res->GetTextureGPUResourceID();
+              QTRACE("BuildArgBuf: SRV tex_handle=%llu gpu_id=0x%llx", (unsigned long long)res->GetMTLTexture().handle, (unsigned long long)gpu_id);
+              arg_buf_data[arg.StructurePtrOffset] = gpu_id;
+              arg_buf_data[arg.StructurePtrOffset + 1] = 0;
+              if (render_enc_open) {
+                render_enc.useResource(res->GetMTLTexture(), (WMTResourceUsage)(WMTResourceUsageSample | WMTResourceUsageRead), (WMTRenderStages)(WMTRenderStageVertex | WMTRenderStageFragment));
+                QTRACE("BuildArgBuf: useResource texture handle=%llu", (unsigned long long)res->GetMTLTexture().handle);
+              }
+            } else if (res->GetMTLBuffer().handle) {
+              arg_buf_data[arg.StructurePtrOffset] = res->GetGPUVirtualAddress();
+              arg_buf_data[arg.StructurePtrOffset + 1] = 0;
+              if (render_enc_open) {
+                render_enc.useResource(res->GetMTLBuffer(), WMTResourceUsageRead, (WMTRenderStages)(WMTRenderStageVertex | WMTRenderStageFragment));
+              }
+            }
+          }
+        } else if (arg.Type == SM50BindingType::Sampler) {
+          QTRACE("BuildArgBuf: Sampler root=%u desc_type=%u gpu_id=0x%llx offset=%u",
+            root_idx, desc->type, (unsigned long long)desc->metal_sampler_gpu_id, arg.StructurePtrOffset);
+          if (desc->type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER && desc->metal_sampler_gpu_id) {
+            arg_buf_data[arg.StructurePtrOffset] = desc->metal_sampler_gpu_id;
+            arg_buf_data[arg.StructurePtrOffset + 1] = desc->metal_sampler_gpu_id;
+            arg_buf_data[arg.StructurePtrOffset + 2] = 0;
+          }
+        }
+      }
+    }
+
+    if (!arg_buf.handle) {
+      WMTBufferInfo buf_info = {};
+      buf_info.length = kArgBufMaxQwords * 8;
+      buf_info.options = WMTResourceStorageModeShared;
+      arg_buf = device->GetDXMTDevice().device().newBuffer(buf_info);
+    }
+    if (arg_buf.handle) {
+      arg_buf.updateContents(0, arg_buf_data, qword_count * 8);
+      QTRACE("BuildArgumentBuffer: wrote %u qwords to argbuf", qword_count);
+      for (uint32_t i = 0; i < qword_count && i < 8; i++) {
+        QTRACE("  arg_buf[%u] = 0x%llx", i, (unsigned long long)arg_buf_data[i]);
+      }
+      if (render_enc_open) {
+        render_enc.useResource(arg_buf, WMTResourceUsageRead, (WMTRenderStages)(WMTRenderStageVertex | WMTRenderStageFragment));
+        QTRACE("BuildArgumentBuffer: useResource argbuf handle=%llu", (unsigned long long)arg_buf.handle);
+      }
+    }
+  }
+
   void CloseRenderEncoder() {
     if (render_enc_open) {
       ENC_END(render_enc.handle);
@@ -399,6 +512,10 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         auto *cmd = reinterpret_cast<const CmdDrawInstanced *>(header);
         st.EnsureRenderEncoder();
         st.ApplyRootBindings(m_device);
+        st.BuildArgumentBuffer(m_device);
+        if (st.arg_buf.handle) {
+          st.render_enc.setFragmentBuffer(st.arg_buf, 0, st.kArgBufSlot);
+        }
         st.ApplyVertexBuffers(m_device);
         QTRACE("DrawInstanced v=%u i=%u enc_open=%d", cmd->vertex_count, cmd->instance_count, st.render_enc_open);
 
@@ -420,6 +537,10 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         auto *cmd = reinterpret_cast<const CmdDrawIndexedInstanced *>(header);
         st.EnsureRenderEncoder();
         st.ApplyRootBindings(m_device);
+        st.BuildArgumentBuffer(m_device);
+        if (st.arg_buf.handle) {
+          st.render_enc.setFragmentBuffer(st.arg_buf, 0, st.kArgBufSlot);
+        }
         st.ApplyVertexBuffers(m_device);
 
         if (cmd->instance_count > 0 && cmd->index_count > 0 && st.ib.BufferLocation) {
@@ -592,7 +713,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
             if (st.comp_table_set[i] || st.root_table_set[i])
               num_tables++;
           }
-          QTRACE("  bindings: consts=%d cbvs=%d tables=%d tg=%ux%ux%u",
+          QTRACE("  bindings: consts=%d cbvs=%d tables=%d tg=%llux%llux%llu",
                  num_consts, num_cbvs, num_tables,
                  st.pso->GetThreadgroupSize().width,
                  st.pso->GetThreadgroupSize().height,

@@ -57,6 +57,7 @@ public:
 
   WMT::Reference<WMT::Buffer> GetMTLBuffer() { return m_mtl_buffer; }
   WMT::Reference<WMT::Texture> GetMTLTexture();
+  uint64_t GetTextureGPUResourceID() const { return m_tex_gpu_resource_id; }
 
 private:
   MTLD3D12Device *m_device;
@@ -67,6 +68,7 @@ private:
   WMT::Reference<WMT::Buffer> m_mtl_buffer;
   WMT::Reference<WMT::Texture> m_mtl_texture;
   WMT::Reference<WMT::Buffer> m_fake_buffer;
+  uint64_t m_tex_gpu_resource_id = 0;
 
   void *m_cpu_addr = nullptr;
   uint64_t m_gpu_addr = 0;

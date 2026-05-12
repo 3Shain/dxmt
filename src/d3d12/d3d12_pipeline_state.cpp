@@ -3,6 +3,8 @@
 #include "log/log.hpp"
 #include "util_string.hpp"
 #include "Metal.hpp"
+
+#define PTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_ps_args_debug.log", "a"); if (_tf) { fprintf(_tf, fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
 #include "airconv_public.h"
 #include "dxmt_format.hpp"
 #include "dxil/dxil_container.hpp"
@@ -77,7 +79,9 @@ WMTPixelFormat MTLD3D12PipelineState::DXGIToMTLPixelFormat(DXGI_FORMAT format) {
 bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
                                           ShaderType type,
                                           const char *func_name,
-                                          WMT::Reference<WMT::Function> &out_func) {
+                                          WMT::Reference<WMT::Function> &out_func,
+                                          sm50_shader_t *out_shader_handle,
+                                          MTL_SHADER_REFLECTION *out_reflection) {
   size_t hash = 0;
   if (bytecode && size > 0) {
     const uint8_t *p = (const uint8_t *)bytecode;
@@ -388,6 +392,7 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
 }
 
 bool MTLD3D12PipelineState::Compile() {
+  PTRACE("Compile() called compiled=%d is_compute=%d", m_compiled, m_is_compute);
   if (m_compiled)
     return true;
 
@@ -415,14 +420,7 @@ bool MTLD3D12PipelineState::Compile() {
       return false;
     }
 
-  if (m_ps_shader && m_ps_reflection.NumArguments > 0) {
-    m_ps_args.resize(m_ps_reflection.NumArguments);
-    SM50GetArgumentsInfo(m_ps_shader, nullptr, m_ps_args.data());
-    SM50Destroy(m_ps_shader);
-    m_ps_shader = nullptr;
-  }
-
-  m_compiled = true;
+    m_compiled = true;
     Logger::info("Compute PSO compiled successfully");
     return true;
   }
@@ -615,6 +613,24 @@ bool MTLD3D12PipelineState::Compile() {
     }
     ds_info.depth_write_enabled = m_depth_stencil_desc.DepthWriteMask == D3D12_DEPTH_WRITE_MASK_ALL;
     m_depth_stencil_state = wmt_device.newDepthStencilState(ds_info);
+  }
+
+  {
+    PTRACE("PS_ARGS_DEBUG: shader=%llu NumArgs=%u ArgBufBindIdx=%u ArgTableQwords=%u",
+      (unsigned long long)(uintptr_t)m_ps_shader,
+      m_ps_reflection.NumArguments, m_ps_reflection.ArgumentBufferBindIndex,
+      m_ps_reflection.ArgumentTableQwords);
+    if (m_ps_shader && m_ps_reflection.NumArguments > 0) {
+      m_ps_args.resize(m_ps_reflection.NumArguments);
+      SM50GetArgumentsInfo(m_ps_shader, nullptr, m_ps_args.data());
+      for (size_t i = 0; i < m_ps_args.size(); i++) {
+        PTRACE("PS_ARGS_DEBUG: arg[%zu] type=%d slot=%u flags=0x%x offset=%u",
+          i, (int)m_ps_args[i].Type, m_ps_args[i].SM50BindingSlot,
+          m_ps_args[i].Flags, m_ps_args[i].StructurePtrOffset);
+      }
+      SM50Destroy(m_ps_shader);
+      m_ps_shader = nullptr;
+    }
   }
 
   m_compiled = true;

@@ -21,6 +21,7 @@ struct D3D12Descriptor {
     D3D12_SAMPLER_DESC sampler;
   };
   WMT::Reference<WMT::SamplerState> metal_sampler;
+  uint64_t metal_sampler_gpu_id = 0;
   ID3D12Resource *resource = nullptr;
   ID3D12Resource *resource_uav_counter = nullptr;
 };

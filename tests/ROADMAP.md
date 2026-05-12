@@ -8,7 +8,7 @@
 - `Engine::AfmtMetal` and `Engine::AfmtD3D9` added to `launch.rs`
 - Games routed, backend deployed
 
-## Phase 2: D3D12 Conformance Probes
+## Phase 2: D3D12 Conformance Probes — COMPLETE
 
 ### Probe 2: Compute PSO — PASS (14/14)
 - Device creation, QI through ID3D12Device12
@@ -37,21 +37,13 @@
 - DepthStencilState created and applied on render encoder
 - Visual confirmation: correct z-ordering (near triangle in front)
 
-### Probe 6: Texture Sampling — IN PROGRESS
+### Probe 6: Texture Sampling — PASS (180 frames, 0 fail)
 - Texture upload via CopyTextureRegion works
 - Sampler creation with D3D12→WMT conversion works
 - SM50 shader compiles with `air.sample_texture_2d.v4f32` instruction
-- **BLOCKER**: SM50 compiler uses Metal **argument buffers** at slot 30
-  - Textures/samplers are NOT bound via setFragmentTexture/setFragmentSamplerState
-  - Instead, they go into an indirect constant buffer struct at [[buffer(30)]]
-  - Requires: building argument buffer with texture/sampler GPU resource IDs at correct StructurePtrOffset positions
-  - Reference: D3D11 path's `ArgumentEncodingContext::encodeShaderResources`
-- PSO now stores: m_ps_reflection, m_ps_args (MTL_SM50_SHADER_ARGUMENT), m_ps_shader
-- Need to implement:
-  1. Store texture GPU resource ID on MTLD3D12Resource
-  2. Store sampler GPU resource ID in D3D12Descriptor
-  3. Build argument buffer at draw time from PSO reflection + descriptor tables
-  4. Bind argument buffer at fragment buffer slot 30
+- Argument buffer at slot 30 fully working: texture/sampler GPU resource IDs encoded at correct offsets
+- **Fix**: Added `useResource` calls for texture resources and arg buffer — Metal requires explicit residency for argument buffer resources
+- Visual confirmation: red/green checkerboard textured triangle rendering correctly
 
 ## Bug Fixes Applied (All Probes)
 - setViewport: fixed wrong struct fields (was using wmtcmd_render_setviewports fields on wmtcmd_render_setviewport)
