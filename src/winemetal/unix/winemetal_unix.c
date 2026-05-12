@@ -598,6 +598,28 @@ _MTLDevice_newRenderPipelineState(void *obj) {
   descriptor.vertexFunction = (id<MTLFunction>)info->vertex_function;
   descriptor.fragmentFunction = (id<MTLFunction>)info->fragment_function;
 
+  if (info->vertex_descriptor && (info->vertex_descriptor->attribute_count > 0 || info->vertex_descriptor->layout_count > 0)) {
+    MTLVertexDescriptor *vd = [[MTLVertexDescriptor alloc] init];
+    for (uint32_t i = 0; i < info->vertex_descriptor->layout_count && i < 16; i++) {
+      struct WMTVertexBufferLayoutDesc l = info->vertex_descriptor->layouts[i];
+      if (l.stride > 0) {
+        vd.layouts[i].stride = l.stride;
+        vd.layouts[i].stepFunction = (MTLVertexStepFunction)l.step_function;
+        vd.layouts[i].stepRate = l.step_rate;
+      }
+    }
+    for (uint32_t i = 0; i < info->vertex_descriptor->attribute_count && i < 16; i++) {
+      struct WMTVertexAttributeDesc a = info->vertex_descriptor->attributes[i];
+      if (a.format != WMTAttributeFormatInvalid) {
+        vd.attributes[i].format = (MTLVertexFormat)a.format;
+        vd.attributes[i].offset = a.offset;
+        vd.attributes[i].bufferIndex = a.buffer_index;
+      }
+    }
+    descriptor.vertexDescriptor = vd;
+    [vd release];
+  }
+
   if (info->num_binary_archives_for_lookup && info->binary_archives_for_lookup.ptr)
     descriptor.binaryArchives = [NSArray arrayWithObjects:(id<MTLBinaryArchive> *)info->binary_archives_for_lookup.ptr
                                                     count:info->num_binary_archives_for_lookup];
@@ -952,6 +974,11 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
     case WMTRenderCommandSetFragmentTexture: {
       struct wmtcmd_render_settexture *body = (struct wmtcmd_render_settexture *)next;
       [encoder setFragmentTexture:(id<MTLTexture>)body->texture atIndex:body->index];
+      break;
+    }
+    case WMTRenderCommandSetFragmentSamplerState: {
+      struct wmtcmd_render_setsamplerstate *body = (struct wmtcmd_render_setsamplerstate *)next;
+      [encoder setFragmentSamplerState:(id<MTLSamplerState>)body->sampler atIndex:body->index];
       break;
     }
     case WMTRenderCommandSetRasterizerState: {

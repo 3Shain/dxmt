@@ -46,15 +46,6 @@ void install_crash_handler() {
 
 namespace dxmt {
 
-static const GUID IID_ID3D12Device2_ = {0x30baa41e, 0xb15b, 0x475c, {0xa0, 0xbb, 0x1a, 0xf5, 0xc5, 0xb6, 0x43, 0x28}};
-static const GUID IID_ID3D12Device3_ = {0x81dadc15, 0x2bad, 0x4392, {0x93, 0xc5, 0x10, 0x13, 0x45, 0xc4, 0xaa, 0x98}};
-static const GUID IID_ID3D12Device4_ = {0xe865df17, 0xa9ee, 0x46f9, {0xa4, 0x63, 0x30, 0x98, 0x31, 0x5a, 0xa2, 0xe5}};
-static const GUID IID_ID3D12Device5_ = {0x8b4f173b, 0x2fea, 0x4b80, {0x8f, 0x58, 0x43, 0x07, 0x19, 0x1a, 0xb9, 0x5d}};
-static const GUID IID_ID3D12Device6_ = {0xc70b221b, 0x40e4, 0x4a17, {0x89, 0xaf, 0x02, 0x5a, 0x07, 0x27, 0xa6, 0xdc}};
-static const GUID IID_ID3D12Device7_ = {0x5c014b53, 0x68a1, 0x4b9b, {0x8b, 0xd1, 0xdd, 0x60, 0x46, 0xb9, 0x35, 0x8b}};
-static const GUID IID_ID3D12Device8_ = {0x9218e6bb, 0xf944, 0x4f7e, {0xa7, 0x5c, 0xb1, 0xb2, 0xc7, 0xb7, 0x01, 0xf3}};
-static const GUID IID_ID3D12Device9_ = {0x4c80e962, 0xf032, 0x4f60, {0xbc, 0x9e, 0xeb, 0xc2, 0xcf, 0xa1, 0xd8, 0x3c}};
-static const GUID IID_ID3D12Device10_ = {0x517f8718, 0xaa66, 0x49f9, {0xb0, 0x2b, 0xa7, 0xab, 0x89, 0xc0, 0x60, 0x31}};
 static const GUID IID_ID3D12Device11_ = {0x5405c344, 0xd457, 0x444e, {0xb4, 0xdd, 0x23, 0x66, 0xe4, 0x5a, 0xee, 0x39}};
 static const GUID IID_ID3D12Device12_ = {0x5af5c532, 0x4c91, 0x4cd0, {0xb5, 0x41, 0x15, 0xa4, 0x05, 0x39, 0x5f, 0xc5}};
 
@@ -205,12 +196,12 @@ MTLD3D12Device::QueryInterface(REFIID riid, void **ppvObject) {
   if (riid == IID_IUnknown || riid == IID_ID3D12Object ||
       riid == IID_ID3D12DeviceChild || riid == IID_ID3D12Pageable ||
       riid == IID_ID3D12Device || riid == IID_ID3D12Device1 ||
-      riid == IID_ID3D12Device2_ || riid == IID_ID3D12Device3_ ||
-      riid == IID_ID3D12Device4_ || riid == IID_ID3D12Device5_ ||
-      riid == IID_ID3D12Device6_ || riid == IID_ID3D12Device7_ ||
-      riid == IID_ID3D12Device8_ || riid == IID_ID3D12Device9_ ||
-      riid == IID_ID3D12Device10_ || riid == IID_ID3D12Device11_ ||
-      riid == IID_ID3D12Device12_) {
+      riid == IID_ID3D12Device2 || riid == IID_ID3D12Device3 ||
+      riid == IID_ID3D12Device4 || riid == IID_ID3D12Device5 ||
+      riid == IID_ID3D12Device6 || riid == IID_ID3D12Device7 ||
+      riid == IID_ID3D12Device8 || riid == IID_ID3D12Device9 ||
+      riid == IID_ID3D12Device10 ||
+      riid == IID_ID3D12Device11_ || riid == IID_ID3D12Device12_) {
     *ppvObject = ref(this);
     TRACE("D3D12Device::QI(%s) -> S_OK (device)", str::format(riid).c_str());
     return S_OK;
@@ -788,6 +779,88 @@ MTLD3D12Device::CreateSampler(const D3D12_SAMPLER_DESC *desc,
   if (d && desc) {
     d->sampler = *desc;
     d->type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+
+    WMTSamplerInfo info = {};
+    switch (desc->Filter) {
+      case D3D12_FILTER_MIN_MAG_MIP_POINT:
+        info.min_filter = WMTSamplerMinMagFilterNearest;
+        info.mag_filter = WMTSamplerMinMagFilterNearest;
+        info.mip_filter = WMTSamplerMipFilterNearest;
+        break;
+      case D3D12_FILTER_MIN_MAG_POINT_MIP_LINEAR:
+        info.min_filter = WMTSamplerMinMagFilterNearest;
+        info.mag_filter = WMTSamplerMinMagFilterNearest;
+        info.mip_filter = WMTSamplerMipFilterLinear;
+        break;
+      case D3D12_FILTER_MIN_POINT_MAG_LINEAR_MIP_POINT:
+        info.min_filter = WMTSamplerMinMagFilterNearest;
+        info.mag_filter = WMTSamplerMinMagFilterLinear;
+        info.mip_filter = WMTSamplerMipFilterNearest;
+        break;
+      case D3D12_FILTER_MIN_POINT_MAG_MIP_LINEAR:
+        info.min_filter = WMTSamplerMinMagFilterNearest;
+        info.mag_filter = WMTSamplerMinMagFilterLinear;
+        info.mip_filter = WMTSamplerMipFilterLinear;
+        break;
+      case D3D12_FILTER_MIN_LINEAR_MAG_MIP_POINT:
+        info.min_filter = WMTSamplerMinMagFilterLinear;
+        info.mag_filter = WMTSamplerMinMagFilterNearest;
+        info.mip_filter = WMTSamplerMipFilterNearest;
+        break;
+      case D3D12_FILTER_MIN_LINEAR_MAG_POINT_MIP_LINEAR:
+        info.min_filter = WMTSamplerMinMagFilterLinear;
+        info.mag_filter = WMTSamplerMinMagFilterNearest;
+        info.mip_filter = WMTSamplerMipFilterLinear;
+        break;
+      case D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT:
+        info.min_filter = WMTSamplerMinMagFilterLinear;
+        info.mag_filter = WMTSamplerMinMagFilterLinear;
+        info.mip_filter = WMTSamplerMipFilterNearest;
+        break;
+      case D3D12_FILTER_MIN_MAG_MIP_LINEAR:
+        info.min_filter = WMTSamplerMinMagFilterLinear;
+        info.mag_filter = WMTSamplerMinMagFilterLinear;
+        info.mip_filter = WMTSamplerMipFilterLinear;
+        break;
+      case D3D12_FILTER_ANISOTROPIC:
+        info.min_filter = WMTSamplerMinMagFilterLinear;
+        info.mag_filter = WMTSamplerMinMagFilterLinear;
+        info.mip_filter = WMTSamplerMipFilterLinear;
+        info.max_anisotroy = desc->MaxAnisotropy;
+        break;
+      default:
+        info.min_filter = WMTSamplerMinMagFilterLinear;
+        info.mag_filter = WMTSamplerMinMagFilterLinear;
+        info.mip_filter = WMTSamplerMipFilterLinear;
+        break;
+    }
+
+    auto map_addr = [](D3D12_TEXTURE_ADDRESS_MODE mode) -> WMTSamplerAddressMode {
+      switch (mode) {
+        case D3D12_TEXTURE_ADDRESS_MODE_WRAP: return WMTSamplerAddressModeRepeat;
+        case D3D12_TEXTURE_ADDRESS_MODE_MIRROR: return WMTSamplerAddressModeMirrorRepeat;
+        case D3D12_TEXTURE_ADDRESS_MODE_CLAMP: return WMTSamplerAddressModeClampToEdge;
+        case D3D12_TEXTURE_ADDRESS_MODE_BORDER: return WMTSamplerAddressModeClampToBorderColor;
+        case D3D12_TEXTURE_ADDRESS_MODE_MIRROR_ONCE: return WMTSamplerAddressModeMirrorClampToEdge;
+        default: return WMTSamplerAddressModeClampToEdge;
+      }
+    };
+    info.s_address_mode = map_addr(desc->AddressU);
+    info.t_address_mode = map_addr(desc->AddressV);
+    info.r_address_mode = map_addr(desc->AddressW);
+    info.lod_min_clamp = desc->MinLOD;
+    info.lod_max_clamp = desc->MaxLOD;
+    info.normalized_coords = true;
+    if (desc->Filter == D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR ||
+        desc->Filter == D3D12_FILTER_COMPARISON_MIN_MAG_POINT_MIP_LINEAR ||
+        desc->Filter == D3D12_FILTER_COMPARISON_MIN_LINEAR_MAG_MIP_POINT) {
+      if (desc->ComparisonFunc >= D3D12_COMPARISON_FUNC_LESS &&
+          desc->ComparisonFunc <= D3D12_COMPARISON_FUNC_ALWAYS) {
+        info.compare_function = (WMTCompareFunction)(desc->ComparisonFunc - 1);
+      }
+    }
+
+    d->metal_sampler = GetMTLDevice().newSamplerState(info);
   }
 }
 
@@ -1554,6 +1627,58 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateCommandQueue1(
     REFIID riid, void **command_queue) {
   TRACE("ID3D12Device9::CreateCommandQueue1 -> delegating to CreateCommandQueue");
   return CreateCommandQueue(desc, riid, command_queue);
+}
+
+/*** ID3D12Device10 ***/
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateCommittedResource3(
+    const D3D12_HEAP_PROPERTIES *heap_properties,
+    D3D12_HEAP_FLAGS heap_flags, const D3D12_RESOURCE_DESC1 *desc,
+    D3D12_BARRIER_LAYOUT initial_layout,
+    const D3D12_CLEAR_VALUE *optimized_clear_value,
+    ID3D12ProtectedResourceSession *protected_session,
+    UINT32 castable_formats_count,
+    DXGI_FORMAT *castable_formats,
+    REFIID riid_resource, void **resource) {
+  if (protected_session) {
+    TRACE("ID3D12Device10::CreateCommittedResource3 -> E_NOTIMPL (protected session)");
+    return E_NOTIMPL;
+  }
+  TRACE("ID3D12Device10::CreateCommittedResource3 -> delegating to CreateCommittedResource2");
+  return CreateCommittedResource2(heap_properties, heap_flags, desc,
+      (D3D12_RESOURCE_STATES)initial_layout, optimized_clear_value,
+      protected_session, riid_resource, resource);
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreatePlacedResource2(
+    ID3D12Heap *heap, UINT64 heap_offset,
+    const D3D12_RESOURCE_DESC1 *desc,
+    D3D12_BARRIER_LAYOUT initial_layout,
+    const D3D12_CLEAR_VALUE *optimized_clear_value,
+    UINT32 castable_formats_count,
+    DXGI_FORMAT *castable_formats,
+    REFIID riid, void **resource) {
+  TRACE("ID3D12Device10::CreatePlacedResource2 -> delegating to CreatePlacedResource1");
+  return CreatePlacedResource1(heap, heap_offset, desc,
+      (D3D12_RESOURCE_STATES)initial_layout, optimized_clear_value,
+      riid, resource);
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateReservedResource2(
+    const D3D12_RESOURCE_DESC *desc,
+    D3D12_BARRIER_LAYOUT initial_layout,
+    const D3D12_CLEAR_VALUE *optimized_clear_value,
+    ID3D12ProtectedResourceSession *protected_session,
+    UINT32 castable_formats_count,
+    DXGI_FORMAT *castable_formats,
+    REFIID riid, void **resource) {
+  if (protected_session) {
+    TRACE("ID3D12Device10::CreateReservedResource2 -> E_NOTIMPL (protected session)");
+    return E_NOTIMPL;
+  }
+  TRACE("ID3D12Device10::CreateReservedResource2 -> delegating to CreateReservedResource");
+  return CreateReservedResource(desc,
+      (D3D12_RESOURCE_STATES)initial_layout, optimized_clear_value,
+      riid, resource);
 }
 
 } // namespace dxmt

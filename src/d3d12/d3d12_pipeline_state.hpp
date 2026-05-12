@@ -55,6 +55,12 @@ public:
   WMT::Reference<WMT::RenderPipelineState> GetRenderPSO() const {
     return m_render_pso;
   }
+  WMT::Reference<WMT::DepthStencilState> GetDepthStencilState() const {
+    return m_depth_stencil_state;
+  }
+  bool IsDepthEnabled() const {
+    return m_depth_stencil_desc.DepthEnable;
+  }
   WMT::Reference<WMT::ComputePipelineState> GetComputePSO() const {
     return m_compute_pso;
   }
@@ -63,11 +69,17 @@ public:
     return {(uint64_t)m_threadgroup_size.width, (uint64_t)m_threadgroup_size.height, (uint64_t)m_threadgroup_size.depth};
   }
 
+  const MTL_SHADER_REFLECTION &GetPSReflection() const { return m_ps_reflection; }
+  const std::vector<MTL_SM50_SHADER_ARGUMENT> &GetPSArguments() const { return m_ps_args; }
+  uint32_t GetPSArgumentBufferSize() const { return m_ps_reflection.ArgumentTableQwords * 8; }
+
   static WMTPixelFormat DXGIToMTLPixelFormat(DXGI_FORMAT format);
 
 private:
   bool CompileShader(const void *bytecode, SIZE_T size, ShaderType type,
-                     const char *func_name, WMT::Reference<WMT::Function> &out_func);
+                     const char *func_name, WMT::Reference<WMT::Function> &out_func,
+                     sm50_shader_t *out_shader_handle = nullptr,
+                     MTL_SHADER_REFLECTION *out_reflection = nullptr);
 
   static std::mutex s_shader_mutex;
   static std::unordered_map<size_t, WMT::Reference<WMT::Function>> s_shader_cache;
@@ -91,7 +103,12 @@ private:
 
   WMT::Reference<WMT::RenderPipelineState> m_render_pso;
   WMT::Reference<WMT::ComputePipelineState> m_compute_pso;
+  WMT::Reference<WMT::DepthStencilState> m_depth_stencil_state;
   struct { uint32_t width = 1, height = 1, depth = 1; } m_threadgroup_size;
+
+  MTL_SHADER_REFLECTION m_ps_reflection = {};
+  std::vector<MTL_SM50_SHADER_ARGUMENT> m_ps_args;
+  sm50_shader_t m_ps_shader = nullptr;
 
   std::atomic<uint32_t> m_refCount = {1ul};
 };

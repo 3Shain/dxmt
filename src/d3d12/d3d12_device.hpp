@@ -13,7 +13,7 @@ namespace dxmt {
 
 class MTLD3D12Resource;
 
-class MTLD3D12Device : public ID3D12Device9 {
+class MTLD3D12Device : public ID3D12Device10 {
 public:
   MTLD3D12Device(std::unique_ptr<Device> &&device,
                    IMTLDXGIAdapter *pAdapter);
@@ -348,6 +348,33 @@ public:
   HRESULT STDMETHODCALLTYPE CreateCommandQueue1(
       const D3D12_COMMAND_QUEUE_DESC *desc, REFIID creator_id,
       REFIID riid, void **command_queue) override;
+
+  /*** ID3D12Device10 ***/
+  HRESULT STDMETHODCALLTYPE CreateCommittedResource3(
+      const D3D12_HEAP_PROPERTIES *heap_properties,
+      D3D12_HEAP_FLAGS heap_flags, const D3D12_RESOURCE_DESC1 *desc,
+      D3D12_BARRIER_LAYOUT initial_layout,
+      const D3D12_CLEAR_VALUE *optimized_clear_value,
+      ID3D12ProtectedResourceSession *protected_session,
+      UINT32 castable_formats_count,
+      DXGI_FORMAT *castable_formats,
+      REFIID riid_resource, void **resource) override;
+  HRESULT STDMETHODCALLTYPE CreatePlacedResource2(
+      ID3D12Heap *heap, UINT64 heap_offset,
+      const D3D12_RESOURCE_DESC1 *desc,
+      D3D12_BARRIER_LAYOUT initial_layout,
+      const D3D12_CLEAR_VALUE *optimized_clear_value,
+      UINT32 castable_formats_count,
+      DXGI_FORMAT *castable_formats,
+      REFIID riid, void **resource) override;
+  HRESULT STDMETHODCALLTYPE CreateReservedResource2(
+      const D3D12_RESOURCE_DESC *desc,
+      D3D12_BARRIER_LAYOUT initial_layout,
+      const D3D12_CLEAR_VALUE *optimized_clear_value,
+      ID3D12ProtectedResourceSession *protected_session,
+      UINT32 castable_formats_count,
+      DXGI_FORMAT *castable_formats,
+      REFIID riid, void **resource) override;
 
 private:
   std::unique_ptr<Device> m_device;

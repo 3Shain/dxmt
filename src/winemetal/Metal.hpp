@@ -425,6 +425,17 @@ public:
   };
 
   void
+  setFragmentSamplerState(SamplerState sampler, uint8_t index) {
+    struct wmtcmd_render_setsamplerstate cmd;
+    cmd.type = WMTRenderCommandSetFragmentSamplerState;
+    cmd.reserved[0] = cmd.reserved[1] = cmd.reserved[2] = 0;
+    cmd.next.set(nullptr);
+    cmd.sampler = sampler.handle;
+    cmd.index = index;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  void
   setFragmentBytes(const void *buf, uint64_t length, uint8_t index) {
     struct wmtcmd_render_setbytes cmd;
     cmd.type = WMTRenderCommandSetFragmentBytes;
@@ -437,21 +448,21 @@ public:
 
   void
   setViewport(WMTViewport viewport) {
-    struct wmtcmd_render_setviewports cmd;
+    struct wmtcmd_render_setviewport cmd;
     cmd.type = WMTRenderCommandSetViewports;
+    cmd.reserved[0] = cmd.reserved[1] = cmd.reserved[2] = 0;
     cmd.next.set(nullptr);
-    cmd.viewports.set(&viewport);
-    cmd.viewport_count = 1;
+    cmd.viewport = viewport;
     MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
-  };
+  }
 
   void
-  waitForFence(Fence fence, WMTRenderStages before) {
-    struct wmtcmd_render_fence_op cmd;
-    cmd.type = WMTRenderCommandWaitForFence;
+  setDepthStencilState(DepthStencilState state) {
+    struct wmtcmd_render_setdsso cmd;
+    cmd.type = WMTRenderCommandSetDSSO;
+    cmd.reserved[0] = cmd.reserved[1] = cmd.reserved[2] = 0;
     cmd.next.set(nullptr);
-    cmd.fence = fence.handle;
-    cmd.stages = before;
+    cmd.dsso = state.handle;
     MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
   }
 
@@ -462,6 +473,17 @@ public:
     cmd.next.set(nullptr);
     cmd.fence = fence.handle;
     cmd.stages = after;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  void
+  waitForFence(Fence fence, WMTRenderStages before) {
+    struct wmtcmd_render_fence_op cmd;
+    cmd.type = WMTRenderCommandWaitForFence;
+    cmd.reserved[0] = cmd.reserved[1] = cmd.reserved[2] = 0;
+    cmd.next.set(nullptr);
+    cmd.fence = fence.handle;
+    cmd.stages = before;
     MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
   }
 };

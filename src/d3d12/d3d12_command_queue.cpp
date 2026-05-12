@@ -149,6 +149,9 @@ struct ReplayState {
 
     if (pso && pso->IsCompiled() && pso->GetRenderPSO().handle) {
       render_enc.setRenderPipelineState(pso->GetRenderPSO());
+      if (pso->IsDepthEnabled() && pso->GetDepthStencilState().handle) {
+        render_enc.setDepthStencilState(pso->GetDepthStencilState());
+      }
     }
 
     if (viewport_count > 0) {
@@ -167,6 +170,8 @@ struct ReplayState {
   void ApplyRootBindings(MTLD3D12Device *device) {
     if (!render_enc_open || !pso)
       return;
+
+    uint32_t tex_slot = 0, samp_slot = 0;
 
     for (uint32_t i = 0; i < 16; i++) {
       if (root_constant_set[i] && root_constant_sizes[i] > 0) {
@@ -188,7 +193,12 @@ struct ReplayState {
           auto *heap = static_cast<MTLD3D12DescriptorHeap *>(desc_heaps[h]);
           if (!heap) continue;
           auto *desc = heap->GetDescriptorFromGPUHandle(root_tables[i]);
-          if (!desc || !desc->resource) continue;
+          if (!desc) continue;
+          if (desc->type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER && desc->metal_sampler.handle) {
+            render_enc.setFragmentSamplerState(desc->metal_sampler, samp_slot++);
+            continue;
+          }
+          if (!desc->resource) continue;
           auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
           if (res->GetMTLBuffer().handle) {
             uint64_t off = 0;
@@ -199,7 +209,7 @@ struct ReplayState {
             render_enc.setVertexBuffer(res->GetMTLBuffer(), off, i);
             render_enc.setFragmentBuffer(res->GetMTLBuffer(), off, i);
           } else if (res->GetMTLTexture().handle) {
-            render_enc.setFragmentTexture(res->GetMTLTexture(), i);
+            render_enc.setFragmentTexture(res->GetMTLTexture(), tex_slot++);
           }
         }
       }
@@ -800,6 +810,9 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         if (st.render_enc_open && st.pso && st.pso->IsCompiled() &&
             st.pso->GetRenderPSO().handle) {
           st.render_enc.setRenderPipelineState(st.pso->GetRenderPSO());
+          if (st.pso->IsDepthEnabled() && st.pso->GetDepthStencilState().handle) {
+            st.render_enc.setDepthStencilState(st.pso->GetDepthStencilState());
+          }
         }
         break;
       }
@@ -834,21 +847,30 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         rp.stencil.load_action = WMTLoadActionDontCare;
         rp.stencil.store_action = WMTStoreActionDontCare;
 
-        for (uint32_t i = 0; i < st.rt_count && i < 8; i++) {
-          auto *desc = reinterpret_cast<const D3D12Descriptor *>(st.rt_handles[i].ptr);
+        {
+          auto *desc = reinterpret_cast<const D3D12Descriptor *>(cmd->rtv.ptr);
           if (desc && desc->resource) {
             auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
             if (res->GetMTLTexture().handle) {
+              rp.colors[0].texture = res->GetMTLTexture().handle;
+              rp.colors[0].load_action = WMTLoadActionClear;
+              rp.colors[0].store_action = WMTStoreActionStore;
+              rp.colors[0].clear_color = {cmd->color[0], cmd->color[1],
+                                          cmd->color[2], cmd->color[3]};
+            }
+          }
+        }
+
+        for (uint32_t i = 0; i < st.rt_count && i < 8; i++) {
+          if (rt_handles_match(st.rt_handles[i], cmd->rtv))
+            continue;
+          auto *desc = reinterpret_cast<const D3D12Descriptor *>(st.rt_handles[i].ptr);
+          if (desc && desc->resource) {
+            auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
+            if (res->GetMTLTexture().handle && !rp.colors[i].texture) {
               rp.colors[i].texture = res->GetMTLTexture().handle;
-              if (rt_handles_match(st.rt_handles[i], cmd->rtv)) {
-                rp.colors[i].load_action = WMTLoadActionClear;
-                rp.colors[i].store_action = WMTStoreActionStore;
-                rp.colors[i].clear_color = {cmd->color[0], cmd->color[1],
-                                            cmd->color[2], cmd->color[3]};
-              } else {
-                rp.colors[i].load_action = WMTLoadActionLoad;
-                rp.colors[i].store_action = WMTStoreActionStore;
-              }
+              rp.colors[i].load_action = WMTLoadActionLoad;
+              rp.colors[i].store_action = WMTStoreActionStore;
             }
           }
         }
@@ -873,6 +895,57 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
       }
       case CmdType::ClearDepthStencilView: {
         auto *cmd = reinterpret_cast<const CmdClearDSV *>(header);
+        st.CloseRenderEncoder();
+
+        WMTRenderPassInfo rp = {};
+        for (uint32_t i = 0; i < 8; i++) {
+          rp.colors[i].texture = NULL_OBJECT_HANDLE;
+          rp.colors[i].load_action = WMTLoadActionDontCare;
+          rp.colors[i].store_action = WMTStoreActionDontCare;
+        }
+
+        for (uint32_t i = 0; i < st.rt_count && i < 8; i++) {
+          auto *desc = reinterpret_cast<const D3D12Descriptor *>(st.rt_handles[i].ptr);
+          if (desc && desc->resource) {
+            auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
+            if (res->GetMTLTexture().handle) {
+              rp.colors[i].texture = res->GetMTLTexture().handle;
+              rp.colors[i].load_action = WMTLoadActionLoad;
+              rp.colors[i].store_action = WMTStoreActionStore;
+            }
+          }
+        }
+
+        rp.depth.texture = NULL_OBJECT_HANDLE;
+        rp.depth.load_action = WMTLoadActionDontCare;
+        rp.depth.store_action = WMTStoreActionDontCare;
+        rp.stencil.texture = NULL_OBJECT_HANDLE;
+        rp.stencil.load_action = WMTLoadActionDontCare;
+        rp.stencil.store_action = WMTStoreActionDontCare;
+
+        {
+          auto *desc = reinterpret_cast<const D3D12Descriptor *>(cmd->dsv.ptr);
+          if (desc && desc->resource) {
+            auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
+            if (res->GetMTLTexture().handle) {
+              rp.depth.texture = res->GetMTLTexture().handle;
+              rp.depth.load_action = WMTLoadActionClear;
+              rp.depth.store_action = WMTStoreActionStore;
+              rp.depth.clear_depth = cmd->depth;
+              if (cmd->flags & D3D12_CLEAR_FLAG_STENCIL) {
+                rp.stencil.texture = res->GetMTLTexture().handle;
+                rp.stencil.load_action = WMTLoadActionClear;
+                rp.stencil.store_action = WMTStoreActionStore;
+                rp.stencil.clear_stencil = cmd->stencil;
+              }
+            }
+          }
+        }
+
+        auto enc = cmdbuf.renderCommandEncoder(rp);
+        ENC_CREATE("render_cleardsv", enc.handle);
+        ENC_END(enc.handle);
+        enc.endEncoding();
         break;
       }
       case CmdType::RSSetViewports: {

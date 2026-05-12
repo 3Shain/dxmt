@@ -341,6 +341,14 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
   SM50_COMPILED_BITCODE bitcode = {};
   SM50GetCompiledBitcode(compile_result, &bitcode);
 
+  {
+    char dump_path[256];
+    snprintf(dump_path, sizeof(dump_path), "/tmp/dxmt_sm50_%s.metallib", func_name);
+    FILE *df = fopen(dump_path, "wb");
+    if (df) { fwrite(bitcode.Data, 1, bitcode.Size, df); fclose(df); }
+    Logger::info(str::format("  SM50 dumped ", func_name, " to ", dump_path, " (", bitcode.Size, " bytes)"));
+  }
+
   auto wmt_device = m_device->GetDXMTDevice().device();
   WMT::Reference<WMT::Error> err;
   auto lib_data = WMT::MakeDispatchData(bitcode.Data, bitcode.Size);
@@ -355,7 +363,16 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
 
   out_func = library.newFunction(func_name);
   SM50DestroyBitcode(compile_result);
-  SM50Destroy(shader);
+
+  if (out_reflection) {
+    *out_reflection = reflection;
+  }
+
+  if (out_shader_handle) {
+    *out_shader_handle = shader;
+  } else {
+    SM50Destroy(shader);
+  }
 
   if (!out_func.handle) {
     Logger::err(str::format("Failed to get function ", func_name));
@@ -398,7 +415,14 @@ bool MTLD3D12PipelineState::Compile() {
       return false;
     }
 
-    m_compiled = true;
+  if (m_ps_shader && m_ps_reflection.NumArguments > 0) {
+    m_ps_args.resize(m_ps_reflection.NumArguments);
+    SM50GetArgumentsInfo(m_ps_shader, nullptr, m_ps_args.data());
+    SM50Destroy(m_ps_shader);
+    m_ps_shader = nullptr;
+  }
+
+  m_compiled = true;
     Logger::info("Compute PSO compiled successfully");
     return true;
   }
@@ -413,7 +437,7 @@ bool MTLD3D12PipelineState::Compile() {
 
   if (!m_ps.empty()) {
     if (!CompileShader(m_ps.data(), m_ps.size(), ShaderType::Pixel,
-                       "ps_main", ps_func))
+                       "ps_main", ps_func, &m_ps_shader, &m_ps_reflection))
       return false;
   }
 
@@ -497,10 +521,100 @@ bool MTLD3D12PipelineState::Compile() {
   info.immutable_vertex_buffers = (1 << 16) | (1 << 29) | (1 << 30);
   info.immutable_fragment_buffers = (1 << 29) | (1 << 30);
 
+  auto dxgi_to_vertex_fmt = [](DXGI_FORMAT fmt) -> WMTAttributeFormat {
+    switch (fmt) {
+    case DXGI_FORMAT_R32G32B32A32_FLOAT: return WMTAttributeFormatFloat4;
+    case DXGI_FORMAT_R32G32B32_FLOAT: return WMTAttributeFormatFloat3;
+    case DXGI_FORMAT_R32G32_FLOAT: return WMTAttributeFormatFloat2;
+    case DXGI_FORMAT_R32_FLOAT: return WMTAttributeFormatFloat;
+    case DXGI_FORMAT_R16G16B16A16_FLOAT: return WMTAttributeFormatHalf4;
+    case DXGI_FORMAT_R16G16_FLOAT: return WMTAttributeFormatHalf2;
+    case DXGI_FORMAT_R16_FLOAT: return WMTAttributeFormatHalf;
+    case DXGI_FORMAT_R8G8B8A8_UNORM: return WMTAttributeFormatUChar4Normalized;
+    case DXGI_FORMAT_B8G8R8A8_UNORM: return WMTAttributeFormatUChar4Normalized_BGRA;
+    case DXGI_FORMAT_R8G8_UNORM: return WMTAttributeFormatUChar2Normalized;
+    case DXGI_FORMAT_R8_UNORM: return WMTAttributeFormatUCharNormalized;
+    case DXGI_FORMAT_R32G32B32A32_UINT: return WMTAttributeFormatUInt4;
+    case DXGI_FORMAT_R32G32B32_UINT: return WMTAttributeFormatUInt3;
+    case DXGI_FORMAT_R32G32_UINT: return WMTAttributeFormatUInt2;
+    case DXGI_FORMAT_R32_UINT: return WMTAttributeFormatUInt;
+    case DXGI_FORMAT_R16G16B16A16_UNORM: return WMTAttributeFormatUShort4Normalized;
+    case DXGI_FORMAT_R16G16_UNORM: return WMTAttributeFormatUShort2Normalized;
+    case DXGI_FORMAT_R16G16_SNORM: return WMTAttributeFormatShort2Normalized;
+    case DXGI_FORMAT_R8G8B8A8_SNORM: return WMTAttributeFormatChar4Normalized;
+    case DXGI_FORMAT_R8G8_SNORM: return WMTAttributeFormatChar2Normalized;
+    case DXGI_FORMAT_R10G10B10A2_UNORM: return WMTAttributeFormatUInt1010102Normalized;
+    default: return WMTAttributeFormatInvalid;
+    }
+  };
+
+  WMTVertexDescriptor vtx_desc = {};
+  if (m_input_layout.NumElements > 0 && m_input_layout.pInputElementDescs) {
+    auto fmt_size = [](DXGI_FORMAT fmt) -> uint32_t {
+      switch (fmt) {
+      case DXGI_FORMAT_R32G32B32A32_FLOAT: case DXGI_FORMAT_R32G32B32A32_UINT: case DXGI_FORMAT_R32G32B32A32_SINT: return 16;
+      case DXGI_FORMAT_R32G32B32_FLOAT: case DXGI_FORMAT_R32G32B32_UINT: case DXGI_FORMAT_R32G32B32_SINT: return 12;
+      case DXGI_FORMAT_R16G16B16A16_FLOAT: case DXGI_FORMAT_R16G16B16A16_UNORM: case DXGI_FORMAT_R16G16B16A16_UINT: return 8;
+      case DXGI_FORMAT_R32G32_FLOAT: case DXGI_FORMAT_R32G32_UINT: case DXGI_FORMAT_R32G32_SINT: return 8;
+      case DXGI_FORMAT_R10G10B10A2_UNORM: case DXGI_FORMAT_R11G11B10_FLOAT: case DXGI_FORMAT_R8G8B8A8_UNORM: case DXGI_FORMAT_B8G8R8A8_UNORM: return 4;
+      case DXGI_FORMAT_R16G16_FLOAT: case DXGI_FORMAT_R16G16_UNORM: case DXGI_FORMAT_R16G16_SNORM: return 4;
+      case DXGI_FORMAT_R32_FLOAT: case DXGI_FORMAT_R32_UINT: return 4;
+      case DXGI_FORMAT_R8G8_UNORM: case DXGI_FORMAT_R8G8_SNORM: return 2;
+      case DXGI_FORMAT_R16_FLOAT: case DXGI_FORMAT_R16_UNORM: return 2;
+      case DXGI_FORMAT_R8_UNORM: case DXGI_FORMAT_R8_SNORM: return 1;
+      default: return 4;
+      }
+    };
+
+    uint32_t slot_stride[16] = {};
+    uint32_t max_slot = 0;
+    bool slot_per_vertex[16] = {};
+
+    for (UINT i = 0; i < m_input_layout.NumElements && i < 16; i++) {
+      auto &el = m_input_layout.pInputElementDescs[i];
+      auto vfmt = dxgi_to_vertex_fmt(el.Format);
+      if (vfmt != WMTAttributeFormatInvalid) {
+        vtx_desc.attributes[i].format = vfmt;
+        vtx_desc.attributes[i].offset = el.AlignedByteOffset;
+        vtx_desc.attributes[i].buffer_index = el.InputSlot;
+      }
+      uint32_t end = (el.AlignedByteOffset != D3D12_APPEND_ALIGNED_ELEMENT)
+                         ? el.AlignedByteOffset + fmt_size(el.Format)
+                         : fmt_size(el.Format);
+      if (end > slot_stride[el.InputSlot])
+        slot_stride[el.InputSlot] = end;
+      if (el.InputSlot >= max_slot)
+        max_slot = el.InputSlot + 1;
+      slot_per_vertex[el.InputSlot] = (el.InputSlotClass == D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA);
+    }
+    vtx_desc.attribute_count = m_input_layout.NumElements;
+    vtx_desc.layout_count = max_slot;
+    for (uint32_t s = 0; s < max_slot; s++) {
+      vtx_desc.layouts[s].stride = slot_stride[s];
+      vtx_desc.layouts[s].step_function = slot_per_vertex[s]
+          ? WMTVertexStepFunctionPerVertex : WMTVertexStepFunctionPerInstance;
+      vtx_desc.layouts[s].step_rate = 1;
+    }
+    info.vertex_descriptor = &vtx_desc;
+  }
+
   m_render_pso = wmt_device.newRenderPipelineState(info, err);
   if (!m_render_pso.handle) {
-    Logger::err("Failed to create render PSO");
+    char *err_desc = err.handle ? (char *)NSObject_description(err.handle) : nullptr;
+    Logger::err(str::format("Failed to create render PSO: ", err_desc ? err_desc : "unknown"));
     return false;
+  }
+
+  if (m_depth_stencil_desc.DepthEnable) {
+    struct WMTDepthStencilInfo ds_info = {};
+    if (m_depth_stencil_desc.DepthFunc >= D3D12_COMPARISON_FUNC_LESS &&
+        m_depth_stencil_desc.DepthFunc <= D3D12_COMPARISON_FUNC_ALWAYS) {
+      ds_info.depth_compare_function = (enum WMTCompareFunction)(m_depth_stencil_desc.DepthFunc - 1);
+    } else {
+      ds_info.depth_compare_function = WMTCompareFunctionAlways;
+    }
+    ds_info.depth_write_enabled = m_depth_stencil_desc.DepthWriteMask == D3D12_DEPTH_WRITE_MASK_ALL;
+    m_depth_stencil_state = wmt_device.newDepthStencilState(ds_info);
   }
 
   m_compiled = true;

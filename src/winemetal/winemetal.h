@@ -778,6 +778,33 @@ enum WMTPrimitiveTopologyClass {
   WMTPrimitiveTopologyClassTriangle = 3,
 };
 
+enum WMTVertexStepFunction {
+  WMTVertexStepFunctionConstant = 0,
+  WMTVertexStepFunctionPerVertex = 1,
+  WMTVertexStepFunctionPerInstance = 2,
+  WMTVertexStepFunctionPerPatch = 3,
+  WMTVertexStepFunctionPerPatchControlPoint = 4,
+};
+
+struct WMTVertexBufferLayoutDesc {
+  uint32_t stride;
+  enum WMTVertexStepFunction step_function;
+  uint32_t step_rate;
+};
+
+struct WMTVertexAttributeDesc {
+  enum WMTAttributeFormat format;
+  uint32_t offset;
+  uint32_t buffer_index;
+};
+
+struct WMTVertexDescriptor {
+  struct WMTVertexBufferLayoutDesc layouts[16];
+  struct WMTVertexAttributeDesc attributes[16];
+  uint32_t layout_count;
+  uint32_t attribute_count;
+};
+
 struct WMTRenderPipelineBlendInfo {
   struct WMTColorAttachmentBlendInfo colors[8];
   bool alpha_to_coverage_enabled;
@@ -807,6 +834,7 @@ struct WMTRenderPipelineInfo {
   struct WMTConstMemoryPointer binary_archives_for_lookup;
   uint8_t num_binary_archives_for_lookup;
   bool fail_on_binary_archive_miss;
+  struct WMTVertexDescriptor *vertex_descriptor;
   uint8_t padding[6];
 };
 
@@ -1123,6 +1151,7 @@ enum WMTRenderCommandType : uint16_t {
   WMTRenderCommandSetObjectBuffer,
   WMTRenderCommandSetObjectBufferOffset,
   WMTRenderCommandSetFragmentTexture,
+  WMTRenderCommandSetFragmentSamplerState,
   WMTRenderCommandSetFragmentBytes,
   WMTRenderCommandSetRasterizerState,
   WMTRenderCommandSetViewports,
@@ -1203,6 +1232,14 @@ struct wmtcmd_render_settexture {
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
   obj_handle_t texture;
+  uint8_t index;
+};
+
+struct wmtcmd_render_setsamplerstate {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t sampler;
   uint8_t index;
 };
 

@@ -2,6 +2,7 @@
 
 #include "com/com_pointer.hpp"
 #include "d3d12.h"
+#include "Metal.hpp"
 #include <atomic>
 #include <vector>
 
@@ -19,6 +20,7 @@ struct D3D12Descriptor {
     D3D12_DEPTH_STENCIL_VIEW_DESC dsv;
     D3D12_SAMPLER_DESC sampler;
   };
+  WMT::Reference<WMT::SamplerState> metal_sampler;
   ID3D12Resource *resource = nullptr;
   ID3D12Resource *resource_uav_counter = nullptr;
 };

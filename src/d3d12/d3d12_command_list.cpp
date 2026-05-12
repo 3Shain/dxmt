@@ -108,6 +108,12 @@ HRESULT STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::Reset(
   CLTRACE("Reset");
   m_closed = false;
   m_cmds.clear();
+  if (initial_state) {
+    CmdSetPipelineState cmd = {};
+    cmd.header = {CmdType::SetPipelineState, sizeof(cmd)};
+    cmd.pso = initial_state;
+    Emit(cmd);
+  }
   return S_OK;
 }
 

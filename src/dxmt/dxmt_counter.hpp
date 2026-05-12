@@ -42,6 +42,8 @@ public:
     return index_ * kCounterAlignAs;
   }
 
+  void destroy() override { free(); }
+
 private:
   void free();
 
