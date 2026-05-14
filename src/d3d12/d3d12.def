@@ -1,0 +1,4 @@
+LIBRARY D3D12.DLL
+EXPORTS  
+    D3D12CreateDevice @100
+    D3D12GetDebugInterface @101

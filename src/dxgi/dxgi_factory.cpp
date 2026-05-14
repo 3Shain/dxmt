@@ -107,31 +107,42 @@ public:
       return DXGI_ERROR_INVALID_CALL;
 
     Com<IMTLDXGIDevice> metal_dxgi_device;
-    if (FAILED(pDevice->QueryInterface(IID_PPV_ARGS(&metal_dxgi_device)))) {
-      ERR("Unsupported device type");
-      return DXGI_ERROR_UNSUPPORTED;
+    if (SUCCEEDED(pDevice->QueryInterface(IID_PPV_ARGS(&metal_dxgi_device)))) {
+      DXGI_SWAP_CHAIN_DESC1 desc = *pDesc;
+      wsi::getWindowSize(hWnd, desc.Width ? nullptr : &desc.Width,
+                         desc.Height ? nullptr : &desc.Height);
+      DXGI_SWAP_CHAIN_FULLSCREEN_DESC fsDesc;
+      if (pFullscreenDesc) {
+        fsDesc = *pFullscreenDesc;
+      } else {
+        fsDesc.RefreshRate = {0, 0};
+        fsDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
+        fsDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
+        fsDesc.Windowed = TRUE;
+      }
+      return metal_dxgi_device->CreateSwapChain(this, hWnd, &desc, &fsDesc, ppSwapChain);
     }
-
-    // Make sure the back buffer size is not zero
-    DXGI_SWAP_CHAIN_DESC1 desc = *pDesc;
-
-    wsi::getWindowSize(hWnd, desc.Width ? nullptr : &desc.Width,
-                       desc.Height ? nullptr : &desc.Height);
-
-    // If necessary, set up a default set of
-    // fullscreen parameters for the swap chain
-    DXGI_SWAP_CHAIN_FULLSCREEN_DESC fsDesc;
-
-    if (pFullscreenDesc) {
-      fsDesc = *pFullscreenDesc;
-    } else {
-      fsDesc.RefreshRate = {0, 0};
-      fsDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
-      fsDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
-      fsDesc.Windowed = TRUE;
+    
+    /* M12: Try D3D12 device via IMTLDXGIDevice12 */
+    Com<IMTLDXGIDevice12> d3d12_device;
+    if (SUCCEEDED(pDevice->QueryInterface(IID_PPV_ARGS(&d3d12_device)))) {
+      DXGI_SWAP_CHAIN_DESC1 desc = *pDesc;
+      wsi::getWindowSize(hWnd, desc.Width ? nullptr : &desc.Width,
+                         desc.Height ? nullptr : &desc.Height);
+      DXGI_SWAP_CHAIN_FULLSCREEN_DESC fsDesc;
+      if (pFullscreenDesc) {
+        fsDesc = *pFullscreenDesc;
+      } else {
+        fsDesc.RefreshRate = {0, 0};
+        fsDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
+        fsDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
+        fsDesc.Windowed = TRUE;
+      }
+      return d3d12_device->CreateSwapChain(this, hWnd, &desc, &fsDesc, ppSwapChain);
     }
-
-    return metal_dxgi_device->CreateSwapChain(this, hWnd, &desc, &fsDesc,
+    
+    ERR("Unsupported device type");
+    return DXGI_ERROR_UNSUPPORTED;
                                               ppSwapChain);
   }
 

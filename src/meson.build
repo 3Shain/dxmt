@@ -19,3 +19,4 @@ endif
 if get_option('enable_nvngx')
 subdir('nvngx')
 endif
+subdir('d3d12')

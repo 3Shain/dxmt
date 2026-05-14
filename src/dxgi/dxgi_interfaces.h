@@ -31,3 +31,14 @@ enum class VendorExtension {
 
 extern VendorExtension g_extension_enabled;
 } // namespace dxmt
+
+// M12: D3D12 swapchain interface — lightweight (no IDXGIDevice3 dependency)
+DEFINE_COM_INTERFACE("a1b2c3d4-e5f6-7890-abcd-ef1234567890", IMTLDXGIDevice12)
+    : public IUnknown {
+  virtual WMT::Device STDMETHODCALLTYPE GetMTLDevice() = 0;
+  virtual HRESULT STDMETHODCALLTYPE CreateSwapChain(
+      IDXGIFactory1 *pFactory, HWND hWnd,
+      const DXGI_SWAP_CHAIN_DESC1 *pDesc,
+      const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc,
+      IDXGISwapChain1 **ppSwapChain) = 0;
+};
