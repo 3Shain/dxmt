@@ -9,6 +9,8 @@
 #include "objc/objc-runtime.h"
 #include <bootstrap.h>
 #include <mach/mach_port.h>
+#include <stdlib.h>
+#include <string.h>
 #define WINEMETAL_API
 #include "../winemetal_thunks.h"
 #include "../airconv_thunks.h"
@@ -16,6 +18,17 @@
 typedef int NTSTATUS;
 #define STATUS_SUCCESS 0
 #define STATUS_UNSUCCESSFUL 0xC0000001
+
+static int
+winemetal_debug_enabled(void) {
+  const char *value = getenv("DXMT_WINEMETAL_DEBUG");
+  return value && value[0] && strcmp(value, "0") != 0;
+}
+
+static FILE *
+winemetal_debug_log(void) {
+  return winemetal_debug_enabled() ? fopen("/tmp/winemetal_debug.log", "a") : NULL;
+}
 
 void
 execute_on_main(dispatch_block_t block) {
@@ -371,10 +384,25 @@ _MTLDevice_newLibraryWithSource(void *obj) {
   NSString *source = [[NSString alloc] initWithBytes:params->source.ptr
                                               length:params->source_length
                                             encoding:NSUTF8StringEncoding];
+  FILE *dl = winemetal_debug_log();
+  if (!source) {
+    if (dl) { fprintf(dl, "[winemetal] newLibraryWithSource: NSString creation FAILED for %llu bytes\n", (unsigned long long)params->source_length); fclose(dl); }
+    params->ret_library = 0;
+    params->ret_error = 0;
+    return STATUS_SUCCESS;
+  }
   MTLCompileOptions *options = [[MTLCompileOptions alloc] init];
   [options setLanguageVersion:MTLLanguageVersion3_1];
   params->ret_library = (obj_handle_t)[device newLibraryWithSource:source options:options error:&err];
   params->ret_error = (obj_handle_t)err;
+  if (dl) {
+    fprintf(dl, "[winemetal] newLibraryWithSource: lib=%p err=%p source_len=%llu\n",
+      (void*)params->ret_library, (void*)params->ret_error, (unsigned long long)params->source_length);
+    if (err) {
+      fprintf(dl, "[winemetal] compile error: %s\n", [[err localizedDescription] UTF8String]);
+    }
+    fclose(dl);
+  }
   [source release];
   [options release];
   return STATUS_SUCCESS;
@@ -384,8 +412,26 @@ static NTSTATUS
 _MTLLibrary_newFunction(void *obj) {
   struct unixcall_generic_obj_uint64_obj_ret *params = obj;
   id<MTLLibrary> library = (id<MTLLibrary>)params->handle;
+  FILE *dl = winemetal_debug_log();
+  if (!library) {
+    if (dl) { fprintf(dl, "[winemetal] newFunction called with NULL library!\n"); fclose(dl); }
+    params->ret = 0;
+    return STATUS_SUCCESS;
+  }
   NSString *name = [[NSString alloc] initWithCString:(char *)params->arg encoding:NSUTF8StringEncoding];
   params->ret = (obj_handle_t)[library newFunctionWithName:name];
+  if (!params->ret) {
+    NSArray<NSString *> *names = [library functionNames];
+    if (dl) {
+      fprintf(dl, "[winemetal] newFunction(%s) returned NULL, library has %lu functions:\n", (char *)params->arg, (unsigned long)names.count);
+      for (NSString *n in names) {
+        fprintf(dl, "[winemetal]   - %s\n", [n UTF8String]);
+      }
+    }
+  } else {
+    if (dl) { fprintf(dl, "[winemetal] newFunction(%s) -> %p OK\n", (char *)params->arg, (void*)params->ret); }
+  }
+  if (dl) fclose(dl);
   [name release];
   return STATUS_SUCCESS;
 }

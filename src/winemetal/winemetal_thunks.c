@@ -7,7 +7,10 @@
 #include "winemetal_thunks.h"
 #include <wineunixlib.h>
 #include "assert.h"
-#include "string.h"
+#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #ifdef NDEBUG
 #define UNIX_CALL(code, params) WINE_UNIX_CALL(code, params)
@@ -20,6 +23,11 @@
 #endif
 
 #define PtrToUInt64(v) ((uint64_t)(uintptr_t)(v))
+
+static int winemetal_debug_enabled(void) {
+  const char *value = getenv("DXMT_WINEMETAL_DEBUG");
+  return value && value[0] && strcmp(value, "0") != 0;
+}
 
 WINEMETAL_API void
 NSObject_retain(obj_handle_t obj) {
@@ -278,7 +286,19 @@ MTLDevice_newLibraryWithSource(
   params.source_length = source_length;
   params.ret_error = 0;
   params.ret_library = 0;
-  UNIX_CALL(133, &params);
+  NTSTATUS st = WINE_UNIX_CALL(133, &params);
+#ifndef NDEBUG
+  assert(!st && "unix call failed");
+#endif
+  if (winemetal_debug_enabled()) {
+    FILE *dl = fopen("Z:\\tmp\\winemetal_pe_debug.log", "a");
+    if (dl) {
+      fprintf(dl, "PE: newLibraryWithSource dev=%llu src_len=%llu unix_status=%ld ret_lib=%llu ret_err=%llu\n",
+        (unsigned long long)device, (unsigned long long)source_length, (long)st,
+        (unsigned long long)params.ret_library, (unsigned long long)params.ret_error);
+      fclose(dl);
+    }
+  }
   if (err_out)
     *err_out = params.ret_error;
   return params.ret_library;

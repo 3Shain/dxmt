@@ -11,6 +11,7 @@
 #include "dxil/llvm_bitcode.hpp"
 #include "dxil/dxil_to_msl.hpp"
 #include "../../libs/DXBCParser/BlobContainer.h"
+#include <cstdlib>
 #include <cstring>
 #include <unistd.h>
 #include <vector>
@@ -210,7 +211,15 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
               return false;
             }
 
-            PSTRACE("  Metal library compiled OK from source");
+            PSTRACE("  Metal library compiled OK from source lib_handle=%llu", (unsigned long long)library.handle);
+
+            const char *dump_msl = std::getenv("DXMT_DUMP_MSL");
+            if (dump_msl && dump_msl[0] && strcmp(dump_msl, "0") != 0) {
+              char dump_path[256];
+              snprintf(dump_path, sizeof(dump_path), "/tmp/dxmt_msl_%s_%016zx.metal", func_name, hash);
+              FILE *df = fopen(dump_path, "w");
+              if (df) { fwrite(msl_result->source.c_str(), 1, msl_result->source.size(), df); fclose(df); }
+            }
 
             const char *entry_name = msl_result->entry_point.c_str();
             if (strcmp(entry_name, "cs_main") != 0 &&
@@ -225,6 +234,7 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
             }
 
             out_func = library.newFunction(entry_name);
+            PSTRACE("  newFunction(%s) on lib=%llu -> func_handle=%llu", entry_name, (unsigned long long)library.handle, (unsigned long long)out_func.handle);
             if (!out_func.handle) {
               PSTRACE("  newFunction(%s) returned null, trying alternatives", entry_name);
               out_func = library.newFunction("main");

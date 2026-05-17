@@ -1096,11 +1096,12 @@ CreateSwapChain(
     return DXGI_ERROR_INVALID_CALL;
   InitReturnPtr(ppSwapChain);
 
-  DWORD window_process_id;
-  GetWindowThreadProcessId(hWnd, &window_process_id);
-  if (GetProcessId(GetCurrentProcess()) != window_process_id) {
-    ERR("CreateSwapChain: cross-process swapchain not supported yet");
-    return E_FAIL;
+  {
+    DWORD window_process_id;
+    GetWindowThreadProcessId(hWnd, &window_process_id);
+    if (GetProcessId(GetCurrentProcess()) != window_process_id) {
+      WARN("CreateSwapChain: cross-process swapchain (cef/angle gpu process), allowing");
+    }
   }
 
   Com<IMTLDXGIDevice> layer_factory;
