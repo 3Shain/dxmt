@@ -180,19 +180,26 @@ void DXILToMSL::emitFunctionPrologue(EmitContext &ctx) {
 
   os << "struct input_v {\n";
   os << "  float4 position [[position]];\n";
-  os << "  float4 v0;\n  float4 v1;\n  float4 v2;\n  float4 v3;\n";
-  os << "  float4 v4;\n  float4 v5;\n  float4 v6;\n  float4 v7;\n";
-  os << "  float2 uv0; float2 uv1; float2 uv2; float2 uv3;\n";
-  os << "  float4 color0;\n  float4 color1;\n  float4 color2;\n  float4 color3;\n";
+  os << "  float4 v0 [[user(locn0)]]; float4 v1 [[user(locn1)]];\n";
+  os << "  float4 v2 [[user(locn2)]]; float4 v3 [[user(locn3)]];\n";
+  os << "  float4 v4 [[user(locn4)]]; float4 v5 [[user(locn5)]];\n";
+  os << "  float4 v6 [[user(locn6)]]; float4 v7 [[user(locn7)]];\n";
+  os << "  float2 uv0 [[user(locn8)]]; float2 uv1 [[user(locn9)]];\n";
+  os << "  float2 uv2 [[user(locn10)]]; float2 uv3 [[user(locn11)]];\n";
+  os << "  float4 color0 [[user(locn12)]]; float4 color1 [[user(locn13)]];\n";
+  os << "  float4 color2 [[user(locn14)]]; float4 color3 [[user(locn15)]];\n";
   os << "};\n\n";
 
   os << "struct output_v {\n";
   os << "  float4 position [[position]];\n";
-  os << "  float4 v0; float4 v1; float4 v2; float4 v3;\n";
-  os << "  float2 uv0 [[user(locn0)]]; float2 uv1 [[user(locn1)]];\n";
-  os << "  float2 uv2 [[user(locn2)]]; float2 uv3 [[user(locn3)]];\n";
-  os << "  float4 color0 [[color(0)]]; float4 color1 [[color(1)]];\n";
-  os << "  float4 color2 [[color(2)]]; float4 color3 [[color(3)]];\n";
+  os << "  float4 v0 [[user(locn0)]]; float4 v1 [[user(locn1)]];\n";
+  os << "  float4 v2 [[user(locn2)]]; float4 v3 [[user(locn3)]];\n";
+  os << "  float4 v4 [[user(locn4)]]; float4 v5 [[user(locn5)]];\n";
+  os << "  float4 v6 [[user(locn6)]]; float4 v7 [[user(locn7)]];\n";
+  os << "  float2 uv0 [[user(locn8)]]; float2 uv1 [[user(locn9)]];\n";
+  os << "  float2 uv2 [[user(locn10)]]; float2 uv3 [[user(locn11)]];\n";
+  os << "  float4 color0 [[user(locn12)]]; float4 color1 [[user(locn13)]];\n";
+  os << "  float4 color2 [[user(locn14)]]; float4 color3 [[user(locn15)]];\n";
   os << "};\n\n";
 
   if (ctx.shader.kind == DxilShaderKind::Compute) {
