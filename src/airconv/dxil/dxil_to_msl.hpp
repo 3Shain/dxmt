@@ -40,6 +40,8 @@ private:
     std::vector<std::string> value_table;
     std::vector<ResourceBinding> resource_bindings;
     uint32_t next_binding = 0;
+    uint32_t unsupported_intrinsics = 0;
+    uint32_t unsupported_opcodes = 0;
     bool uses_thread_id = false;
     bool uses_group_id = false;
     bool uses_group_thread_id = false;

@@ -298,33 +298,33 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     ctx.uses_thread_id = true;
     if (!args.empty()) {
       uint32_t component = args[0];
-      if (component == 0) return "(int)dtidx.x";
-      if (component == 1) return "(int)dtidx.y";
-      if (component == 2) return "(int)dtidx.z";
+      if (component == 0) return "(int)dtid.x";
+      if (component == 1) return "(int)dtid.y";
+      if (component == 2) return "(int)dtid.z";
     }
-    return "(int)dtidx.x";
+    return "(int)dtid.x";
   }
 
   case DXOP_GroupId: {
     ctx.uses_group_id = true;
     if (!args.empty()) {
       uint32_t component = args[0];
-      if (component == 0) return "(int)ggidx.x";
-      if (component == 1) return "(int)ggidx.y";
-      if (component == 2) return "(int)ggidx.z";
+      if (component == 0) return "(int)ggid.x";
+      if (component == 1) return "(int)ggid.y";
+      if (component == 2) return "(int)ggid.z";
     }
-    return "(int)ggidx.x";
+    return "(int)ggid.x";
   }
 
   case DXOP_ThreadIDInGroup: {
     ctx.uses_group_thread_id = true;
     if (!args.empty()) {
       uint32_t component = args[0];
-      if (component == 0) return "(int)gtidx.x";
-      if (component == 1) return "(int)gtidx.y";
-      if (component == 2) return "(int)gtidx.z";
+      if (component == 0) return "(int)gtid.x";
+      if (component == 1) return "(int)gtid.y";
+      if (component == 2) return "(int)gtid.z";
     }
-    return "(int)gtidx.x";
+    return "(int)gtid.x";
   }
 
   case DXOP_CBufferLoadLegacy: {
@@ -418,6 +418,7 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
   }
 
   default:
+    ctx.unsupported_intrinsics++;
     DXTRACE("DXIL unknown intrinsic: %u", intrinsic_id);
     break;
   }
@@ -464,7 +465,14 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
       uint32_t intrinsic_id = 0;
       if (call_args.size() > 0) {
         std::string id_str = getValue(call_args[0]);
-        intrinsic_id = (uint32_t)std::stoi(id_str);
+        char *end = nullptr;
+        unsigned long parsed = std::strtoul(id_str.c_str(), &end, 10);
+        if (end && *end == '\0') {
+          intrinsic_id = (uint32_t)parsed;
+        } else {
+          ctx.unsupported_intrinsics++;
+          DXTRACE("DXIL intrinsic id is not a literal: %s", id_str.c_str());
+        }
       }
       std::vector<uint32_t> remaining_args(call_args.begin() + 1, call_args.end());
 
@@ -926,6 +934,9 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
   }
 
   default:
+    ctx.unsupported_opcodes++;
+    DXTRACE("DXIL unhandled opcode: %d type=%u operands=%zu", (int)inst.opcode,
+            inst.type_id, inst.operands.size());
     os << "  // unhandled opcode " << (int)inst.opcode << "\n";
     ensureValueTable(value_counter);
     ctx.value_table[value_counter] = result;
@@ -979,7 +990,8 @@ std::optional<MSLShader> DXILToMSL::convert(const LLVMModule &module,
   result.tg_size[1] = 1;
   result.tg_size[2] = 1;
 
-  DXTRACE("DXILToMSL: generated %zu bytes of MSL", result.source.size());
+  DXTRACE("DXILToMSL: generated %zu bytes of MSL unsupported_intrinsics=%u unsupported_opcodes=%u",
+          result.source.size(), ctx.unsupported_intrinsics, ctx.unsupported_opcodes);
 
   return result;
 }
