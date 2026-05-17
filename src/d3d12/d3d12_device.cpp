@@ -353,9 +353,13 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateGraphicsPipelineState(
   auto pso = new MTLD3D12PipelineState(this, false);
   pso->SetGraphicsDesc(*desc);
   bool compiled = pso->Compile();
-  TRACE("CreateGraphicsPSO: compile=%d VS=%p PS=%p", compiled, desc->VS.pShaderBytecode, desc->PS.pShaderBytecode);
+  TRACE("CreateGraphicsPSO: compile=%d VS=%p PS=%p stage=%s detail=%s",
+        compiled, desc->VS.pShaderBytecode, desc->PS.pShaderBytecode,
+        pso->GetCompileFailureStage(), pso->GetCompileFailureDetail());
   if (!compiled) {
-    Logger::warn("CreateGraphicsPipelineState: shader compilation deferred/failed");
+    Logger::warn(str::format("CreateGraphicsPipelineState: shader compilation deferred/failed at ",
+                             pso->GetCompileFailureStage(), ": ",
+                             pso->GetCompileFailureDetail()));
   }
   HRESULT hr = pso->QueryInterface(riid, pipeline_state);
   if (FAILED(hr))
@@ -374,9 +378,13 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateComputePipelineState(
   auto pso = new MTLD3D12PipelineState(this, true);
   pso->SetComputeDesc(*desc);
   bool compiled = pso->Compile();
-  TRACE("CreateComputePSO: compile=%d CS=%p", compiled, desc->CS.pShaderBytecode);
+  TRACE("CreateComputePSO: compile=%d CS=%p stage=%s detail=%s",
+        compiled, desc->CS.pShaderBytecode,
+        pso->GetCompileFailureStage(), pso->GetCompileFailureDetail());
   if (!compiled) {
-    Logger::warn("CreateComputePipelineState: shader compilation deferred/failed");
+    Logger::warn(str::format("CreateComputePipelineState: shader compilation deferred/failed at ",
+                             pso->GetCompileFailureStage(), ": ",
+                             pso->GetCompileFailureDetail()));
   }
   HRESULT hr = pso->QueryInterface(riid, pipeline_state);
   if (FAILED(hr))

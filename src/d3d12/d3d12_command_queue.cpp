@@ -1024,8 +1024,10 @@ struct ReplayState {
       return;
     }
 
-    QTRACE("EnsureRenderEncoder: creating render encoder rt_count=%u pso=%p compiled=%d",
-           rt_count, (void*)pso, pso ? pso->IsCompiled() : 0);
+    QTRACE("EnsureRenderEncoder: creating render encoder rt_count=%u pso=%p compiled=%d stage=%s detail=%s",
+           rt_count, (void*)pso, pso ? pso->IsCompiled() : 0,
+           pso ? pso->GetCompileFailureStage() : "no_pso",
+           pso ? pso->GetCompileFailureDetail() : "");
     render_enc = cmdbuf.renderCommandEncoder(rp);
     ENC_CREATE("render_ensure", render_enc.handle);
     if (!render_enc.handle) {
@@ -1040,6 +1042,12 @@ struct ReplayState {
         render_enc.setDepthStencilState(pso->GetDepthStencilState());
       }
       ApplyFixedFunctionState();
+    } else {
+      QTRACE("EnsureRenderEncoder: RENDER_PSO_NOT_BOUND pso=%p compiled=%d render_handle=%llu stage=%s detail=%s",
+             (void*)pso, pso ? pso->IsCompiled() : 0,
+             (unsigned long long)(pso ? pso->GetRenderPSO().handle : 0),
+             pso ? pso->GetCompileFailureStage() : "no_pso",
+             pso ? pso->GetCompileFailureDetail() : "");
     }
 
     if (viewport_count > 0) {
@@ -1409,7 +1417,11 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
           st.render_enc.setFragmentBuffer(st.arg_buf, 0, st.kArgBufSlot);
         }
         st.ApplyVertexBuffers(m_device);
-        QTRACE("DrawInstanced v=%u i=%u enc_open=%d", cmd->vertex_count, cmd->instance_count, st.render_enc_open);
+        QTRACE("DrawInstanced v=%u i=%u enc_open=%d pso=%p compiled=%d stage=%s detail=%s",
+               cmd->vertex_count, cmd->instance_count, st.render_enc_open,
+               (void*)st.pso, st.pso ? st.pso->IsCompiled() : 0,
+               st.pso ? st.pso->GetCompileFailureStage() : "no_pso",
+               st.pso ? st.pso->GetCompileFailureDetail() : "");
 
         if (cmd->instance_count > 0 && cmd->vertex_count > 0 && st.render_enc_open) {
           struct wmtcmd_render_draw draw = {};
@@ -1422,6 +1434,12 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
           draw.instance_count = cmd->instance_count;
           st.render_enc.encodeCommands(
               reinterpret_cast<const wmtcmd_render_nop *>(&draw));
+        } else {
+          QTRACE("DrawInstanced SKIPPED v=%u i=%u enc_open=%d pso=%p compiled=%d stage=%s detail=%s",
+                 cmd->vertex_count, cmd->instance_count, st.render_enc_open,
+                 (void*)st.pso, st.pso ? st.pso->IsCompiled() : 0,
+                 st.pso ? st.pso->GetCompileFailureStage() : "no_pso",
+                 st.pso ? st.pso->GetCompileFailureDetail() : "");
         }
         break;
       }
@@ -1451,11 +1469,14 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
                                         WMTRenderStageVertex);
             }
           }
-          QTRACE("DrawIndexedInstanced idx=%u inst=%u base_vertex=%d base_instance=%u ib_gpu=0x%llx ib_res=%p ib_off=%llu enc_open=%d",
+          QTRACE("DrawIndexedInstanced idx=%u inst=%u base_vertex=%d base_instance=%u ib_gpu=0x%llx ib_res=%p ib_off=%llu enc_open=%d pso=%p compiled=%d stage=%s detail=%s",
                  cmd->index_count, cmd->instance_count, cmd->base_vertex,
                  cmd->start_instance, (unsigned long long)st.ib.BufferLocation,
                  (void *)ib_res, (unsigned long long)index_buffer_offset,
-                 st.render_enc_open);
+                 st.render_enc_open, (void*)st.pso,
+                 st.pso ? st.pso->IsCompiled() : 0,
+                 st.pso ? st.pso->GetCompileFailureStage() : "no_pso",
+                 st.pso ? st.pso->GetCompileFailureDetail() : "");
           struct wmtcmd_render_draw_indexed draw = {};
           draw.type = WMTRenderCommandDrawIndexed;
           draw.next.set(nullptr);
@@ -1469,16 +1490,25 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
           draw.base_instance = cmd->start_instance;
           st.render_enc.encodeCommands(
               reinterpret_cast<const wmtcmd_render_nop *>(&draw));
+        } else {
+          QTRACE("DrawIndexedInstanced SKIPPED idx=%u inst=%u ib_gpu=0x%llx enc_open=%d pso=%p compiled=%d stage=%s detail=%s",
+                 cmd->index_count, cmd->instance_count,
+                 (unsigned long long)st.ib.BufferLocation, st.render_enc_open,
+                 (void*)st.pso, st.pso ? st.pso->IsCompiled() : 0,
+                 st.pso ? st.pso->GetCompileFailureStage() : "no_pso",
+                 st.pso ? st.pso->GetCompileFailureDetail() : "");
         }
         break;
       }
       case CmdType::Dispatch: {
         auto *cmd = reinterpret_cast<const CmdDispatch *>(header);
-        QTRACE("Dispatch x=%u y=%u z=%u pso=%p compiled=%d compute=%d heaps=%u",
+        QTRACE("Dispatch x=%u y=%u z=%u pso=%p compiled=%d compute=%d heaps=%u stage=%s detail=%s",
                cmd->x, cmd->y, cmd->z, (void*)st.pso,
                st.pso ? st.pso->IsCompiled() : 0,
                st.pso ? st.pso->IsCompute() : 0,
-               st.desc_heap_count);
+               st.desc_heap_count,
+               st.pso ? st.pso->GetCompileFailureStage() : "no_pso",
+               st.pso ? st.pso->GetCompileFailureDetail() : "");
         if (st.pso && st.pso->IsCompiled() && st.pso->IsCompute() &&
             st.pso->GetComputePSO().handle) {
           st.CloseRenderEncoder();
@@ -1662,6 +1692,13 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
             comp.encodeCommands(chain_head);
           ENC_END(comp.handle);
           comp.endEncoding();
+        } else {
+          QTRACE("Dispatch SKIPPED x=%u y=%u z=%u pso=%p compiled=%d compute=%d stage=%s detail=%s",
+                 cmd->x, cmd->y, cmd->z, (void*)st.pso,
+                 st.pso ? st.pso->IsCompiled() : 0,
+                 st.pso ? st.pso->IsCompute() : 0,
+                 st.pso ? st.pso->GetCompileFailureStage() : "no_pso",
+                 st.pso ? st.pso->GetCompileFailureDetail() : "");
         }
         break;
       }
@@ -1862,6 +1899,11 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
       case CmdType::SetPipelineState: {
         auto *cmd = reinterpret_cast<const CmdSetPipelineState *>(header);
         st.pso = static_cast<MTLD3D12PipelineState *>(cmd->pso);
+        QTRACE("SetPipelineState pso=%p compiled=%d compute=%d stage=%s detail=%s",
+               (void*)st.pso, st.pso ? st.pso->IsCompiled() : 0,
+               st.pso ? st.pso->IsCompute() : 0,
+               st.pso ? st.pso->GetCompileFailureStage() : "no_pso",
+               st.pso ? st.pso->GetCompileFailureDetail() : "");
         if (st.render_enc_open && st.pso && st.pso->IsCompiled() &&
             st.pso->GetRenderPSO().handle) {
           st.render_enc.setRenderPipelineState(st.pso->GetRenderPSO());

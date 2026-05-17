@@ -99,6 +99,20 @@ MTLD3D12PipelineState::~MTLD3D12PipelineState() {
   m_device->Release();
 }
 
+void MTLD3D12PipelineState::ClearCompileFailure() {
+  m_compile_failure_stage.clear();
+  m_compile_failure_detail.clear();
+}
+
+bool MTLD3D12PipelineState::RecordCompileFailure(const char *stage, const std::string &detail) {
+  m_compile_failure_stage = stage ? stage : "unknown";
+  m_compile_failure_detail = detail;
+  PSTRACE("PSO COMPILE FAILURE: this=%p compute=%d stage=%s detail=%s",
+          (void *)this, m_is_compute, m_compile_failure_stage.c_str(),
+          m_compile_failure_detail.c_str());
+  return false;
+}
+
 WMTPixelFormat MTLD3D12PipelineState::DXGIToMTLPixelFormat(DXGI_FORMAT format) {
   switch (format) {
   case DXGI_FORMAT_R8G8B8A8_UNORM: return WMTPixelFormatRGBA8Unorm;
@@ -233,7 +247,8 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
               PSTRACE("  DXILContainer::parse FAILED for %s", func_name);
               FILE *df = fopen(dxbc_path, "wb");
               if (df) { fwrite(bytecode, 1, size, df); fclose(df); }
-              return false;
+              return RecordCompileFailure("shader/dxil_container_parse",
+                                          str::format(func_name, " DXIL container parse failed; dumped ", dxbc_path));
             }
 
             auto &shader_info = container->shader();
@@ -247,7 +262,8 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
               PSTRACE("  BitcodeReader::parse FAILED");
               FILE *df = fopen(dxbc_path, "wb");
               if (df) { fwrite(bytecode, 1, size, df); fclose(df); }
-              return false;
+              return RecordCompileFailure("shader/bitcode_parse",
+                                          str::format(func_name, " DXIL bitcode parse failed; dumped ", dxbc_path));
             }
 
             PSTRACE("  Bitcode parsed: types=%zu functions=%zu constants=%zu",
@@ -258,7 +274,8 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
               PSTRACE("  DXILToMSL::convert FAILED");
               FILE *df = fopen(dxbc_path, "wb");
               if (df) { fwrite(bytecode, 1, size, df); fclose(df); }
-              return false;
+              return RecordCompileFailure("shader/dxil_to_msl",
+                                          str::format(func_name, " DXIL to MSL conversion failed; dumped ", dxbc_path));
             }
 
             PSTRACE("  MSL generated: %zu bytes, entry=%s", msl_result->source.size(), msl_result->entry_point.c_str());
@@ -285,7 +302,9 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
                                        err_desc ? err_desc : "unknown error"));
               FILE *df = fopen(dxbc_path, "wb");
               if (df) { fwrite(bytecode, 1, size, df); fclose(df); }
-              return false;
+              return RecordCompileFailure("shader/metal_library_source",
+                                          str::format(func_name, " MSL compile failed: ",
+                                                      err_desc ? err_desc : "unknown"));
             }
 
             PSTRACE("  Metal library compiled OK from source lib_handle=%llu", (unsigned long long)library.handle);
@@ -336,7 +355,8 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
             } else {
               PSTRACE("  newFunction returned null for all entry points");
               Logger::err(str::format("DXIL: failed to get function from compiled library for ", func_name));
-              return false;
+              return RecordCompileFailure("shader/metal_function_lookup",
+                                          str::format(func_name, " function lookup failed after MSL compile"));
             }
           }
 
@@ -409,7 +429,8 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
     if (!has_dxil) {
       PSTRACE("SM50Init FAILED for %s: %s (no DXIL chunk)", func_name, err_buf);
     }
-    return false;
+    return RecordCompileFailure(has_dxil ? "shader/dxil_metallib_cache" : "shader/sm50_init",
+                                str::format(func_name, " SM50Initialize failed: ", err_buf));
   }
 
   SM50_SHADER_COMMON_DATA common = {};
@@ -446,7 +467,8 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
     Logger::err(str::format("SM50Compile failed for ", func_name, ": ", err_buf));
     SM50FreeError(sm50_err);
     SM50Destroy(shader);
-    return false;
+    return RecordCompileFailure("shader/sm50_compile",
+                                str::format(func_name, " SM50Compile failed: ", err_buf));
   }
 
   SM50_COMPILED_BITCODE bitcode = {};
@@ -472,7 +494,9 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
     Logger::err(str::format("Failed to create Metal library for ", func_name));
     SM50DestroyBitcode(compile_result);
     SM50Destroy(shader);
-    return false;
+    return RecordCompileFailure("shader/sm50_metal_library",
+                                str::format(func_name, " SM50 Metal library creation failed: ",
+                                            err_desc ? err_desc : "unknown"));
   }
 
   out_func = library.newFunction(func_name);
@@ -491,7 +515,8 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
   if (!out_func.handle) {
     PSTRACE("Failed to get function %s from Metal library", func_name);
     Logger::err(str::format("Failed to get function ", func_name));
-    return false;
+    return RecordCompileFailure("shader/sm50_function_lookup",
+                                str::format(func_name, " SM50 function lookup failed"));
   }
 
   PSTRACE("CompileShader: %s SM50 OK function=%llu", func_name,
@@ -590,6 +615,7 @@ bool MTLD3D12PipelineState::Compile() {
   PTRACE("Compile() called compiled=%d is_compute=%d", m_compiled, m_is_compute);
   if (m_compiled)
     return true;
+  ClearCompileFailure();
 
   auto wmt_device = m_device->GetDXMTDevice().device();
   WMT::Reference<WMT::Error> err;
@@ -597,7 +623,7 @@ bool MTLD3D12PipelineState::Compile() {
   if (m_is_compute) {
     if (m_cs.empty()) {
       Logger::err("Compute PSO has no CS bytecode");
-      return false;
+      return RecordCompileFailure("pso/compute_no_cs", "Compute PSO has no CS bytecode");
     }
 
     WMT::Reference<WMT::Function> cs_func;
@@ -611,12 +637,16 @@ bool MTLD3D12PipelineState::Compile() {
 
     m_compute_pso = wmt_device.newComputePipelineState(info, err);
     if (!m_compute_pso.handle) {
-      Logger::err("Failed to create compute PSO");
+      char *err_desc = err.handle ? (char *)NSObject_description(err.handle) : nullptr;
+      Logger::err(str::format("Failed to create compute PSO: ",
+                              err_desc ? err_desc : "unknown"));
       if (m_cs_shader) {
         SM50Destroy(m_cs_shader);
         m_cs_shader = nullptr;
       }
-      return false;
+      return RecordCompileFailure("pso/metal_compute_pso",
+                                  str::format("Metal compute PSO creation failed: ",
+                                              err_desc ? err_desc : "unknown"));
     }
 
     PTRACE("CS_ARGS_DEBUG: shader=%llu NumCB=%u NumArgs=%u CBufBindIdx=%u ArgBufBindIdx=%u ArgTableQwords=%u",
@@ -838,7 +868,9 @@ bool MTLD3D12PipelineState::Compile() {
   if (!m_render_pso.handle) {
     char *err_desc = err.handle ? (char *)NSObject_description(err.handle) : nullptr;
     Logger::err(str::format("Failed to create render PSO: ", err_desc ? err_desc : "unknown"));
-    return false;
+    return RecordCompileFailure("pso/metal_render_pso",
+                                str::format("Metal render PSO creation failed: ",
+                                            err_desc ? err_desc : "unknown"));
   }
 
   if (m_depth_stencil_desc.DepthEnable || m_depth_stencil_desc.StencilEnable) {

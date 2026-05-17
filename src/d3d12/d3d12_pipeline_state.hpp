@@ -52,6 +52,12 @@ public:
 
   bool IsCompute() const { return m_is_compute; }
   bool IsCompiled() const { return m_compiled; }
+  const char *GetCompileFailureStage() const {
+    return m_compile_failure_stage.empty() ? "none" : m_compile_failure_stage.c_str();
+  }
+  const char *GetCompileFailureDetail() const {
+    return m_compile_failure_detail.empty() ? "" : m_compile_failure_detail.c_str();
+  }
 
   WMT::Reference<WMT::RenderPipelineState> GetRenderPSO() const {
     return m_render_pso;
@@ -98,6 +104,8 @@ private:
                      const char *func_name, WMT::Reference<WMT::Function> &out_func,
                      sm50_shader_t *out_shader_handle = nullptr,
                      MTL_SHADER_REFLECTION *out_reflection = nullptr);
+  void ClearCompileFailure();
+  bool RecordCompileFailure(const char *stage, const std::string &detail);
   void BuildIAInputLayout(const void *bytecode, SIZE_T size,
                           std::vector<SM50_IA_INPUT_ELEMENT> &elements,
                           uint32_t &slot_mask) const;
@@ -108,6 +116,8 @@ private:
   MTLD3D12Device *m_device;
   bool m_is_compute;
   bool m_compiled = false;
+  std::string m_compile_failure_stage;
+  std::string m_compile_failure_detail;
   ID3D12RootSignature *m_root_sig = nullptr;
   std::vector<uint8_t> m_vs, m_ps, m_gs, m_hs, m_ds, m_cs;
   D3D12_BLEND_DESC m_blend_desc = {};
