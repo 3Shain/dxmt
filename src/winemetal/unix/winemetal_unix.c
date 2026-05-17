@@ -646,7 +646,7 @@ _MTLDevice_newRenderPipelineState(void *obj) {
 
   if (info->vertex_descriptor && (info->vertex_descriptor->attribute_count > 0 || info->vertex_descriptor->layout_count > 0)) {
     MTLVertexDescriptor *vd = [[MTLVertexDescriptor alloc] init];
-    for (uint32_t i = 0; i < info->vertex_descriptor->layout_count && i < 16; i++) {
+    for (uint32_t i = 0; i < info->vertex_descriptor->layout_count && i < WMT_MAX_VERTEX_BUFFER_LAYOUTS; i++) {
       struct WMTVertexBufferLayoutDesc l = info->vertex_descriptor->layouts[i];
       if (l.stride > 0) {
         vd.layouts[i].stride = l.stride;
@@ -654,7 +654,7 @@ _MTLDevice_newRenderPipelineState(void *obj) {
         vd.layouts[i].stepRate = l.step_rate;
       }
     }
-    for (uint32_t i = 0; i < info->vertex_descriptor->attribute_count && i < 16; i++) {
+    for (uint32_t i = 0; i < info->vertex_descriptor->attribute_count && i < WMT_MAX_VERTEX_ATTRIBUTES; i++) {
       struct WMTVertexAttributeDesc a = info->vertex_descriptor->attributes[i];
       if (a.format != WMTAttributeFormatInvalid) {
         vd.attributes[i].format = (MTLVertexFormat)a.format;

@@ -2,6 +2,7 @@
 
 #include "com/com_pointer.hpp"
 #include "d3d12.h"
+#include "dxmt_format.hpp"
 #include "dxgi_interfaces.h"
 #include "dxmt_device.hpp"
 #include <atomic>
@@ -378,6 +379,7 @@ public:
 
 private:
   std::unique_ptr<Device> m_device;
+  FormatCapabilityInspector m_format_inspector;
   Com<IMTLDXGIAdapter> m_adapter;
   IMTLDXGIDevice *m_dxgi_device = nullptr;
   std::atomic<uint32_t> m_refCount = {1ul};

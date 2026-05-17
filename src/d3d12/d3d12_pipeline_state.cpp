@@ -11,6 +11,7 @@
 #include "dxil/llvm_bitcode.hpp"
 #include "dxil/dxil_to_msl.hpp"
 #include "../../libs/DXBCParser/BlobContainer.h"
+#include "../../libs/DXBCParser/DXBCUtils.h"
 #include <cstdlib>
 #include <cstring>
 #include <unistd.h>
@@ -21,6 +22,65 @@
 #define PSTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
 
 namespace dxmt {
+
+namespace {
+constexpr uint32_t kMetalD3D12VertexBufferSlotCount = 29;
+
+constexpr WMTColorWriteMask kColorWriteMaskMap[16] = {
+    (WMTColorWriteMask)0,
+    WMTColorWriteMaskRed,
+    WMTColorWriteMaskGreen,
+    (WMTColorWriteMask)(WMTColorWriteMaskRed | WMTColorWriteMaskGreen),
+    WMTColorWriteMaskBlue,
+    (WMTColorWriteMask)(WMTColorWriteMaskRed | WMTColorWriteMaskBlue),
+    (WMTColorWriteMask)(WMTColorWriteMaskGreen | WMTColorWriteMaskBlue),
+    (WMTColorWriteMask)(WMTColorWriteMaskRed | WMTColorWriteMaskGreen |
+                        WMTColorWriteMaskBlue),
+    WMTColorWriteMaskAlpha,
+    (WMTColorWriteMask)(WMTColorWriteMaskRed | WMTColorWriteMaskAlpha),
+    (WMTColorWriteMask)(WMTColorWriteMaskGreen | WMTColorWriteMaskAlpha),
+    (WMTColorWriteMask)(WMTColorWriteMaskRed | WMTColorWriteMaskGreen |
+                        WMTColorWriteMaskAlpha),
+    (WMTColorWriteMask)(WMTColorWriteMaskBlue | WMTColorWriteMaskAlpha),
+    (WMTColorWriteMask)(WMTColorWriteMaskRed | WMTColorWriteMaskBlue |
+                        WMTColorWriteMaskAlpha),
+    (WMTColorWriteMask)(WMTColorWriteMaskGreen | WMTColorWriteMaskBlue |
+                        WMTColorWriteMaskAlpha),
+    (WMTColorWriteMask)(WMTColorWriteMaskRed | WMTColorWriteMaskGreen |
+                        WMTColorWriteMaskBlue | WMTColorWriteMaskAlpha),
+};
+
+constexpr WMTCompareFunction kCompareFunctionMap[] = {
+    WMTCompareFunctionNever,
+    WMTCompareFunctionNever,
+    WMTCompareFunctionLess,
+    WMTCompareFunctionEqual,
+    WMTCompareFunctionLessEqual,
+    WMTCompareFunctionGreater,
+    WMTCompareFunctionNotEqual,
+    WMTCompareFunctionGreaterEqual,
+    WMTCompareFunctionAlways,
+};
+
+constexpr WMTStencilOperation kStencilOperationMap[] = {
+    WMTStencilOperationZero,
+    WMTStencilOperationKeep,
+    WMTStencilOperationZero,
+    WMTStencilOperationReplace,
+    WMTStencilOperationIncrementClamp,
+    WMTStencilOperationDecrementClamp,
+    WMTStencilOperationInvert,
+    WMTStencilOperationIncrementWrap,
+    WMTStencilOperationDecrementWrap,
+};
+
+uint32_t AlignD3D12InputOffset(uint32_t offset, uint32_t size) {
+  uint32_t alignment = size < 4 ? size : 4;
+  if (alignment <= 1)
+    return offset;
+  return (offset + alignment - 1) & ~(alignment - 1);
+}
+} // namespace
 
 std::mutex MTLD3D12PipelineState::s_shader_mutex;
 std::unordered_map<size_t, WMT::Reference<WMT::Function>> MTLD3D12PipelineState::s_shader_cache;
@@ -84,16 +144,33 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
                                           sm50_shader_t *out_shader_handle,
                                           MTL_SHADER_REFLECTION *out_reflection) {
   size_t hash = 0;
+  hash = hash * 131 + (size_t)type;
   if (bytecode && size > 0) {
     const uint8_t *p = (const uint8_t *)bytecode;
     for (SIZE_T i = 0; i < size; i++)
       hash = hash * 131 + p[i];
   }
+  if (type == ShaderType::Vertex) {
+    hash = hash * 131 + m_input_layout.NumElements;
+    for (UINT i = 0; i < m_input_layout.NumElements; i++) {
+      const auto &el = m_input_layout.pInputElementDescs[i];
+      hash = hash * 131 + el.SemanticIndex;
+      hash = hash * 131 + el.Format;
+      hash = hash * 131 + el.InputSlot;
+      hash = hash * 131 + el.AlignedByteOffset;
+      hash = hash * 131 + el.InputSlotClass;
+      hash = hash * 131 + el.InstanceDataStepRate;
+      if (el.SemanticName) {
+        for (const char *s = el.SemanticName; *s; s++)
+          hash = hash * 131 + (unsigned char)*s;
+      }
+    }
+  }
   {
     std::lock_guard<std::mutex> lock(s_shader_mutex);
     PSTRACE("CompileShader: %s hash=0x%zx size=%zu cache_entries=%zu", func_name, hash, size, s_shader_cache.size());
     auto it = s_shader_cache.find(hash);
-    if (it != s_shader_cache.end()) {
+    if (it != s_shader_cache.end() && !out_shader_handle && !out_reflection) {
       out_func = it->second;
       PSTRACE("CompileShader: %s CACHE HIT hash=0x%zx", func_name, hash);
       return true;
@@ -341,11 +418,31 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
   common.metal_version = SM50_SHADER_METAL_310;
   common.flags = {};
 
+  std::vector<SM50_IA_INPUT_ELEMENT> ia_elements;
+  SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout = {};
+  SM50_SHADER_COMPILATION_ARGUMENT_DATA *compile_args =
+      (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&common;
+  if (type == ShaderType::Vertex) {
+    uint32_t slot_mask = 0;
+    BuildIAInputLayout(bytecode, size, ia_elements, slot_mask);
+    m_ia_slot_mask = slot_mask;
+    ia_layout.next = &common;
+    ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
+    ia_layout.index_buffer_format = SM50_INDEX_BUFFER_FORMAT_NONE;
+    ia_layout.slot_mask = slot_mask;
+    ia_layout.num_elements = (uint32_t)ia_elements.size();
+    ia_layout.elements = ia_elements.data();
+    compile_args = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&ia_layout;
+    PSTRACE("CompileShader: %s IA args elements=%u slot_mask=0x%x",
+            func_name, ia_layout.num_elements, ia_layout.slot_mask);
+  }
+
   sm50_bitcode_t compile_result = nullptr;
-  if (SM50Compile(shader, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&common,
+  if (SM50Compile(shader, compile_args,
                   func_name, &compile_result, &sm50_err)) {
     char err_buf[256] = {};
     SM50GetErrorMessage(sm50_err, err_buf, sizeof(err_buf));
+    PSTRACE("SM50Compile failed for %s: %s", func_name, err_buf);
     Logger::err(str::format("SM50Compile failed for ", func_name, ": ", err_buf));
     SM50FreeError(sm50_err);
     SM50Destroy(shader);
@@ -369,6 +466,9 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
   auto library = wmt_device.newLibrary(lib_data, err);
 
   if (err.handle) {
+    char *err_desc = (char *)NSObject_description(err.handle);
+    PSTRACE("Failed to create Metal library for %s: %s",
+            func_name, err_desc ? err_desc : "unknown");
     Logger::err(str::format("Failed to create Metal library for ", func_name));
     SM50DestroyBitcode(compile_result);
     SM50Destroy(shader);
@@ -389,16 +489,101 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
   }
 
   if (!out_func.handle) {
+    PSTRACE("Failed to get function %s from Metal library", func_name);
     Logger::err(str::format("Failed to get function ", func_name));
     return false;
   }
 
+  PSTRACE("CompileShader: %s SM50 OK function=%llu", func_name,
+          (unsigned long long)out_func.handle);
   Logger::info(str::format("  Compiled ", func_name, " OK"));
   {
     std::lock_guard<std::mutex> lock(s_shader_mutex);
     s_shader_cache[hash] = out_func;
   }
   return true;
+}
+
+void MTLD3D12PipelineState::BuildIAInputLayout(
+    const void *bytecode, SIZE_T size,
+    std::vector<SM50_IA_INPUT_ELEMENT> &elements,
+    uint32_t &slot_mask) const {
+  slot_mask = 0;
+  elements.clear();
+
+  if (!bytecode || !size || !m_input_layout.NumElements ||
+      !m_input_layout.pInputElementDescs)
+    return;
+
+  using namespace microsoft;
+  CSignatureParser parser;
+  HRESULT hr = DXBCGetInputSignature(bytecode, &parser);
+  if (FAILED(hr)) {
+    PSTRACE("BuildIAInputLayout: DXBCGetInputSignature failed hr=0x%lx", hr);
+    return;
+  }
+
+  const D3D11_SIGNATURE_PARAMETER *params = nullptr;
+  uint32_t param_count = parser.GetParameters(&params);
+  uint32_t append_offset[WMT_MAX_VERTEX_BUFFER_LAYOUTS] = {};
+
+  for (UINT i = 0; i < m_input_layout.NumElements; i++) {
+    const auto &desc = m_input_layout.pInputElementDescs[i];
+    if (desc.InputSlot >= kMetalD3D12VertexBufferSlotCount) {
+      PSTRACE("BuildIAInputLayout skip[%u]: slot %u outside cap %u",
+              i, desc.InputSlot, kMetalD3D12VertexBufferSlotCount);
+      continue;
+    }
+
+    MTL_DXGI_FORMAT_DESC metal_format = {};
+    if (FAILED(MTLQueryDXGIFormat(m_device->GetMTLDevice(), desc.Format, metal_format)) ||
+        !metal_format.AttributeFormat || !metal_format.BytesPerTexel) {
+      PSTRACE("BuildIAInputLayout skip[%u]: unsupported fmt=%u",
+              i, (unsigned)desc.Format);
+      continue;
+    }
+
+    auto *sig = std::find_if(
+        params, params + param_count,
+        [&](const D3D11_SIGNATURE_PARAMETER &input_sig) {
+          return input_sig.SystemValue == D3D10_SB_NAME_UNDEFINED &&
+                 desc.SemanticIndex == input_sig.SemanticIndex &&
+                 desc.SemanticName && input_sig.SemanticName &&
+                 strcasecmp(desc.SemanticName, input_sig.SemanticName) == 0;
+        });
+    if (sig == params + param_count) {
+      PSTRACE("BuildIAInputLayout skip[%u]: semantic %s%u not consumed by VS",
+              i, desc.SemanticName ? desc.SemanticName : "?", desc.SemanticIndex);
+      continue;
+    }
+
+    uint32_t aligned_offset =
+        desc.AlignedByteOffset == D3D12_APPEND_ALIGNED_ELEMENT
+            ? AlignD3D12InputOffset(append_offset[desc.InputSlot],
+                                    metal_format.BytesPerTexel)
+            : desc.AlignedByteOffset;
+    append_offset[desc.InputSlot] = aligned_offset + metal_format.BytesPerTexel;
+
+    SM50_IA_INPUT_ELEMENT element = {};
+    element.reg = sig->Register;
+    element.slot = desc.InputSlot;
+    element.aligned_byte_offset = aligned_offset;
+    element.format = metal_format.AttributeFormat;
+    element.step_function =
+        desc.InputSlotClass == D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA;
+    element.step_rate =
+        desc.InputSlotClass == D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA
+            ? desc.InstanceDataStepRate
+            : 1;
+    elements.push_back(element);
+    slot_mask |= 1u << desc.InputSlot;
+
+    PSTRACE("BuildIAInputLayout element[%zu]: semantic=%s%u reg=%u slot=%u offset=%u fmt=%u step=%u/%u",
+            elements.size() - 1, desc.SemanticName ? desc.SemanticName : "?",
+            desc.SemanticIndex, element.reg, element.slot,
+            element.aligned_byte_offset, element.format,
+            element.step_function, element.step_rate);
+  }
 }
 
 bool MTLD3D12PipelineState::Compile() {
@@ -417,7 +602,7 @@ bool MTLD3D12PipelineState::Compile() {
 
     WMT::Reference<WMT::Function> cs_func;
     if (!CompileShader(m_cs.data(), m_cs.size(), ShaderType::Compute,
-                       "cs_main", cs_func))
+                       "cs_main", cs_func, &m_cs_shader, &m_cs_reflection))
       return false;
 
     WMTComputePipelineInfo info = {};
@@ -427,7 +612,42 @@ bool MTLD3D12PipelineState::Compile() {
     m_compute_pso = wmt_device.newComputePipelineState(info, err);
     if (!m_compute_pso.handle) {
       Logger::err("Failed to create compute PSO");
+      if (m_cs_shader) {
+        SM50Destroy(m_cs_shader);
+        m_cs_shader = nullptr;
+      }
       return false;
+    }
+
+    PTRACE("CS_ARGS_DEBUG: shader=%llu NumCB=%u NumArgs=%u CBufBindIdx=%u ArgBufBindIdx=%u ArgTableQwords=%u",
+      (unsigned long long)(uintptr_t)m_cs_shader,
+      m_cs_reflection.NumConstantBuffers, m_cs_reflection.NumArguments,
+      m_cs_reflection.ConstanttBufferTableBindIndex,
+      m_cs_reflection.ArgumentBufferBindIndex,
+      m_cs_reflection.ArgumentTableQwords);
+    if (m_cs_shader && (m_cs_reflection.NumArguments > 0 ||
+                        m_cs_reflection.NumConstantBuffers > 0)) {
+      if (m_cs_reflection.NumConstantBuffers > 0)
+        m_cs_cb_args.resize(m_cs_reflection.NumConstantBuffers);
+      if (m_cs_reflection.NumArguments > 0)
+        m_cs_args.resize(m_cs_reflection.NumArguments);
+      SM50GetArgumentsInfo(m_cs_shader,
+                           m_cs_cb_args.empty() ? nullptr : m_cs_cb_args.data(),
+                           m_cs_args.empty() ? nullptr : m_cs_args.data());
+      for (size_t i = 0; i < m_cs_cb_args.size(); i++) {
+        PTRACE("CS_ARGS_DEBUG: cb[%zu] type=%d slot=%u flags=0x%x offset=%u",
+          i, (int)m_cs_cb_args[i].Type, m_cs_cb_args[i].SM50BindingSlot,
+          m_cs_cb_args[i].Flags, m_cs_cb_args[i].StructurePtrOffset);
+      }
+      for (size_t i = 0; i < m_cs_args.size(); i++) {
+        PTRACE("CS_ARGS_DEBUG: arg[%zu] type=%d slot=%u flags=0x%x offset=%u",
+          i, (int)m_cs_args[i].Type, m_cs_args[i].SM50BindingSlot,
+          m_cs_args[i].Flags, m_cs_args[i].StructurePtrOffset);
+      }
+    }
+    if (m_cs_shader) {
+      SM50Destroy(m_cs_shader);
+      m_cs_shader = nullptr;
     }
 
     m_compiled = true;
@@ -439,7 +659,7 @@ bool MTLD3D12PipelineState::Compile() {
 
   if (!m_vs.empty()) {
     if (!CompileShader(m_vs.data(), m_vs.size(), ShaderType::Vertex,
-                       "vs_main", vs_func))
+                       "vs_main", vs_func, &m_vs_shader, &m_vs_reflection))
       return false;
   }
 
@@ -478,7 +698,7 @@ bool MTLD3D12PipelineState::Compile() {
     for (UINT i = 0; i < m_num_render_targets && i < 8; i++) {
       auto &rt = m_blend_desc.RenderTarget[i];
       info.colors[i].blending_enabled = rt.BlendEnable ? true : false;
-      info.colors[i].write_mask = rt.RenderTargetWriteMask;
+      info.colors[i].write_mask = kColorWriteMaskMap[rt.RenderTargetWriteMask & 0xf];
 
       auto map_blend = [](D3D12_BLEND b) -> WMTBlendFactor {
         switch (b) {
@@ -529,82 +749,90 @@ bool MTLD3D12PipelineState::Compile() {
   info.immutable_vertex_buffers = (1 << 16) | (1 << 29) | (1 << 30);
   info.immutable_fragment_buffers = (1 << 29) | (1 << 30);
 
-  auto dxgi_to_vertex_fmt = [](DXGI_FORMAT fmt) -> WMTAttributeFormat {
-    switch (fmt) {
-    case DXGI_FORMAT_R32G32B32A32_FLOAT: return WMTAttributeFormatFloat4;
-    case DXGI_FORMAT_R32G32B32_FLOAT: return WMTAttributeFormatFloat3;
-    case DXGI_FORMAT_R32G32_FLOAT: return WMTAttributeFormatFloat2;
-    case DXGI_FORMAT_R32_FLOAT: return WMTAttributeFormatFloat;
-    case DXGI_FORMAT_R16G16B16A16_FLOAT: return WMTAttributeFormatHalf4;
-    case DXGI_FORMAT_R16G16_FLOAT: return WMTAttributeFormatHalf2;
-    case DXGI_FORMAT_R16_FLOAT: return WMTAttributeFormatHalf;
-    case DXGI_FORMAT_R8G8B8A8_UNORM: return WMTAttributeFormatUChar4Normalized;
-    case DXGI_FORMAT_B8G8R8A8_UNORM: return WMTAttributeFormatUChar4Normalized_BGRA;
-    case DXGI_FORMAT_R8G8_UNORM: return WMTAttributeFormatUChar2Normalized;
-    case DXGI_FORMAT_R8_UNORM: return WMTAttributeFormatUCharNormalized;
-    case DXGI_FORMAT_R32G32B32A32_UINT: return WMTAttributeFormatUInt4;
-    case DXGI_FORMAT_R32G32B32_UINT: return WMTAttributeFormatUInt3;
-    case DXGI_FORMAT_R32G32_UINT: return WMTAttributeFormatUInt2;
-    case DXGI_FORMAT_R32_UINT: return WMTAttributeFormatUInt;
-    case DXGI_FORMAT_R16G16B16A16_UNORM: return WMTAttributeFormatUShort4Normalized;
-    case DXGI_FORMAT_R16G16_UNORM: return WMTAttributeFormatUShort2Normalized;
-    case DXGI_FORMAT_R16G16_SNORM: return WMTAttributeFormatShort2Normalized;
-    case DXGI_FORMAT_R8G8B8A8_SNORM: return WMTAttributeFormatChar4Normalized;
-    case DXGI_FORMAT_R8G8_SNORM: return WMTAttributeFormatChar2Normalized;
-    case DXGI_FORMAT_R10G10B10A2_UNORM: return WMTAttributeFormatUInt1010102Normalized;
-    default: return WMTAttributeFormatInvalid;
-    }
-  };
-
   WMTVertexDescriptor vtx_desc = {};
   if (m_input_layout.NumElements > 0 && m_input_layout.pInputElementDescs) {
-    auto fmt_size = [](DXGI_FORMAT fmt) -> uint32_t {
-      switch (fmt) {
-      case DXGI_FORMAT_R32G32B32A32_FLOAT: case DXGI_FORMAT_R32G32B32A32_UINT: case DXGI_FORMAT_R32G32B32A32_SINT: return 16;
-      case DXGI_FORMAT_R32G32B32_FLOAT: case DXGI_FORMAT_R32G32B32_UINT: case DXGI_FORMAT_R32G32B32_SINT: return 12;
-      case DXGI_FORMAT_R16G16B16A16_FLOAT: case DXGI_FORMAT_R16G16B16A16_UNORM: case DXGI_FORMAT_R16G16B16A16_UINT: return 8;
-      case DXGI_FORMAT_R32G32_FLOAT: case DXGI_FORMAT_R32G32_UINT: case DXGI_FORMAT_R32G32_SINT: return 8;
-      case DXGI_FORMAT_R10G10B10A2_UNORM: case DXGI_FORMAT_R11G11B10_FLOAT: case DXGI_FORMAT_R8G8B8A8_UNORM: case DXGI_FORMAT_B8G8R8A8_UNORM: return 4;
-      case DXGI_FORMAT_R16G16_FLOAT: case DXGI_FORMAT_R16G16_UNORM: case DXGI_FORMAT_R16G16_SNORM: return 4;
-      case DXGI_FORMAT_R32_FLOAT: case DXGI_FORMAT_R32_UINT: return 4;
-      case DXGI_FORMAT_R8G8_UNORM: case DXGI_FORMAT_R8G8_SNORM: return 2;
-      case DXGI_FORMAT_R16_FLOAT: case DXGI_FORMAT_R16_UNORM: return 2;
-      case DXGI_FORMAT_R8_UNORM: case DXGI_FORMAT_R8_SNORM: return 1;
-      default: return 4;
-      }
-    };
-
-    uint32_t slot_stride[16] = {};
+    uint32_t append_offset[WMT_MAX_VERTEX_BUFFER_LAYOUTS] = {};
+    uint32_t slot_stride[WMT_MAX_VERTEX_BUFFER_LAYOUTS] = {};
     uint32_t max_slot = 0;
-    bool slot_per_vertex[16] = {};
+    bool slot_per_vertex[WMT_MAX_VERTEX_BUFFER_LAYOUTS] = {};
+    uint32_t attribute_count = 0;
 
-    for (UINT i = 0; i < m_input_layout.NumElements && i < 16; i++) {
+    PSTRACE("D3D12 PSO input-layout: elements=%u metal_attr_cap=%u metal_slot_cap=%u",
+            m_input_layout.NumElements, WMT_MAX_VERTEX_ATTRIBUTES,
+            kMetalD3D12VertexBufferSlotCount);
+
+    for (UINT i = 0; i < m_input_layout.NumElements; i++) {
       auto &el = m_input_layout.pInputElementDescs[i];
-      auto vfmt = dxgi_to_vertex_fmt(el.Format);
-      if (vfmt != WMTAttributeFormatInvalid) {
-        vtx_desc.attributes[i].format = vfmt;
-        vtx_desc.attributes[i].offset = el.AlignedByteOffset;
-        vtx_desc.attributes[i].buffer_index = el.InputSlot;
+
+      MTL_DXGI_FORMAT_DESC metal_format = {};
+      if (FAILED(MTLQueryDXGIFormat(m_device->GetMTLDevice(), el.Format, metal_format)) ||
+          !metal_format.AttributeFormat || !metal_format.BytesPerTexel) {
+        PSTRACE("D3D12 PSO input-layout skip[%u]: unsupported fmt=%u semantic=%s%u",
+                i, (unsigned)el.Format, el.SemanticName ? el.SemanticName : "?",
+                el.SemanticIndex);
+        continue;
       }
-      uint32_t end = (el.AlignedByteOffset != D3D12_APPEND_ALIGNED_ELEMENT)
-                         ? el.AlignedByteOffset + fmt_size(el.Format)
-                         : fmt_size(el.Format);
+
+      if (el.InputSlot >= kMetalD3D12VertexBufferSlotCount) {
+        PSTRACE("D3D12 PSO input-layout skip[%u]: input slot %u is outside Metal-backed slot cap %u",
+                i, el.InputSlot, kMetalD3D12VertexBufferSlotCount);
+        continue;
+      }
+
+      if (attribute_count >= WMT_MAX_VERTEX_ATTRIBUTES) {
+        PSTRACE("D3D12 PSO input-layout skip[%u]: attribute cap %u reached",
+                i, WMT_MAX_VERTEX_ATTRIBUTES);
+        continue;
+      }
+
+      uint32_t aligned_offset =
+          el.AlignedByteOffset == D3D12_APPEND_ALIGNED_ELEMENT
+              ? AlignD3D12InputOffset(append_offset[el.InputSlot],
+                                      metal_format.BytesPerTexel)
+              : el.AlignedByteOffset;
+      uint32_t end = aligned_offset + metal_format.BytesPerTexel;
+      append_offset[el.InputSlot] = end;
       if (end > slot_stride[el.InputSlot])
         slot_stride[el.InputSlot] = end;
       if (el.InputSlot >= max_slot)
         max_slot = el.InputSlot + 1;
       slot_per_vertex[el.InputSlot] = (el.InputSlotClass == D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA);
+
+      auto &attr = vtx_desc.attributes[attribute_count++];
+      attr.format = metal_format.AttributeFormat;
+      attr.offset = aligned_offset;
+      attr.buffer_index = el.InputSlot;
+
+      PSTRACE("D3D12 PSO input-layout attr[%u]<-desc[%u]: semantic=%s%u fmt=%u mtl_fmt=%u slot=%u offset=%u stride_end=%u class=%u step=%u",
+              attribute_count - 1, i, el.SemanticName ? el.SemanticName : "?",
+              el.SemanticIndex, (unsigned)el.Format,
+              (unsigned)metal_format.AttributeFormat, el.InputSlot,
+              aligned_offset, end, (unsigned)el.InputSlotClass,
+              el.InstanceDataStepRate);
     }
-    vtx_desc.attribute_count = m_input_layout.NumElements;
+    vtx_desc.attribute_count = attribute_count;
     vtx_desc.layout_count = max_slot;
     for (uint32_t s = 0; s < max_slot; s++) {
       vtx_desc.layouts[s].stride = slot_stride[s];
       vtx_desc.layouts[s].step_function = slot_per_vertex[s]
           ? WMTVertexStepFunctionPerVertex : WMTVertexStepFunctionPerInstance;
       vtx_desc.layouts[s].step_rate = 1;
+      PSTRACE("D3D12 PSO input-layout slot[%u]: stride=%u step=%u",
+              s, slot_stride[s], (unsigned)vtx_desc.layouts[s].step_function);
     }
-    info.vertex_descriptor = &vtx_desc;
+    PSTRACE("D3D12 PSO input-layout compiled for SM50 vertex pulling; Metal vertex descriptor disabled");
   }
+
+  PSTRACE("D3D12 PSO state this=%p rts=%u dsv_fmt=%u depth=%u stencil=%u blend0=%u write_mask0=0x%x cull=%u fill=%u front_ccw=%u depth_clip=%u",
+          (void *)this, m_num_render_targets, (unsigned)m_dsv_format,
+          (unsigned)m_depth_stencil_desc.DepthEnable,
+          (unsigned)m_depth_stencil_desc.StencilEnable,
+          (unsigned)m_blend_desc.RenderTarget[0].BlendEnable,
+          (unsigned)m_blend_desc.RenderTarget[0].RenderTargetWriteMask,
+          (unsigned)m_rasterizer_desc.CullMode,
+          (unsigned)m_rasterizer_desc.FillMode,
+          (unsigned)m_rasterizer_desc.FrontCounterClockwise,
+          (unsigned)m_rasterizer_desc.DepthClipEnable);
 
   m_render_pso = wmt_device.newRenderPipelineState(info, err);
   if (!m_render_pso.handle) {
@@ -613,26 +841,100 @@ bool MTLD3D12PipelineState::Compile() {
     return false;
   }
 
-  if (m_depth_stencil_desc.DepthEnable) {
+  if (m_depth_stencil_desc.DepthEnable || m_depth_stencil_desc.StencilEnable) {
     struct WMTDepthStencilInfo ds_info = {};
+    ds_info.depth_compare_function = WMTCompareFunctionAlways;
+    ds_info.depth_write_enabled = false;
+    ds_info.front_stencil.enabled = false;
+    ds_info.back_stencil.enabled = false;
     if (m_depth_stencil_desc.DepthFunc >= D3D12_COMPARISON_FUNC_LESS &&
         m_depth_stencil_desc.DepthFunc <= D3D12_COMPARISON_FUNC_ALWAYS) {
-      ds_info.depth_compare_function = (enum WMTCompareFunction)(m_depth_stencil_desc.DepthFunc - 1);
-    } else {
-      ds_info.depth_compare_function = WMTCompareFunctionAlways;
+      ds_info.depth_compare_function =
+          kCompareFunctionMap[m_depth_stencil_desc.DepthFunc];
     }
-    ds_info.depth_write_enabled = m_depth_stencil_desc.DepthWriteMask == D3D12_DEPTH_WRITE_MASK_ALL;
+    ds_info.depth_write_enabled =
+        m_depth_stencil_desc.DepthEnable &&
+        m_depth_stencil_desc.DepthWriteMask == D3D12_DEPTH_WRITE_MASK_ALL;
+    if (m_depth_stencil_desc.StencilEnable) {
+      ds_info.front_stencil.enabled = true;
+      ds_info.front_stencil.depth_stencil_pass_op =
+          kStencilOperationMap[m_depth_stencil_desc.FrontFace.StencilPassOp];
+      ds_info.front_stencil.stencil_fail_op =
+          kStencilOperationMap[m_depth_stencil_desc.FrontFace.StencilFailOp];
+      ds_info.front_stencil.depth_fail_op =
+          kStencilOperationMap[m_depth_stencil_desc.FrontFace.StencilDepthFailOp];
+      ds_info.front_stencil.stencil_compare_function =
+          kCompareFunctionMap[m_depth_stencil_desc.FrontFace.StencilFunc];
+      ds_info.front_stencil.write_mask = m_depth_stencil_desc.StencilWriteMask;
+      ds_info.front_stencil.read_mask = m_depth_stencil_desc.StencilReadMask;
+
+      ds_info.back_stencil.enabled = true;
+      ds_info.back_stencil.depth_stencil_pass_op =
+          kStencilOperationMap[m_depth_stencil_desc.BackFace.StencilPassOp];
+      ds_info.back_stencil.stencil_fail_op =
+          kStencilOperationMap[m_depth_stencil_desc.BackFace.StencilFailOp];
+      ds_info.back_stencil.depth_fail_op =
+          kStencilOperationMap[m_depth_stencil_desc.BackFace.StencilDepthFailOp];
+      ds_info.back_stencil.stencil_compare_function =
+          kCompareFunctionMap[m_depth_stencil_desc.BackFace.StencilFunc];
+      ds_info.back_stencil.write_mask = m_depth_stencil_desc.StencilWriteMask;
+      ds_info.back_stencil.read_mask = m_depth_stencil_desc.StencilReadMask;
+    }
     m_depth_stencil_state = wmt_device.newDepthStencilState(ds_info);
   }
 
   {
-    PTRACE("PS_ARGS_DEBUG: shader=%llu NumArgs=%u ArgBufBindIdx=%u ArgTableQwords=%u",
+    PTRACE("VS_ARGS_DEBUG: shader=%llu NumCB=%u NumArgs=%u CBufBindIdx=%u ArgBufBindIdx=%u ArgTableQwords=%u",
+      (unsigned long long)(uintptr_t)m_vs_shader,
+      m_vs_reflection.NumConstantBuffers, m_vs_reflection.NumArguments,
+      m_vs_reflection.ConstanttBufferTableBindIndex,
+      m_vs_reflection.ArgumentBufferBindIndex,
+      m_vs_reflection.ArgumentTableQwords);
+    if (m_vs_shader && (m_vs_reflection.NumArguments > 0 ||
+                        m_vs_reflection.NumConstantBuffers > 0)) {
+      if (m_vs_reflection.NumConstantBuffers > 0)
+        m_vs_cb_args.resize(m_vs_reflection.NumConstantBuffers);
+      if (m_vs_reflection.NumArguments > 0)
+        m_vs_args.resize(m_vs_reflection.NumArguments);
+      SM50GetArgumentsInfo(m_vs_shader,
+                           m_vs_cb_args.empty() ? nullptr : m_vs_cb_args.data(),
+                           m_vs_args.empty() ? nullptr : m_vs_args.data());
+      for (size_t i = 0; i < m_vs_cb_args.size(); i++) {
+        PTRACE("VS_ARGS_DEBUG: cb[%zu] type=%d slot=%u flags=0x%x offset=%u",
+          i, (int)m_vs_cb_args[i].Type, m_vs_cb_args[i].SM50BindingSlot,
+          m_vs_cb_args[i].Flags, m_vs_cb_args[i].StructurePtrOffset);
+      }
+      for (size_t i = 0; i < m_vs_args.size(); i++) {
+        PTRACE("VS_ARGS_DEBUG: arg[%zu] type=%d slot=%u flags=0x%x offset=%u",
+          i, (int)m_vs_args[i].Type, m_vs_args[i].SM50BindingSlot,
+          m_vs_args[i].Flags, m_vs_args[i].StructurePtrOffset);
+      }
+      SM50Destroy(m_vs_shader);
+      m_vs_shader = nullptr;
+    }
+  }
+
+  {
+    PTRACE("PS_ARGS_DEBUG: shader=%llu NumCB=%u NumArgs=%u CBufBindIdx=%u ArgBufBindIdx=%u ArgTableQwords=%u",
       (unsigned long long)(uintptr_t)m_ps_shader,
-      m_ps_reflection.NumArguments, m_ps_reflection.ArgumentBufferBindIndex,
+      m_ps_reflection.NumConstantBuffers, m_ps_reflection.NumArguments,
+      m_ps_reflection.ConstanttBufferTableBindIndex,
+      m_ps_reflection.ArgumentBufferBindIndex,
       m_ps_reflection.ArgumentTableQwords);
-    if (m_ps_shader && m_ps_reflection.NumArguments > 0) {
-      m_ps_args.resize(m_ps_reflection.NumArguments);
-      SM50GetArgumentsInfo(m_ps_shader, nullptr, m_ps_args.data());
+    if (m_ps_shader && (m_ps_reflection.NumArguments > 0 ||
+                        m_ps_reflection.NumConstantBuffers > 0)) {
+      if (m_ps_reflection.NumConstantBuffers > 0)
+        m_ps_cb_args.resize(m_ps_reflection.NumConstantBuffers);
+      if (m_ps_reflection.NumArguments > 0)
+        m_ps_args.resize(m_ps_reflection.NumArguments);
+      SM50GetArgumentsInfo(m_ps_shader,
+                           m_ps_cb_args.empty() ? nullptr : m_ps_cb_args.data(),
+                           m_ps_args.empty() ? nullptr : m_ps_args.data());
+      for (size_t i = 0; i < m_ps_cb_args.size(); i++) {
+        PTRACE("PS_ARGS_DEBUG: cb[%zu] type=%d slot=%u flags=0x%x offset=%u",
+          i, (int)m_ps_cb_args[i].Type, m_ps_cb_args[i].SM50BindingSlot,
+          m_ps_cb_args[i].Flags, m_ps_cb_args[i].StructurePtrOffset);
+      }
       for (size_t i = 0; i < m_ps_args.size(); i++) {
         PTRACE("PS_ARGS_DEBUG: arg[%zu] type=%d slot=%u flags=0x%x offset=%u",
           i, (int)m_ps_args[i].Type, m_ps_args[i].SM50BindingSlot,
@@ -681,7 +983,21 @@ void MTLD3D12PipelineState::SetGraphicsDesc(
   m_blend_desc = desc.BlendState;
   m_rasterizer_desc = desc.RasterizerState;
   m_depth_stencil_desc = desc.DepthStencilState;
-  m_input_layout = desc.InputLayout;
+  m_input_elements.clear();
+  m_input_semantic_names.clear();
+  m_input_layout = {};
+  if (desc.InputLayout.NumElements > 0 && desc.InputLayout.pInputElementDescs) {
+    m_input_semantic_names.reserve(desc.InputLayout.NumElements);
+    m_input_elements.reserve(desc.InputLayout.NumElements);
+    for (UINT i = 0; i < desc.InputLayout.NumElements; i++) {
+      auto element = desc.InputLayout.pInputElementDescs[i];
+      m_input_semantic_names.emplace_back(element.SemanticName ? element.SemanticName : "");
+      element.SemanticName = m_input_semantic_names.back().c_str();
+      m_input_elements.push_back(element);
+    }
+    m_input_layout.NumElements = (UINT)m_input_elements.size();
+    m_input_layout.pInputElementDescs = m_input_elements.data();
+  }
   m_strip_cut_value = desc.IBStripCutValue;
   m_topology = desc.PrimitiveTopologyType;
   m_num_render_targets = desc.NumRenderTargets;

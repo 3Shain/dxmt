@@ -141,6 +141,18 @@ WMT::Reference<WMT::Texture> MTLD3D12Resource::GetMTLTexture() {
   return m_mtl_texture;
 }
 
+uint32_t MTLD3D12Resource::GetTextureArrayLength() const {
+  if (m_desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D)
+    return m_desc.DepthOrArraySize ? m_desc.DepthOrArraySize : 1;
+  return 1;
+}
+
+uint64_t MTLD3D12Resource::GetBufferByteLength() const {
+  if (m_desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
+    return m_desc.Width;
+  return m_buf_info.length;
+}
+
 MTLD3D12Resource::~MTLD3D12Resource() {
   m_device->UnregisterResource(this);
   m_mtl_buffer = nullptr;
@@ -230,6 +242,10 @@ void STDMETHODCALLTYPE MTLD3D12Resource::Unmap(
 
 D3D12_RESOURCE_DESC *STDMETHODCALLTYPE
 MTLD3D12Resource::GetDesc(D3D12_RESOURCE_DESC *__ret) {
+  if (!__ret) {
+    RTRACE("GetDesc called with null return pointer");
+    return nullptr;
+  }
   *__ret = m_desc;
   return __ret;
 }

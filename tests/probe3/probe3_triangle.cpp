@@ -4,7 +4,55 @@
 #include <dxgi1_4.h>
 #include <d3dcompiler.h>
 #include <cstdio>
+#include <cstdint>
 #include <cstring>
+#include <vector>
+
+static constexpr UINT kProbeWidth = 800;
+static constexpr UINT kProbeHeight = 600;
+
+static UINT alignUp(UINT value, UINT alignment) {
+    return (value + alignment - 1) & ~(alignment - 1);
+}
+
+static bool readbackHasTrianglePixels(ID3D12Resource* readback, UINT rowPitch) {
+    void* mapped = nullptr;
+    HRESULT hr = readback->Map(0, nullptr, &mapped);
+    if (FAILED(hr) || !mapped) {
+        fprintf(stderr, "[FAIL] Pixel readback Map: 0x%08lx\n", hr);
+        return false;
+    }
+
+    auto* bytes = static_cast<const uint8_t*>(mapped);
+    uint64_t checksum = 1469598103934665603ull;
+    uint32_t chromaPixels = 0;
+    for (UINT y = 0; y < kProbeHeight; y += 2) {
+        const uint8_t* row = bytes + y * rowPitch;
+        for (UINT x = 0; x < kProbeWidth; x += 2) {
+            const uint8_t* p = row + x * 4;
+            uint8_t maxChannel = p[0] > p[1] ? p[0] : p[1];
+            maxChannel = maxChannel > p[2] ? maxChannel : p[2];
+            uint8_t minChannel = p[0] < p[1] ? p[0] : p[1];
+            minChannel = minChannel < p[2] ? minChannel : p[2];
+            checksum ^= p[0]; checksum *= 1099511628211ull;
+            checksum ^= p[1]; checksum *= 1099511628211ull;
+            checksum ^= p[2]; checksum *= 1099511628211ull;
+            if (maxChannel > 80 && (maxChannel - minChannel) > 20) {
+                chromaPixels++;
+            }
+        }
+    }
+    readback->Unmap(0, nullptr);
+
+    fprintf(stdout, "[INFO] Pixel readback chroma_pixels=%u checksum=0x%016llx\n",
+            chromaPixels, (unsigned long long)checksum);
+    if (chromaPixels < 500) {
+        fprintf(stderr, "[FAIL] Pixel readback did not find rendered triangle color\n");
+        return false;
+    }
+    fprintf(stdout, "[PASS] Pixel readback confirmed rendered triangle color\n");
+    return true;
+}
 
 struct Vertex {
     float x, y, z;
@@ -69,7 +117,7 @@ int main() {
 
     HWND hwnd = CreateWindowA("Probe3", "AFMT Probe 3 - Vertex Buffer Triangle",
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-        CW_USEDEFAULT, CW_USEDEFAULT, 800, 600,
+        CW_USEDEFAULT, CW_USEDEFAULT, kProbeWidth, kProbeHeight,
         nullptr, nullptr, wc.hInstance, nullptr);
     if (!hwnd) { fprintf(stderr, "[FAIL] CreateWindow\n"); return 1; }
     fprintf(stdout, "[PASS] Window created\n");
@@ -91,8 +139,8 @@ int main() {
 
     DXGI_SWAP_CHAIN_DESC scd = {};
     scd.BufferCount = 2;
-    scd.BufferDesc.Width = 800;
-    scd.BufferDesc.Height = 600;
+    scd.BufferDesc.Width = kProbeWidth;
+    scd.BufferDesc.Height = kProbeHeight;
     scd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
     scd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     scd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
@@ -199,6 +247,23 @@ int main() {
     device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
     HANDLE fenceEvent = CreateEventA(nullptr, FALSE, FALSE, nullptr);
 
+    const UINT readbackPitch = alignUp(kProbeWidth * 4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
+    const UINT readbackBytes = readbackPitch * kProbeHeight;
+    D3D12_HEAP_PROPERTIES readbackHeap = {};
+    readbackHeap.Type = D3D12_HEAP_TYPE_READBACK;
+    D3D12_RESOURCE_DESC readbackDesc = {};
+    readbackDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    readbackDesc.Width = readbackBytes;
+    readbackDesc.Height = 1;
+    readbackDesc.DepthOrArraySize = 1;
+    readbackDesc.MipLevels = 1;
+    readbackDesc.SampleDesc.Count = 1;
+    readbackDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    ID3D12Resource* readback = nullptr;
+    hr = device->CreateCommittedResource(&readbackHeap, D3D12_HEAP_FLAG_NONE, &readbackDesc,
+        D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readback));
+    if (FAILED(hr)) { fprintf(stderr, "[FAIL] Readback buffer: 0x%08lx\n", hr); return 1; }
+
     fprintf(stdout, "\n=== Rendering 180 frames ===\n\n");
 
     int pass = 0, fail = 0;
@@ -221,18 +286,44 @@ int main() {
         const float clear[] = { 0.05f, 0.05f, 0.08f, 1.0f };
         cmdList->ClearRenderTargetView(rtv, clear, 0, nullptr);
 
-        D3D12_VIEWPORT vp = { 0.0f, 0.0f, 800.0f, 600.0f, 0.0f, 1.0f };
+        D3D12_VIEWPORT vp = { 0.0f, 0.0f, (float)kProbeWidth, (float)kProbeHeight, 0.0f, 1.0f };
         cmdList->RSSetViewports(1, &vp);
-        D3D12_RECT scissor = { 0, 0, 800, 600 };
+        D3D12_RECT scissor = { 0, 0, (LONG)kProbeWidth, (LONG)kProbeHeight };
         cmdList->RSSetScissorRects(1, &scissor);
 
         cmdList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         cmdList->IASetVertexBuffers(0, 1, &vbv);
         cmdList->DrawInstanced(3, 1, 0, 0);
 
+        if (frame == 30) {
+            barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+            barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+            cmdList->ResourceBarrier(1, &barrier);
+
+            D3D12_TEXTURE_COPY_LOCATION dst = {};
+            dst.pResource = readback;
+            dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+            dst.PlacedFootprint.Offset = 0;
+            dst.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            dst.PlacedFootprint.Footprint.Width = kProbeWidth;
+            dst.PlacedFootprint.Footprint.Height = kProbeHeight;
+            dst.PlacedFootprint.Footprint.Depth = 1;
+            dst.PlacedFootprint.Footprint.RowPitch = readbackPitch;
+
+            D3D12_TEXTURE_COPY_LOCATION src = {};
+            src.pResource = renderTargets[frame % 2];
+            src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+            src.SubresourceIndex = 0;
+            cmdList->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+
+            barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
+            barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+            cmdList->ResourceBarrier(1, &barrier);
+        } else {
         barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
         barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
         cmdList->ResourceBarrier(1, &barrier);
+        }
 
         cmdList->Close();
 
@@ -255,6 +346,8 @@ int main() {
         pass++;
     }
 
+    bool pixelPass = readbackHasTrianglePixels(readback, readbackPitch);
+
     queue->Signal(fence, 0xFFFFFF);
     fence->SetEventOnCompletion(0xFFFFFF, fenceEvent);
     WaitForSingleObject(fenceEvent, 10000);
@@ -265,6 +358,7 @@ int main() {
     rootSig->Release();
     cmdList->Release();
     cmdAlloc->Release();
+    readback->Release();
     vb->Release();
     renderTargets[0]->Release();
     renderTargets[1]->Release();
@@ -277,5 +371,5 @@ int main() {
     DestroyWindow(hwnd);
 
     fprintf(stdout, "\n=== PROBE 3: %d frames, %d fail ===\n", pass, fail);
-    return fail > 0 ? 1 : 0;
+    return fail > 0 || !pixelPass ? 1 : 0;
 }

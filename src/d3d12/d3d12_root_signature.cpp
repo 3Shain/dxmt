@@ -87,11 +87,81 @@ void MTLD3D12RootSignature::Parse(const void *blob, SIZE_T blob_size) {
         rp.register_space = ranges[0].register_space;
         rp.register_index = ranges[0].base_register;
       }
+      uint32_t append_offset = 0;
+      for (uint32_t r = 0; r < p->table.num_ranges; r++) {
+        RootDescriptorRange range = {};
+        range.range_type =
+            static_cast<D3D12_DESCRIPTOR_RANGE_TYPE>(ranges[r].range_type);
+        range.num_descriptors = ranges[r].num_descriptors;
+        range.base_register = ranges[r].base_register;
+        range.register_space = ranges[r].register_space;
+        range.offset_in_table =
+            ranges[r].offset_in_table == D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
+                ? append_offset
+                : ranges[r].offset_in_table;
+        rp.ranges.push_back(range);
+
+        if (range.num_descriptors != UINT32_MAX)
+          append_offset = range.offset_in_table + range.num_descriptors;
+        else
+          append_offset = range.offset_in_table;
+      }
       params += p->table.num_ranges * sizeof(RSDescriptorRange);
     }
     m_parameters.push_back(rp);
     params += sizeof(RSParameter);
   }
+}
+
+bool MTLD3D12RootSignature::FindDescriptorTableRange(
+    D3D12_DESCRIPTOR_RANGE_TYPE range_type, uint32_t shader_register,
+    uint32_t *root_parameter_index, uint32_t *descriptor_offset) const {
+  return FindDescriptorTableRangeForVisibility(
+      range_type, shader_register, D3D12_SHADER_VISIBILITY_ALL,
+      root_parameter_index, descriptor_offset);
+}
+
+bool MTLD3D12RootSignature::FindDescriptorTableRangeForVisibility(
+    D3D12_DESCRIPTOR_RANGE_TYPE range_type, uint32_t shader_register,
+    D3D12_SHADER_VISIBILITY shader_visibility, uint32_t *root_parameter_index,
+    uint32_t *descriptor_offset) const {
+  auto search = [&](bool prefer_space_zero) -> bool {
+    for (uint32_t visibility_pass = 0; visibility_pass < 2; visibility_pass++) {
+      for (uint32_t p = 0; p < m_parameters.size(); p++) {
+      const auto &param = m_parameters[p];
+      if (param.type != D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE)
+        continue;
+      if (visibility_pass == 0 &&
+          param.shader_visibility != shader_visibility)
+        continue;
+      if (visibility_pass == 1 &&
+          param.shader_visibility != D3D12_SHADER_VISIBILITY_ALL)
+        continue;
+
+      for (const auto &range : param.ranges) {
+        if (range.range_type != range_type)
+          continue;
+        if (prefer_space_zero && range.register_space != 0)
+          continue;
+        if (shader_register < range.base_register)
+          continue;
+        uint32_t relative = shader_register - range.base_register;
+        if (range.num_descriptors != UINT32_MAX &&
+            relative >= range.num_descriptors)
+          continue;
+
+        if (root_parameter_index)
+          *root_parameter_index = p;
+        if (descriptor_offset)
+          *descriptor_offset = range.offset_in_table + relative;
+        return true;
+      }
+    }
+    }
+    return false;
+  };
+
+  return search(true) || search(false);
 }
 
 HRESULT STDMETHODCALLTYPE

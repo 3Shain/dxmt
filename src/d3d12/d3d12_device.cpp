@@ -51,6 +51,40 @@ static const GUID IID_ID3D12Device12_ = {0x5af5c532, 0x4c91, 0x4cd0, {0xb5, 0x41
 
 Logger Logger::s_instance("d3d12.log");
 
+static bool has_format_capability(FormatCapability capabilities,
+                                  FormatCapability capability) {
+  return (static_cast<int>(capabilities) & static_cast<int>(capability)) != 0;
+}
+
+static FormatCapability query_format_capability(
+    const FormatCapabilityInspector &inspector, WMTPixelFormat format) {
+  format = ORIGINAL_FORMAT(format);
+  auto iter = inspector.textureCapabilities.find(format);
+  if (iter == inspector.textureCapabilities.end())
+    return FormatCapability::None;
+  return iter->second;
+}
+
+static bool format_is_stream_output_compatible(DXGI_FORMAT format) {
+  switch (format) {
+  case DXGI_FORMAT_R32_FLOAT:
+  case DXGI_FORMAT_R32_UINT:
+  case DXGI_FORMAT_R32_SINT:
+  case DXGI_FORMAT_R32G32_FLOAT:
+  case DXGI_FORMAT_R32G32_UINT:
+  case DXGI_FORMAT_R32G32_SINT:
+  case DXGI_FORMAT_R32G32B32_FLOAT:
+  case DXGI_FORMAT_R32G32B32_UINT:
+  case DXGI_FORMAT_R32G32B32_SINT:
+  case DXGI_FORMAT_R32G32B32A32_FLOAT:
+  case DXGI_FORMAT_R32G32B32A32_UINT:
+  case DXGI_FORMAT_R32G32B32A32_SINT:
+    return true;
+  default:
+    return false;
+  }
+}
+
 class MTLD3D12CommandSignature : public ComObject<ID3D12CommandSignature> {
 public:
   MTLD3D12CommandSignature(MTLD3D12Device *device, const D3D12_COMMAND_SIGNATURE_DESC &desc)
@@ -141,14 +175,16 @@ static void device_vtable_watcher() {
 MTLD3D12Device::MTLD3D12Device(std::unique_ptr<Device> &&device,
                                IMTLDXGIAdapter *pAdapter)
     : m_device(std::move(device)), m_adapter(pAdapter) {
+  m_format_inspector.Inspect(GetMTLDevice());
   if (m_adapter)
     m_adapter->AddRef();
   m_expected_vtable = *(void**)this;
-  g_device_this = (void*)this;
-  g_device_expected_vtable = m_expected_vtable;
-  g_device_expected_m_device = (uint64_t)m_device.get();
-  TRACE("Device ctor: this=%p vtable=%p m_device=%p sizeof=%zu",
-    (void*)this, m_expected_vtable, (void*)m_device.get(), sizeof(MTLD3D12Device));
+	  g_device_this = (void*)this;
+	  g_device_expected_vtable = m_expected_vtable;
+	  g_device_expected_m_device = (uint64_t)m_device.get();
+	  TRACE("M12 feature contract build=full_caps_current_pipeline_20260517");
+	  TRACE("Device ctor: this=%p vtable=%p m_device=%p sizeof=%zu",
+	    (void*)this, m_expected_vtable, (void*)m_device.get(), sizeof(MTLD3D12Device));
   extern void *g_d3d12_device_addr;
   extern size_t g_d3d12_device_size;
   g_d3d12_device_addr = (void*)this;
@@ -382,13 +418,14 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
       return E_INVALIDARG;
     opts->DoublePrecisionFloatShaderOps = FALSE;
     opts->OutputMergerLogicOp = TRUE;
-    opts->MinPrecisionSupport = D3D12_SHADER_MIN_PRECISION_SUPPORT_10_BIT;
-    opts->TiledResourcesTier = D3D12_TILED_RESOURCES_TIER_2;
-    opts->ResourceBindingTier = D3D12_RESOURCE_BINDING_TIER_3;
+	    opts->MinPrecisionSupport = D3D12_SHADER_MIN_PRECISION_SUPPORT_10_BIT |
+	                                D3D12_SHADER_MIN_PRECISION_SUPPORT_16_BIT;
+	    opts->TiledResourcesTier = D3D12_TILED_RESOURCES_TIER_2;
+	    opts->ResourceBindingTier = D3D12_RESOURCE_BINDING_TIER_3;
     opts->PSSpecifiedStencilRefSupported = TRUE;
-    opts->TypedUAVLoadAdditionalFormats = TRUE;
-    opts->ROVsSupported = TRUE;
-    opts->ConservativeRasterizationTier = D3D12_CONSERVATIVE_RASTERIZATION_TIER_3;
+	    opts->TypedUAVLoadAdditionalFormats = TRUE;
+	    opts->ROVsSupported = TRUE;
+	    opts->ConservativeRasterizationTier = D3D12_CONSERVATIVE_RASTERIZATION_TIER_3;
     opts->MaxGPUVirtualAddressBitsPerResource = 40;
     opts->StandardSwizzle64KBSupported = FALSE;
     opts->CrossNodeSharingTier = D3D12_CROSS_NODE_SHARING_TIER_NOT_SUPPORTED;
@@ -419,8 +456,8 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
       return E_INVALIDARG;
     fl->MaxSupportedFeatureLevel = D3D_FEATURE_LEVEL_9_1;
     for (UINT i = 0; i < fl->NumFeatureLevels; i++) {
-      if (fl->pFeatureLevelsRequested[i] <= D3D_FEATURE_LEVEL_12_1 &&
-          fl->pFeatureLevelsRequested[i] > fl->MaxSupportedFeatureLevel) {
+	      if (fl->pFeatureLevelsRequested[i] <= D3D_FEATURE_LEVEL_12_1 &&
+	          fl->pFeatureLevelsRequested[i] > fl->MaxSupportedFeatureLevel) {
         fl->MaxSupportedFeatureLevel = fl->pFeatureLevelsRequested[i];
       }
     }
@@ -432,27 +469,152 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     if (feature_data_size < sizeof(*fmt))
       return E_INVALIDARG;
     TRACE("  FORMAT_SUPPORT: format=%u", (unsigned)fmt->Format);
-    fmt->Support1 = (D3D12_FORMAT_SUPPORT1)(
-        D3D12_FORMAT_SUPPORT1_TEXTURE2D | D3D12_FORMAT_SUPPORT1_RENDER_TARGET |
-        D3D12_FORMAT_SUPPORT1_DEPTH_STENCIL |
-        D3D12_FORMAT_SUPPORT1_SHADER_SAMPLE |
-        D3D12_FORMAT_SUPPORT1_SHADER_LOAD |
-        D3D12_FORMAT_SUPPORT1_SHADER_SAMPLE_COMPARISON |
-        D3D12_FORMAT_SUPPORT1_BUFFER |
-        D3D12_FORMAT_SUPPORT1_IA_INDEX_BUFFER |
-        D3D12_FORMAT_SUPPORT1_IA_VERTEX_BUFFER |
-        D3D12_FORMAT_SUPPORT1_TYPED_UNORDERED_ACCESS_VIEW |
-        D3D12_FORMAT_SUPPORT1_MULTISAMPLE_RENDERTARGET |
-        D3D12_FORMAT_SUPPORT1_MULTISAMPLE_RESOLVE |
-        D3D12_FORMAT_SUPPORT1_DISPLAY);
-    fmt->Support2 = (D3D12_FORMAT_SUPPORT2)(
-        D3D12_FORMAT_SUPPORT2_UAV_TYPED_LOAD | D3D12_FORMAT_SUPPORT2_UAV_TYPED_STORE |
-        D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_ADD |
-        D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_BITWISE_OPS |
-        D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_COMPARE_STORE_OR_COMPARE_EXCHANGE |
-        D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_EXCHANGE |
-        D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_SIGNED_MIN_OR_MAX |
-        D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX);
+    fmt->Support1 = D3D12_FORMAT_SUPPORT1_NONE;
+    fmt->Support2 = D3D12_FORMAT_SUPPORT2_NONE;
+
+    if (fmt->Format == DXGI_FORMAT_UNKNOWN) {
+      fmt->Support1 = D3D12_FORMAT_SUPPORT1_BUFFER;
+      fmt->Support2 = (D3D12_FORMAT_SUPPORT2)(
+          D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_ADD |
+          D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_BITWISE_OPS |
+          D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_COMPARE_STORE_OR_COMPARE_EXCHANGE |
+          D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_EXCHANGE |
+          D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_SIGNED_MIN_OR_MAX |
+          D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX |
+          D3D12_FORMAT_SUPPORT2_UAV_TYPED_LOAD |
+          D3D12_FORMAT_SUPPORT2_UAV_TYPED_STORE);
+      TRACE("  FORMAT_SUPPORT: format=%u Support1=0x%x Support2=0x%x",
+            (unsigned)fmt->Format, (unsigned)fmt->Support1,
+            (unsigned)fmt->Support2);
+      return S_OK;
+    }
+
+    MTL_DXGI_FORMAT_DESC metal_format;
+    if (FAILED(MTLQueryDXGIFormat(GetMTLDevice(), fmt->Format, metal_format))) {
+      TRACE("  FORMAT_SUPPORT: format=%u unsupported by MTLQueryDXGIFormat",
+            (unsigned)fmt->Format);
+      return E_INVALIDARG;
+    }
+
+    D3D12_FORMAT_SUPPORT1 support1 = D3D12_FORMAT_SUPPORT1_NONE;
+    D3D12_FORMAT_SUPPORT2 support2 = D3D12_FORMAT_SUPPORT2_NONE;
+
+    if (metal_format.PixelFormat) {
+      support1 = (D3D12_FORMAT_SUPPORT1)(
+          support1 | D3D12_FORMAT_SUPPORT1_SHADER_LOAD |
+          D3D12_FORMAT_SUPPORT1_SHADER_SAMPLE |
+          D3D12_FORMAT_SUPPORT1_SHADER_GATHER |
+          D3D12_FORMAT_SUPPORT1_MULTISAMPLE_LOAD |
+          D3D12_FORMAT_SUPPORT1_TEXTURE1D |
+          D3D12_FORMAT_SUPPORT1_TEXTURE2D |
+          D3D12_FORMAT_SUPPORT1_TEXTURE3D |
+          D3D12_FORMAT_SUPPORT1_TEXTURECUBE |
+          D3D12_FORMAT_SUPPORT1_MIP |
+          D3D12_FORMAT_SUPPORT1_CAST_WITHIN_BIT_LAYOUT);
+
+      if (!(metal_format.Flag & (MTL_DXGI_FORMAT_BC |
+                                 MTL_DXGI_FORMAT_DEPTH_PLANER |
+                                 MTL_DXGI_FORMAT_STENCIL_PLANER))) {
+        support1 = (D3D12_FORMAT_SUPPORT1)(support1 |
+                                           D3D12_FORMAT_SUPPORT1_BUFFER);
+      }
+
+      if (metal_format.Flag & MTL_DXGI_FORMAT_BACKBUFFER) {
+        support1 = (D3D12_FORMAT_SUPPORT1)(support1 |
+                                           D3D12_FORMAT_SUPPORT1_DISPLAY);
+      }
+    }
+
+    if (metal_format.AttributeFormat) {
+      support1 = (D3D12_FORMAT_SUPPORT1)(support1 |
+                                         D3D12_FORMAT_SUPPORT1_IA_VERTEX_BUFFER);
+    }
+
+    if (metal_format.PixelFormat == WMTPixelFormatR32Uint ||
+        metal_format.PixelFormat == WMTPixelFormatR16Uint) {
+      support1 = (D3D12_FORMAT_SUPPORT1)(support1 |
+                                         D3D12_FORMAT_SUPPORT1_IA_INDEX_BUFFER);
+    }
+
+    auto capability =
+        query_format_capability(m_format_inspector, metal_format.PixelFormat);
+
+    if (has_format_capability(capability, FormatCapability::Color)) {
+      support1 = (D3D12_FORMAT_SUPPORT1)(support1 |
+                                         D3D12_FORMAT_SUPPORT1_RENDER_TARGET);
+    }
+
+    if (has_format_capability(capability, FormatCapability::Blend)) {
+      support1 = (D3D12_FORMAT_SUPPORT1)(support1 |
+                                         D3D12_FORMAT_SUPPORT1_BLENDABLE);
+    }
+
+    if (has_format_capability(capability, FormatCapability::DepthStencil)) {
+      support1 = (D3D12_FORMAT_SUPPORT1)(
+          support1 | D3D12_FORMAT_SUPPORT1_DEPTH_STENCIL |
+          D3D12_FORMAT_SUPPORT1_SHADER_SAMPLE_COMPARISON |
+          D3D12_FORMAT_SUPPORT1_SHADER_GATHER_COMPARISON);
+    }
+
+    if (has_format_capability(capability, FormatCapability::Resolve)) {
+      support1 = (D3D12_FORMAT_SUPPORT1)(
+          support1 | D3D12_FORMAT_SUPPORT1_MULTISAMPLE_RESOLVE);
+    }
+
+    if (has_format_capability(capability, FormatCapability::MSAA)) {
+      support1 = (D3D12_FORMAT_SUPPORT1)(
+          support1 | D3D12_FORMAT_SUPPORT1_MULTISAMPLE_RENDERTARGET);
+    }
+
+    if (has_format_capability(capability, FormatCapability::Write)) {
+      support1 = (D3D12_FORMAT_SUPPORT1)(
+          support1 | D3D12_FORMAT_SUPPORT1_TYPED_UNORDERED_ACCESS_VIEW);
+    }
+
+    if (format_is_stream_output_compatible(fmt->Format)) {
+      support1 = (D3D12_FORMAT_SUPPORT1)(support1 |
+                                         D3D12_FORMAT_SUPPORT1_SO_BUFFER);
+    }
+
+    if (has_format_capability(capability, FormatCapability::TextureBufferRead)) {
+      support2 = (D3D12_FORMAT_SUPPORT2)(support2 |
+                                         D3D12_FORMAT_SUPPORT2_UAV_TYPED_LOAD);
+    }
+
+    if (has_format_capability(capability, FormatCapability::TextureBufferWrite)) {
+      support2 = (D3D12_FORMAT_SUPPORT2)(support2 |
+                                         D3D12_FORMAT_SUPPORT2_UAV_TYPED_STORE);
+    }
+
+    if (has_format_capability(capability,
+                              FormatCapability::TextureBufferReadWrite)) {
+      support2 = (D3D12_FORMAT_SUPPORT2)(
+          support2 | D3D12_FORMAT_SUPPORT2_UAV_TYPED_LOAD |
+          D3D12_FORMAT_SUPPORT2_UAV_TYPED_STORE);
+    }
+
+    if (has_format_capability(capability, FormatCapability::Atomic)) {
+      support2 = (D3D12_FORMAT_SUPPORT2)(
+          support2 | D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_ADD |
+          D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_BITWISE_OPS |
+          D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_COMPARE_STORE_OR_COMPARE_EXCHANGE |
+          D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_EXCHANGE |
+          D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_SIGNED_MIN_OR_MAX |
+          D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX);
+    }
+
+    if (has_format_capability(capability, FormatCapability::Blend)) {
+      support2 = (D3D12_FORMAT_SUPPORT2)(
+          support2 | D3D12_FORMAT_SUPPORT2_OUTPUT_MERGER_LOGIC_OP);
+    }
+
+    if (has_format_capability(capability, FormatCapability::Sparse)) {
+      support2 =
+          (D3D12_FORMAT_SUPPORT2)(support2 | D3D12_FORMAT_SUPPORT2_TILED);
+    }
+
+    fmt->Support1 = support1;
+    fmt->Support2 = support2;
     TRACE("  FORMAT_SUPPORT: format=%u Support1=0x%x Support2=0x%x",
           (unsigned)fmt->Format, (unsigned)fmt->Support1, (unsigned)fmt->Support2);
     return S_OK;
@@ -484,7 +646,7 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     auto *sm = (D3D12_FEATURE_DATA_SHADER_MODEL *)feature_data;
     if (feature_data_size < sizeof(*sm))
       return E_INVALIDARG;
-    sm->HighestShaderModel = D3D_SHADER_MODEL_6_5;
+	    sm->HighestShaderModel = D3D_SHADER_MODEL_6_5;
     TRACE("  SHADER_MODEL: HighestSM=%u", (unsigned)sm->HighestShaderModel);
     return S_OK;
   }
@@ -492,12 +654,12 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     auto *o = (D3D12_FEATURE_DATA_D3D12_OPTIONS1 *)feature_data;
     if (feature_data_size < sizeof(*o))
       return E_INVALIDARG;
-    o->WaveOps = TRUE;
-    o->WaveLaneCountMin = 4;
-    o->WaveLaneCountMax = 64;
-    o->TotalLaneCount = 256;
-    o->ExpandedComputeResourceStates = FALSE;
-    o->Int64ShaderOps = TRUE;
+	    o->WaveOps = TRUE;
+	    o->WaveLaneCountMin = 32;
+	    o->WaveLaneCountMax = 32;
+	    o->TotalLaneCount = 1024;
+	    o->ExpandedComputeResourceStates = FALSE;
+	    o->Int64ShaderOps = TRUE;
     return S_OK;
   }
   case D3D12_FEATURE_ROOT_SIGNATURE: {
@@ -522,8 +684,8 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     auto *o = (D3D12_FEATURE_DATA_D3D12_OPTIONS2 *)feature_data;
     if (feature_data_size < sizeof(*o))
       return E_INVALIDARG;
-    o->DepthBoundsTestSupported = TRUE;
-    o->ProgrammableSamplePositionsTier = D3D12_PROGRAMMABLE_SAMPLE_POSITIONS_TIER_1;
+	    o->DepthBoundsTestSupported = TRUE;
+	    o->ProgrammableSamplePositionsTier = D3D12_PROGRAMMABLE_SAMPLE_POSITIONS_TIER_1;
     return S_OK;
   }
   case D3D12_FEATURE_SHADER_CACHE: {
@@ -538,8 +700,9 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     if (feature_data_size < sizeof(*o))
       return E_INVALIDARG;
     o->CopyQueueTimestampQueriesSupported = FALSE;
-    o->CastingFullyTypedFormatSupported = TRUE;
-    o->WriteBufferImmediateSupportFlags = D3D12_COMMAND_LIST_SUPPORT_FLAG_DIRECT;
+	    o->CastingFullyTypedFormatSupported = TRUE;
+	    o->WriteBufferImmediateSupportFlags = D3D12_COMMAND_LIST_SUPPORT_FLAG_DIRECT |
+	                                         D3D12_COMMAND_LIST_SUPPORT_FLAG_COMPUTE;
     o->ViewInstancingTier = D3D12_VIEW_INSTANCING_TIER_NOT_SUPPORTED;
     o->BarycentricsSupported = FALSE;
     TRACE("  OPTIONS3: CopyQueueTS=%d CastFullyTyped=%d WriteBufImm=0x%x ViewInstTier=%u Bary=%d",
@@ -753,6 +916,12 @@ void STDMETHODCALLTYPE MTLD3D12Device::CreateRenderTargetView(
     if (desc)
       d->rtv = *desc;
     d->type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    auto *dxmt_res = static_cast<MTLD3D12Resource *>(resource);
+    TRACE("CreateRenderTargetView desc=%p res=%p tex=%llu fmt=%u dim=%u",
+          (void*)d, (void*)resource,
+          dxmt_res ? (unsigned long long)dxmt_res->GetMTLTexture().handle : 0ull,
+          desc ? (unsigned)desc->Format : 0u,
+          desc ? (unsigned)desc->ViewDimension : 0u);
   }
 }
 
@@ -863,6 +1032,20 @@ MTLD3D12Device::CreateSampler(const D3D12_SAMPLER_DESC *desc,
 
     d->metal_sampler = GetMTLDevice().newSamplerState(info);
     d->metal_sampler_gpu_id = info.gpu_resource_id;
+
+    WMTSamplerInfo cube_info = info;
+    if (cube_info.min_filter == WMTSamplerMinMagFilterLinear &&
+        cube_info.mag_filter == WMTSamplerMinMagFilterLinear) {
+      cube_info.s_address_mode = WMTSamplerAddressModeClampToBorderColor;
+      cube_info.t_address_mode = WMTSamplerAddressModeClampToBorderColor;
+      cube_info.r_address_mode = WMTSamplerAddressModeClampToBorderColor;
+    } else {
+      cube_info.s_address_mode = WMTSamplerAddressModeClampToEdge;
+      cube_info.t_address_mode = WMTSamplerAddressModeClampToEdge;
+      cube_info.r_address_mode = WMTSamplerAddressModeClampToEdge;
+    }
+    d->metal_sampler_cube = GetMTLDevice().newSamplerState(cube_info);
+    d->metal_sampler_cube_gpu_id = cube_info.gpu_resource_id;
   }
 }
 
@@ -1153,9 +1336,10 @@ MTLD3D12Resource *MTLD3D12Device::LookupResourceByGPUAddress(D3D12_GPU_VIRTUAL_A
   if (it != m_resources_by_gpu_addr.end())
     return it->second;
   for (auto &[gpu_addr, res] : m_resources_by_gpu_addr) {
-    auto *desc = res->GetDesc({});
-    if (desc && desc->Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
-      if (addr >= gpu_addr && addr < gpu_addr + desc->Width)
+    D3D12_RESOURCE_DESC desc = {};
+    res->GetDesc(&desc);
+    if (desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
+      if (addr >= gpu_addr && addr < gpu_addr + desc.Width)
         return res;
     }
   }

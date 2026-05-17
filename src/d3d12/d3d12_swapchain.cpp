@@ -49,6 +49,8 @@ MTLD3D12SwapChain::MTLD3D12SwapChain(
 
   auto wmt_dev = dxgi_device->GetMTLDevice();
   m_present_queue = wmt_dev.newCommandQueue(1);
+  m_present_library = std::make_unique<InternalCommandLibrary>(wmt_dev);
+  m_presenter = Rc(new Presenter(wmt_dev, m_layer, *m_present_library, 1.0f, 1));
 
   ResizeBuffers(0, m_desc.Width, m_desc.Height, m_desc.Format, m_desc.Flags);
   Logger::info(str::format("D3D12SwapChain: ", m_desc.Width, "x", m_desc.Height,
@@ -62,6 +64,40 @@ MTLD3D12SwapChain::~MTLD3D12SwapChain() {
     WMT::ReleaseMetalView(m_native_view);
   if (m_device)
     m_device->Release();
+}
+
+void MTLD3D12SwapChain::ConfigureLayer() {
+  if (!m_layer.handle)
+    return;
+
+  auto format = DXGIToMTL(m_desc.Format);
+  auto width = m_desc.Width ? m_desc.Width : 1;
+  auto height = m_desc.Height ? m_desc.Height : 1;
+  auto sample_count = m_desc.SampleDesc.Count ? m_desc.SampleDesc.Count : 1;
+
+  if (m_presenter) {
+    m_presenter->changeLayerProperties(format, WMTColorSpaceSRGB, width, height, sample_count);
+  } else {
+    WMTLayerProps props = {};
+    m_layer.getProps(props);
+    props.device = m_dxgi_device->GetMTLDevice();
+    props.opaque = true;
+    props.display_sync_enabled = false;
+    props.framebuffer_only = false;
+    if (props.contents_scale == 0.0)
+      props.contents_scale = 1.0;
+    props.drawable_width = width;
+    props.drawable_height = height;
+    props.pixel_format = format;
+    m_layer.setProps(props);
+  }
+
+  WMTLayerProps props = {};
+  m_layer.getProps(props);
+  SCTRACE("ConfigureLayer drawable=%gx%g scale=%g fmt=%u framebuffer_only=%d presenter=%d",
+          props.drawable_width, props.drawable_height, props.contents_scale,
+          (unsigned)props.pixel_format, (int)props.framebuffer_only,
+          m_presenter ? 1 : 0);
 }
 
 HRESULT STDMETHODCALLTYPE
@@ -193,6 +229,7 @@ MTLD3D12SwapChain::ResizeBuffers(UINT buffer_count, UINT width, UINT height,
   }
   m_desc.Width = width;
   m_desc.Height = height;
+  ConfigureLayer();
 
   D3D12_RESOURCE_DESC res_desc = {};
   res_desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -215,6 +252,11 @@ MTLD3D12SwapChain::ResizeBuffers(UINT buffer_count, UINT width, UINT height,
     m_backbuffers[i] = new MTLD3D12Resource(m_device, res_desc,
                                              D3D12_RESOURCE_STATE_RENDER_TARGET,
                                              heap_props);
+    auto *res = static_cast<MTLD3D12Resource *>(m_backbuffers[i].ptr());
+    SCTRACE("ResizeBuffers backbuffer[%u] res=%p tex=%llu w=%u h=%u fmt=%u",
+      i, (void*)res,
+      res ? (unsigned long long)res->GetMTLTexture().handle : 0ull,
+      m_desc.Width, m_desc.Height, (unsigned)m_desc.Format);
   }
   return S_OK;
 }
@@ -294,44 +336,69 @@ MTLD3D12SwapChain::Present1(UINT sync_interval, UINT flags,
 
   auto cmdbuf = m_present_queue.commandBuffer();
 
-  auto drawable = m_layer.nextDrawable();
-  if (!drawable.handle) {
-    SCTRACE("SwapChain::Present sync=%u flags=0x%x NO DRAWABLE", sync_interval, flags);
-    cmdbuf.commit();
-    return S_OK;
-  }
-
-  auto dst_texture = drawable.texture();
   auto *res = static_cast<MTLD3D12Resource *>(m_backbuffers[m_current_buffer].ptr());
   auto src_texture = res->GetMTLTexture();
 
-  SCTRACE("SwapChain::Present blit: idx=%u src=%p dst=%p w=%u h=%u",
-    m_current_buffer, src_texture.handle, dst_texture.handle, m_desc.Width, m_desc.Height);
+  if (m_presenter && src_texture.handle) {
+    auto state = m_presenter->synchronizeLayerProperties();
+    auto drawable = m_presenter->encodeCommands(
+        cmdbuf, src_texture, state.metadata,
+        [](WMT::RenderCommandEncoder) {},
+        [](WMT::RenderCommandEncoder) {});
+    if (!drawable.handle) {
+      SCTRACE("SwapChain::Present presenter sync=%u flags=0x%x NO DRAWABLE", sync_interval, flags);
+      cmdbuf.commit();
+      return S_OK;
+    }
 
-  if (src_texture.handle && dst_texture.handle) {
-    auto blit = cmdbuf.blitCommandEncoder();
-    uint64_t _sc_eid = __atomic_add_fetch(&g_sc_enc_id, 1, __ATOMIC_SEQ_CST);
-    SCTRACE("[SC_ENC+%llu] CREATE blit handle=%llu", (unsigned long long)_sc_eid, (unsigned long long)blit.handle);
-    struct wmtcmd_blit_copy_from_texture_to_texture copy = {};
-    copy.type = WMTBlitCommandCopyFromTextureToTexture;
-    copy.next.set(nullptr);
-    copy.src = src_texture;
-    copy.src_slice = 0;
-    copy.src_level = 0;
-    copy.src_origin = {0, 0, 0};
-    copy.src_size = {m_desc.Width, m_desc.Height, 1};
-    copy.dst = dst_texture;
-    copy.dst_slice = 0;
-    copy.dst_level = 0;
-    copy.dst_origin = {0, 0, 0};
-    blit.encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&copy));
-    SCTRACE("[SC_ENC] END handle=%llu", (unsigned long long)blit.handle);
-    blit.endEncoding();
+    SCTRACE("Present presenter: idx=%u res=%p src=%llu drawable=%llu w=%u h=%u",
+      m_current_buffer, (void*)res,
+      (unsigned long long)src_texture.handle,
+      (unsigned long long)drawable.texture().handle, m_desc.Width, m_desc.Height);
+
+    cmdbuf.presentDrawable(drawable);
+    SCTRACE("[SC_ENC] COMMIT presenter cmdbuf=%llu", (unsigned long long)cmdbuf.handle);
+    cmdbuf.commit();
+  } else {
+    auto drawable = m_layer.nextDrawable();
+    if (!drawable.handle) {
+      SCTRACE("SwapChain::Present sync=%u flags=0x%x NO DRAWABLE", sync_interval, flags);
+      cmdbuf.commit();
+      return S_OK;
+    }
+
+    auto dst_texture = drawable.texture();
+
+    SCTRACE("Present blit: idx=%u res=%p src=%llu dst=%llu w=%u h=%u",
+    m_current_buffer, (void*)res,
+    (unsigned long long)src_texture.handle,
+    (unsigned long long)dst_texture.handle, m_desc.Width, m_desc.Height);
+
+    if (src_texture.handle && dst_texture.handle) {
+      auto blit = cmdbuf.blitCommandEncoder();
+      uint64_t _sc_eid = __atomic_add_fetch(&g_sc_enc_id, 1, __ATOMIC_SEQ_CST);
+      SCTRACE("[SC_ENC+%llu] CREATE blit handle=%llu", (unsigned long long)_sc_eid, (unsigned long long)blit.handle);
+      struct wmtcmd_blit_copy_from_texture_to_texture copy = {};
+      copy.type = WMTBlitCommandCopyFromTextureToTexture;
+      copy.next.set(nullptr);
+      copy.src = src_texture;
+      copy.src_slice = 0;
+      copy.src_level = 0;
+      copy.src_origin = {0, 0, 0};
+      copy.src_size = {m_desc.Width, m_desc.Height, 1};
+      copy.dst = dst_texture;
+      copy.dst_slice = 0;
+      copy.dst_level = 0;
+      copy.dst_origin = {0, 0, 0};
+      blit.encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&copy));
+      SCTRACE("[SC_ENC] END handle=%llu", (unsigned long long)blit.handle);
+      blit.endEncoding();
+    }
+
+    cmdbuf.presentDrawable(drawable);
+    SCTRACE("[SC_ENC] COMMIT cmdbuf=%llu", (unsigned long long)cmdbuf.handle);
+    cmdbuf.commit();
   }
-
-  cmdbuf.presentDrawable(drawable);
-  SCTRACE("[SC_ENC] COMMIT cmdbuf=%llu", (unsigned long long)cmdbuf.handle);
-  cmdbuf.commit();
 
   m_current_buffer = (m_current_buffer + 1) % (m_desc.BufferCount ? m_desc.BufferCount : 2);
 

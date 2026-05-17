@@ -24,6 +24,8 @@
 #include "log/log.hpp"
 #include "util_string.hpp"
 #include "dxmt_capture.hpp"
+#include <d3d12.h>
+#include <cstdio>
 #include <exception>
 
 namespace dxmt {
@@ -223,7 +225,47 @@ extern "C" HRESULT __stdcall D3D11On12CreateDevice(
     D3D_FEATURE_LEVEL *pChosenFeatureLevel) {
   InitReturnPtr(ppDevice);
   InitReturnPtr(ppImmediateContext);
-  return E_NOTIMPL;
+  if (pChosenFeatureLevel)
+    *pChosenFeatureLevel = D3D_FEATURE_LEVEL(0);
+
+  if (!pDevice)
+    return E_INVALIDARG;
+
+  Com<ID3D12Device> d3d12_device;
+  HRESULT hr = pDevice->QueryInterface(IID_PPV_ARGS(&d3d12_device));
+  if (FAILED(hr)) {
+    Logger::err("D3D11On12CreateDevice: supplied device is not ID3D12Device");
+    return hr;
+  }
+
+  Com<IDXGIAdapter> dxgi_adapter;
+  Com<IDXGIDevice> dxgi_device;
+  hr = pDevice->QueryInterface(IID_PPV_ARGS(&dxgi_device));
+  if (SUCCEEDED(hr))
+    hr = dxgi_device->GetAdapter(&dxgi_adapter);
+
+  if (FAILED(hr)) {
+    Logger::warn("D3D11On12CreateDevice: failed to recover DXGI adapter; falling back to default adapter");
+    dxgi_adapter = nullptr;
+  }
+
+  Logger::info(str::format(
+      "D3D11On12CreateDevice: creating compatibility D3D11 device queues=",
+      NumQueues, " node_mask=", NodeMask));
+
+  hr = D3D11CreateDevice(dxgi_adapter.ptr(),
+                         dxgi_adapter ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE,
+                         nullptr, Flags, pFeatureLevels, FeatureLevels,
+                         D3D11_SDK_VERSION, ppDevice, pChosenFeatureLevel,
+                         ppImmediateContext);
+
+  if (FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a")) {
+    fprintf(f, "D3D11On12CreateDevice compat hr=0x%lx queues=%u node_mask=%u feature=0x%x\n",
+            hr, NumQueues, NodeMask, pChosenFeatureLevel ? *pChosenFeatureLevel : 0);
+    fclose(f);
+  }
+
+  return hr;
 }
 
 } // namespace dxmt

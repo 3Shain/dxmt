@@ -447,12 +447,55 @@ public:
   }
 
   void
+  setRasterizerState(WMTTriangleFillMode fill_mode, WMTCullMode cull_mode,
+                     WMTDepthClipMode depth_clip_mode, WMTWinding winding,
+                     float depth_bias, float slope_scale,
+                     float depth_bias_clamp) {
+    struct wmtcmd_render_setrasterizerstate cmd;
+    cmd.type = WMTRenderCommandSetRasterizerState;
+    cmd.reserved[0] = cmd.reserved[1] = cmd.reserved[2] = 0;
+    cmd.next.set(nullptr);
+    cmd.fill_mode = fill_mode;
+    cmd.cull_mode = cull_mode;
+    cmd.depth_clip_mode = depth_clip_mode;
+    cmd.winding = winding;
+    cmd.depth_bias = depth_bias;
+    cmd.scole_scale = slope_scale;
+    cmd.depth_bias_clamp = depth_bias_clamp;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  void
+  setBlendFactorAndStencilRef(const float color[4], uint8_t stencil_ref) {
+    struct wmtcmd_render_setblendcolor cmd;
+    cmd.type = WMTRenderCommandSetBlendFactorAndStencilRef;
+    cmd.reserved[0] = cmd.reserved[1] = cmd.reserved[2] = 0;
+    cmd.next.set(nullptr);
+    cmd.red = color[0];
+    cmd.green = color[1];
+    cmd.blue = color[2];
+    cmd.alpha = color[3];
+    cmd.stencil_ref = stencil_ref;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  void
   setViewport(WMTViewport viewport) {
     struct wmtcmd_render_setviewport cmd;
     cmd.type = WMTRenderCommandSetViewports;
     cmd.reserved[0] = cmd.reserved[1] = cmd.reserved[2] = 0;
     cmd.next.set(nullptr);
     cmd.viewport = viewport;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  void
+  setScissorRect(WMTScissorRect scissor) {
+    struct wmtcmd_render_setscissorrect cmd;
+    cmd.type = WMTRenderCommandSetScissorRect;
+    cmd.reserved[0] = cmd.reserved[1] = cmd.reserved[2] = 0;
+    cmd.next.set(nullptr);
+    cmd.scissor_rect = scissor;
     MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
   }
 

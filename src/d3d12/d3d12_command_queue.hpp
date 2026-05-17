@@ -83,6 +83,8 @@ private:
   std::atomic<uint32_t> m_refCount = {1ul};
   std::atomic<uint32_t> m_refPrivate = {1ul};
   WMT::Reference<WMT::CommandQueue> m_wmt_queue;
+  WMT::Reference<WMT::Event> m_barrier_event;
+  uint64_t m_barrier_seq = 0;
 };
 
 } // namespace dxmt

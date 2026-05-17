@@ -21,7 +21,9 @@ struct D3D12Descriptor {
     D3D12_SAMPLER_DESC sampler;
   };
   WMT::Reference<WMT::SamplerState> metal_sampler;
+  WMT::Reference<WMT::SamplerState> metal_sampler_cube;
   uint64_t metal_sampler_gpu_id = 0;
+  uint64_t metal_sampler_cube_gpu_id = 0;
   ID3D12Resource *resource = nullptr;
   ID3D12Resource *resource_uav_counter = nullptr;
 };
@@ -59,7 +61,13 @@ public:
   uint32_t GetDescriptorCount() { return m_desc.NumDescriptors; }
 
   D3D12Descriptor *GetDescriptorFromGPUHandle(D3D12_GPU_DESCRIPTOR_HANDLE handle) {
+    return GetDescriptorFromGPUHandle(handle, 0);
+  }
+  D3D12Descriptor *GetDescriptorFromGPUHandle(D3D12_GPU_DESCRIPTOR_HANDLE handle,
+                                              uint32_t offset) {
     auto *desc = reinterpret_cast<D3D12Descriptor *>(handle.ptr);
+    if (desc)
+      desc += offset;
     auto *end = m_data + m_desc.NumDescriptors;
     if (desc < m_data || desc >= end)
       return nullptr;

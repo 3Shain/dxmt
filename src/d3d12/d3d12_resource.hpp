@@ -58,6 +58,8 @@ public:
   WMT::Reference<WMT::Buffer> GetMTLBuffer() { return m_mtl_buffer; }
   WMT::Reference<WMT::Texture> GetMTLTexture();
   uint64_t GetTextureGPUResourceID() const { return m_tex_gpu_resource_id; }
+  uint32_t GetTextureArrayLength() const;
+  uint64_t GetBufferByteLength() const;
 
 private:
   MTLD3D12Device *m_device;

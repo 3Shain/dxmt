@@ -3,9 +3,11 @@
 #include "com/com_pointer.hpp"
 #include "d3d12.h"
 #include "dxgi_interfaces.h"
+#include "dxmt_presenter.hpp"
 #include "Metal.hpp"
 #include <atomic>
 #include <array>
+#include <memory>
 
 namespace dxmt {
 
@@ -80,6 +82,8 @@ public:
   HRESULT STDMETHODCALLTYPE SetHDRMetaData(DXGI_HDR_METADATA_TYPE Type, UINT Size, void *pMetaData) override;
 
 private:
+  void ConfigureLayer();
+
   std::atomic<uint32_t> m_refCount = {1ul};
   Com<IDXGIFactory1> m_factory;
   Com<IMTLDXGIDevice> m_dxgi_device;
@@ -94,6 +98,8 @@ private:
   std::array<Com<MTLD3D12Resource>, 4> m_backbuffers;
   uint32_t m_current_buffer = 0;
   WMT::Reference<WMT::CommandQueue> m_present_queue;
+  std::unique_ptr<InternalCommandLibrary> m_present_library;
+  Rc<Presenter> m_presenter;
 };
 
 HRESULT CreateD3D12SwapChain(IDXGIFactory1 *factory, MTLD3D12Device *device,

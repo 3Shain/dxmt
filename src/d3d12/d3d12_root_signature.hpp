@@ -9,6 +9,14 @@ namespace dxmt {
 
 class MTLD3D12Device;
 
+struct RootDescriptorRange {
+  D3D12_DESCRIPTOR_RANGE_TYPE range_type;
+  uint32_t num_descriptors;
+  uint32_t base_register;
+  uint32_t register_space;
+  uint32_t offset_in_table;
+};
+
 struct RootParameter {
   D3D12_ROOT_PARAMETER_TYPE type;
   uint32_t shader_visibility;
@@ -17,6 +25,7 @@ struct RootParameter {
   uint32_t num_descriptors;
   D3D12_DESCRIPTOR_RANGE_TYPE range_type;
   uint32_t descriptor_table_entries;
+  std::vector<RootDescriptorRange> ranges;
 };
 
 class MTLD3D12RootSignature : public ID3D12RootSignature {
@@ -43,6 +52,14 @@ public:
   const std::vector<RootParameter> &GetParameters() const {
     return m_parameters;
   }
+  bool FindDescriptorTableRange(D3D12_DESCRIPTOR_RANGE_TYPE range_type,
+                                uint32_t shader_register,
+                                uint32_t *root_parameter_index,
+                                uint32_t *descriptor_offset) const;
+  bool FindDescriptorTableRangeForVisibility(
+      D3D12_DESCRIPTOR_RANGE_TYPE range_type, uint32_t shader_register,
+      D3D12_SHADER_VISIBILITY shader_visibility,
+      uint32_t *root_parameter_index, uint32_t *descriptor_offset) const;
   uint32_t GetNumParameters() const { return m_parameters.size(); }
   uint32_t GetNumStaticSamplers() const { return m_num_static_samplers; }
   D3D12_ROOT_SIGNATURE_FLAGS GetFlags() const { return m_flags; }

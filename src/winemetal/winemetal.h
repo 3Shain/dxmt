@@ -798,9 +798,14 @@ struct WMTVertexAttributeDesc {
   uint32_t buffer_index;
 };
 
+enum {
+  WMT_MAX_VERTEX_BUFFER_LAYOUTS = 31,
+  WMT_MAX_VERTEX_ATTRIBUTES = 31,
+};
+
 struct WMTVertexDescriptor {
-  struct WMTVertexBufferLayoutDesc layouts[16];
-  struct WMTVertexAttributeDesc attributes[16];
+  struct WMTVertexBufferLayoutDesc layouts[WMT_MAX_VERTEX_BUFFER_LAYOUTS];
+  struct WMTVertexAttributeDesc attributes[WMT_MAX_VERTEX_ATTRIBUTES];
   uint32_t layout_count;
   uint32_t attribute_count;
 };
