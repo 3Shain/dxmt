@@ -267,8 +267,6 @@ void DXILToMSL::emitFunctionPrologue(EmitContext &ctx) {
 
 std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic_id,
                                               const std::vector<uint32_t> &args) {
-  auto &os = ctx.os;
-
   switch (intrinsic_id) {
   case DXOP_CreateHandle: {
     if (args.size() < 5) return "0";
@@ -277,7 +275,7 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     uint32_t index = args[3];
     bool non_uniform = args[4] != 0;
     (void)non_uniform;
-    uint32_t handle_id = ctx.next_binding++;
+    ctx.next_binding++;
     std::string res_name;
     if (resource_class == 0) {
       res_name = "buf" + std::to_string(range_id);
@@ -385,7 +383,6 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
   case DXOP_LoadInput: {
     if (args.size() < 4) return "float4(0)";
     uint32_t input_id = args[1];
-    uint32_t component = args.size() > 3 ? args[3] : 0;
     if (ctx.shader.kind == DxilShaderKind::Pixel) {
       switch (input_id) {
       case 0: return "in.position";
@@ -402,7 +399,6 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
   case DXOP_StoreOutput: {
     if (args.size() < 4) return "";
     uint32_t output_id = args[1];
-    uint32_t component = args.size() > 2 ? args[2] : 0;
     auto val = args[3] < ctx.value_table.size() ? ctx.value_table[args[3]] : "float4(0)";
 
     if (ctx.shader.kind == DxilShaderKind::Vertex) {
@@ -478,10 +474,13 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
       std::string translated = translateDXIntrinsic(ctx, intrinsic_id, remaining_args);
 
-      if (inst.type_id != 0 || translated.find('=') == std::string::npos) {
+      if (inst.type_id == 0) {
+        if (!translated.empty())
+          os << "  " << translated << ";\n";
+      } else if (translated.find('=') == std::string::npos) {
         ensureValueTable(value_counter);
         if (!translated.empty() && translated[0] != ' ') {
-          os << "  " << result << " = " << translated << ";\n";
+          os << "  auto " << result << " = " << translated << ";\n";
           ctx.value_table[value_counter] = result;
         } else if (!translated.empty()) {
           os << "  " << translated << ";\n";
@@ -505,7 +504,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::Add: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = " << getValue(inst.operands[0]) << " + " << getValue(inst.operands[1]) << ";\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << " + " << getValue(inst.operands[1]) << ";\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -513,7 +512,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::Sub: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = " << getValue(inst.operands[0]) << " - " << getValue(inst.operands[1]) << ";\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << " - " << getValue(inst.operands[1]) << ";\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -521,7 +520,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::Mul: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = " << getValue(inst.operands[0]) << " * " << getValue(inst.operands[1]) << ";\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << " * " << getValue(inst.operands[1]) << ";\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -529,7 +528,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::UDiv: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = (" << getValue(inst.operands[0]) << ") / (" << getValue(inst.operands[1]) << ");\n";
+    os << "  auto " << result << " = (" << getValue(inst.operands[0]) << ") / (" << getValue(inst.operands[1]) << ");\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -537,7 +536,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::SDiv: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = (" << getValue(inst.operands[0]) << ") / (" << getValue(inst.operands[1]) << ");\n";
+    os << "  auto " << result << " = (" << getValue(inst.operands[0]) << ") / (" << getValue(inst.operands[1]) << ");\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -545,7 +544,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::FAdd: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = " << getValue(inst.operands[0]) << " + " << getValue(inst.operands[1]) << ";\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << " + " << getValue(inst.operands[1]) << ";\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -553,7 +552,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::FSub: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = " << getValue(inst.operands[0]) << " - " << getValue(inst.operands[1]) << ";\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << " - " << getValue(inst.operands[1]) << ";\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -561,7 +560,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::FMul: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = " << getValue(inst.operands[0]) << " * " << getValue(inst.operands[1]) << ";\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << " * " << getValue(inst.operands[1]) << ";\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -569,7 +568,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::FDiv: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = " << getValue(inst.operands[0]) << " / " << getValue(inst.operands[1]) << ";\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << " / " << getValue(inst.operands[1]) << ";\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -577,7 +576,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::FRem: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = fmod(" << getValue(inst.operands[0]) << ", " << getValue(inst.operands[1]) << ");\n";
+    os << "  auto " << result << " = fmod(" << getValue(inst.operands[0]) << ", " << getValue(inst.operands[1]) << ");\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -585,7 +584,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::And: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = " << getValue(inst.operands[0]) << " & " << getValue(inst.operands[1]) << ";\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << " & " << getValue(inst.operands[1]) << ";\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -593,7 +592,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::Or: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = " << getValue(inst.operands[0]) << " | " << getValue(inst.operands[1]) << ";\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << " | " << getValue(inst.operands[1]) << ";\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -601,7 +600,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::Xor: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = " << getValue(inst.operands[0]) << " ^ " << getValue(inst.operands[1]) << ";\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << " ^ " << getValue(inst.operands[1]) << ";\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -609,7 +608,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::Shl: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = " << getValue(inst.operands[0]) << " << " << getValue(inst.operands[1]) << ";\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << " << " << getValue(inst.operands[1]) << ";\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -617,7 +616,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::LShr: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = (uint)(" << getValue(inst.operands[0]) << ") >> " << getValue(inst.operands[1]) << ";\n";
+    os << "  auto " << result << " = (uint)(" << getValue(inst.operands[0]) << ") >> " << getValue(inst.operands[1]) << ";\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -625,7 +624,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::AShr: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = (int)(" << getValue(inst.operands[0]) << ") >> " << getValue(inst.operands[1]) << ";\n";
+    os << "  auto " << result << " = (int)(" << getValue(inst.operands[0]) << ") >> " << getValue(inst.operands[1]) << ";\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -634,7 +633,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
   case LLVMInstruction::BitCast: {
     ensureValueTable(value_counter);
     if (inst.operands.size() >= 1) {
-      os << "  " << result << " = reinterpret_cast<decltype(" << result << ")>(" << getValue(inst.operands[0]) << ");\n";
+      os << "  auto " << result << " = " << getValue(inst.operands[0]) << "; // bitcast\n";
     }
     ctx.value_table[value_counter] = result;
     value_counter++;
@@ -644,7 +643,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
   case LLVMInstruction::ZExt: {
     ensureValueTable(value_counter);
     if (inst.operands.size() >= 1) {
-      os << "  " << result << " = (decltype(" << result << "))(" << getValue(inst.operands[0]) << ");\n";
+      os << "  auto " << result << " = " << getValue(inst.operands[0]) << "; // zext\n";
     }
     ctx.value_table[value_counter] = result;
     value_counter++;
@@ -654,7 +653,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
   case LLVMInstruction::SExt: {
     ensureValueTable(value_counter);
     if (inst.operands.size() >= 1) {
-      os << "  " << result << " = (decltype(" << result << "))(" << getValue(inst.operands[0]) << ");\n";
+      os << "  auto " << result << " = " << getValue(inst.operands[0]) << "; // sext\n";
     }
     ctx.value_table[value_counter] = result;
     value_counter++;
@@ -664,7 +663,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
   case LLVMInstruction::Trunc: {
     ensureValueTable(value_counter);
     if (inst.operands.size() >= 1) {
-      os << "  " << result << " = (decltype(" << result << "))(" << getValue(inst.operands[0]) << ");\n";
+      os << "  auto " << result << " = " << getValue(inst.operands[0]) << "; // trunc\n";
     }
     ctx.value_table[value_counter] = result;
     value_counter++;
@@ -673,7 +672,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::FPToUI: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = static_cast<decltype(" << result << ")>(" << getValue(inst.operands[0]) << ");\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << "; // fptoui\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -681,7 +680,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::FPToSI: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = static_cast<decltype(" << result << ")>(" << getValue(inst.operands[0]) << ");\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << "; // fptosi\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -689,7 +688,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::UIToFP: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = static_cast<decltype(" << result << ")>(" << getValue(inst.operands[0]) << ");\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << "; // uitofp\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -697,7 +696,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::SIToFP: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = static_cast<decltype(" << result << ")>(" << getValue(inst.operands[0]) << ");\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << "; // sitofp\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -705,7 +704,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::FPTrunc: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = static_cast<decltype(" << result << ")>(" << getValue(inst.operands[0]) << ");\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << "; // fptrunc\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -713,7 +712,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::FPExt: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = static_cast<decltype(" << result << ")>(" << getValue(inst.operands[0]) << ");\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << "; // fpext\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -721,7 +720,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::PtrToInt: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = reinterpret_cast<uintptr_t>(" << getValue(inst.operands[0]) << ");\n";
+    os << "  auto " << result << " = reinterpret_cast<uintptr_t>(" << getValue(inst.operands[0]) << ");\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -729,7 +728,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::IntToPtr: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = reinterpret_cast<device char*>(static_cast<uintptr_t>(" << getValue(inst.operands[0]) << "));\n";
+    os << "  auto " << result << " = reinterpret_cast<device char*>(static_cast<uintptr_t>(" << getValue(inst.operands[0]) << "));\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -786,7 +785,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
   case LLVMInstruction::Select: {
     ensureValueTable(value_counter);
     if (inst.operands.size() >= 3) {
-      os << "  " << result << " = " << getValue(inst.operands[0]) << " ? " << getValue(inst.operands[1]) << " : " << getValue(inst.operands[2]) << ";\n";
+      os << "  auto " << result << " = " << getValue(inst.operands[0]) << " ? " << getValue(inst.operands[1]) << " : " << getValue(inst.operands[2]) << ";\n";
       ctx.value_table[value_counter] = result;
     }
     value_counter++;
@@ -796,7 +795,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
   case LLVMInstruction::Load: {
     ensureValueTable(value_counter);
     if (inst.operands.size() >= 1) {
-      os << "  " << result << " = reinterpret_cast<device decltype(" << result << ")&>(" << getValue(inst.operands[0]) << ");\n";
+      os << "  auto " << result << " = 0; // load from " << getValue(inst.operands[0]) << "\n";
     }
     ctx.value_table[value_counter] = result;
     value_counter++;
@@ -838,7 +837,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::PHI: {
     ensureValueTable(value_counter);
-    os << "  auto " << result << " = decltype(" << result << ")(0); // phi\n";
+    os << "  auto " << result << " = 0; // phi\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -864,7 +863,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
     if (inst.operands.size() >= 2) {
       auto agg = getValue(inst.operands[0]);
       auto idx = inst.operands[1];
-      os << "  " << result << " = (" << agg << "); // extractvalue idx=" << idx << "\n";
+      os << "  auto " << result << " = (" << agg << "); // extractvalue idx=" << idx << "\n";
       ctx.value_table[value_counter] = result;
     }
     value_counter++;
@@ -873,7 +872,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::InsertValue: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = " << (inst.operands.size() >= 1 ? getValue(inst.operands[0]) : "0") << "; // insertvalue\n";
+    os << "  auto " << result << " = " << (inst.operands.size() >= 1 ? getValue(inst.operands[0]) : "0") << "; // insertvalue\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -882,7 +881,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
   case LLVMInstruction::ExtractElement: {
     ensureValueTable(value_counter);
     if (inst.operands.size() >= 2) {
-      os << "  " << result << " = " << getValue(inst.operands[0]) << "[" << getValue(inst.operands[1]) << "];\n";
+      os << "  auto " << result << " = " << getValue(inst.operands[0]) << "[" << getValue(inst.operands[1]) << "];\n";
       ctx.value_table[value_counter] = result;
     }
     value_counter++;
@@ -891,7 +890,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::InsertElement: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = " << (inst.operands.size() >= 1 ? getValue(inst.operands[0]) : "float4(0)") << "; // insertelement\n";
+    os << "  auto " << result << " = " << (inst.operands.size() >= 1 ? getValue(inst.operands[0]) : "float4(0)") << "; // insertelement\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -899,7 +898,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::ShuffleVector: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = " << (inst.operands.size() >= 1 ? getValue(inst.operands[0]) : "float4(0)") << "; // shufflevector\n";
+    os << "  auto " << result << " = " << (inst.operands.size() >= 1 ? getValue(inst.operands[0]) : "float4(0)") << "; // shufflevector\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -912,7 +911,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
   case LLVMInstruction::FNeg: {
     ensureValueTable(value_counter);
     if (inst.operands.size() >= 1) {
-      os << "  " << result << " = -(" << getValue(inst.operands[0]) << ");\n";
+      os << "  auto " << result << " = -(" << getValue(inst.operands[0]) << ");\n";
       ctx.value_table[value_counter] = result;
     }
     value_counter++;
@@ -922,7 +921,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
   case LLVMInstruction::URem:
   case LLVMInstruction::SRem: {
     ensureValueTable(value_counter);
-    os << "  " << result << " = " << getValue(inst.operands[0]) << " % " << getValue(inst.operands[1]) << ";\n";
+    os << "  auto " << result << " = " << getValue(inst.operands[0]) << " % " << getValue(inst.operands[1]) << ";\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
