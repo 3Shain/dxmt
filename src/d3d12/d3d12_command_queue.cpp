@@ -311,6 +311,23 @@ struct ReplayState {
         }
       }
       if (root_idx == ~0u || !root_table_set[root_idx] || desc_heap_count == 0) {
+        if (arg.Type == SM50BindingType::Sampler && dxmt_sig) {
+          if (auto *sampler = dxmt_sig->FindStaticSampler(
+                  arg.SM50BindingSlot, arg.SM50RegisterSpace,
+                  D3D12_SHADER_VISIBILITY_PIXEL)) {
+            arg_buf_data[arg.StructurePtrOffset] = sampler->sampler_gpu_id;
+            arg_buf_data[arg.StructurePtrOffset + 1] =
+                sampler->sampler_cube_gpu_id ? sampler->sampler_cube_gpu_id
+                                             : sampler->sampler_gpu_id;
+            arg_buf_data[arg.StructurePtrOffset + 2] =
+                sampler->lod_bias_bits;
+            QTRACE("BuildArgBuf: StaticSampler slot=%u space=%u gpu_id=0x%llx offset=%u",
+                   arg.SM50BindingSlot, arg.SM50RegisterSpace,
+                   (unsigned long long)sampler->sampler_gpu_id,
+                   arg.StructurePtrOffset);
+            continue;
+          }
+        }
         QTRACE("BuildArgBuf: arg type=%d slot=%u root_idx=%u desc_off=%u table_set=%d heaps=%u skip",
           (int)arg.Type, arg.SM50BindingSlot, root_idx, descriptor_offset, root_idx != ~0u ? root_table_set[root_idx] : 0, desc_heap_count);
         continue;
@@ -649,6 +666,23 @@ struct ReplayState {
         }
       }
       if (root_idx == ~0u || !root_table_set[root_idx] || desc_heap_count == 0) {
+        if (arg.Type == SM50BindingType::Sampler && dxmt_sig) {
+          if (auto *sampler = dxmt_sig->FindStaticSampler(
+                  arg.SM50BindingSlot, arg.SM50RegisterSpace,
+                  D3D12_SHADER_VISIBILITY_VERTEX)) {
+            vs_arg_buf_data[arg.StructurePtrOffset] = sampler->sampler_gpu_id;
+            vs_arg_buf_data[arg.StructurePtrOffset + 1] =
+                sampler->sampler_cube_gpu_id ? sampler->sampler_cube_gpu_id
+                                             : sampler->sampler_gpu_id;
+            vs_arg_buf_data[arg.StructurePtrOffset + 2] =
+                sampler->lod_bias_bits;
+            QTRACE("BuildVertexArgBuf: StaticSampler slot=%u space=%u gpu_id=0x%llx offset=%u",
+                   arg.SM50BindingSlot, arg.SM50RegisterSpace,
+                   (unsigned long long)sampler->sampler_gpu_id,
+                   arg.StructurePtrOffset);
+            continue;
+          }
+        }
         QTRACE("BuildVertexArgBuf: arg type=%d slot=%u root_idx=%u desc_off=%u table_set=%d heaps=%u skip",
           (int)arg.Type, arg.SM50BindingSlot, root_idx, descriptor_offset,
           root_idx != ~0u ? root_table_set[root_idx] : 0, desc_heap_count);
@@ -877,6 +911,23 @@ struct ReplayState {
       if (root_idx == ~0u || root_idx >= 16 ||
           !(comp_table_set[root_idx] || root_table_set[root_idx]) ||
           desc_heap_count == 0) {
+        if (arg.Type == SM50BindingType::Sampler && dxmt_sig) {
+          if (auto *sampler = dxmt_sig->FindStaticSampler(
+                  arg.SM50BindingSlot, arg.SM50RegisterSpace,
+                  D3D12_SHADER_VISIBILITY_ALL)) {
+            comp_arg_buf_data[arg.StructurePtrOffset] = sampler->sampler_gpu_id;
+            comp_arg_buf_data[arg.StructurePtrOffset + 1] =
+                sampler->sampler_cube_gpu_id ? sampler->sampler_cube_gpu_id
+                                             : sampler->sampler_gpu_id;
+            comp_arg_buf_data[arg.StructurePtrOffset + 2] =
+                sampler->lod_bias_bits;
+            QTRACE("BuildComputeArgBuf: StaticSampler slot=%u space=%u gpu_id=0x%llx offset=%u",
+                   arg.SM50BindingSlot, arg.SM50RegisterSpace,
+                   (unsigned long long)sampler->sampler_gpu_id,
+                   arg.StructurePtrOffset);
+            continue;
+          }
+        }
         QTRACE("BuildComputeArgBuf: arg type=%d slot=%u root_idx=%u desc_off=%u skip",
                (int)arg.Type, arg.SM50BindingSlot, root_idx, descriptor_offset);
         continue;

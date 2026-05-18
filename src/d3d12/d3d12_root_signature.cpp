@@ -40,6 +40,23 @@ struct RSDescriptorRange {
   uint32_t offset_in_table;
 };
 
+struct RSStaticSampler {
+  uint32_t filter;
+  uint32_t address_u;
+  uint32_t address_v;
+  uint32_t address_w;
+  float mip_lod_bias;
+  uint32_t max_anisotropy;
+  uint32_t comparison_func;
+  uint32_t border_color;
+  float min_lod;
+  float max_lod;
+  uint32_t register_space;
+  uint32_t register_index;
+  uint32_t shader_register_space;
+  uint8_t shader_visibility;
+};
+
 struct DXContainerHeader {
   uint8_t magic[4];
   uint8_t digest[16];
@@ -101,12 +118,169 @@ struct DXDescriptorRange11 {
   uint32_t flags;
   uint32_t offset_in_table;
 };
+
+struct DXStaticSampler {
+  uint32_t filter;
+  uint32_t address_u;
+  uint32_t address_v;
+  uint32_t address_w;
+  float mip_lod_bias;
+  uint32_t max_anisotropy;
+  uint32_t comparison_func;
+  uint32_t border_color;
+  float min_lod;
+  float max_lod;
+  uint32_t shader_register;
+  uint32_t register_space;
+  uint32_t shader_visibility;
+};
 #pragma pack(pop)
 
 #define RSTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
 
 static bool range_contains(size_t size, uint32_t offset, size_t bytes) {
   return offset <= size && bytes <= size - offset;
+}
+
+static WMTSamplerAddressMode
+map_sampler_address_mode(D3D12_TEXTURE_ADDRESS_MODE mode) {
+  switch (mode) {
+  case D3D12_TEXTURE_ADDRESS_MODE_WRAP:
+    return WMTSamplerAddressModeRepeat;
+  case D3D12_TEXTURE_ADDRESS_MODE_MIRROR:
+    return WMTSamplerAddressModeMirrorRepeat;
+  case D3D12_TEXTURE_ADDRESS_MODE_CLAMP:
+    return WMTSamplerAddressModeClampToEdge;
+  case D3D12_TEXTURE_ADDRESS_MODE_BORDER:
+    return WMTSamplerAddressModeClampToBorderColor;
+  case D3D12_TEXTURE_ADDRESS_MODE_MIRROR_ONCE:
+    return WMTSamplerAddressModeMirrorClampToEdge;
+  default:
+    return WMTSamplerAddressModeClampToEdge;
+  }
+}
+
+static WMTSamplerBorderColor
+map_sampler_border_color(D3D12_STATIC_BORDER_COLOR color) {
+  switch (color) {
+  case D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK:
+    return WMTSamplerBorderColorOpaqueBlack;
+  case D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE:
+    return WMTSamplerBorderColorOpaqueWhite;
+  default:
+    return WMTSamplerBorderColorTransparentBlack;
+  }
+}
+
+static WMTSamplerInfo sampler_info_from_static_desc(
+    const D3D12_STATIC_SAMPLER_DESC &desc) {
+  WMTSamplerInfo info = {};
+  switch (desc.Filter) {
+  case D3D12_FILTER_MIN_MAG_MIP_POINT:
+    info.min_filter = WMTSamplerMinMagFilterNearest;
+    info.mag_filter = WMTSamplerMinMagFilterNearest;
+    info.mip_filter = WMTSamplerMipFilterNearest;
+    break;
+  case D3D12_FILTER_MIN_MAG_POINT_MIP_LINEAR:
+    info.min_filter = WMTSamplerMinMagFilterNearest;
+    info.mag_filter = WMTSamplerMinMagFilterNearest;
+    info.mip_filter = WMTSamplerMipFilterLinear;
+    break;
+  case D3D12_FILTER_MIN_POINT_MAG_LINEAR_MIP_POINT:
+    info.min_filter = WMTSamplerMinMagFilterNearest;
+    info.mag_filter = WMTSamplerMinMagFilterLinear;
+    info.mip_filter = WMTSamplerMipFilterNearest;
+    break;
+  case D3D12_FILTER_MIN_POINT_MAG_MIP_LINEAR:
+    info.min_filter = WMTSamplerMinMagFilterNearest;
+    info.mag_filter = WMTSamplerMinMagFilterLinear;
+    info.mip_filter = WMTSamplerMipFilterLinear;
+    break;
+  case D3D12_FILTER_MIN_LINEAR_MAG_MIP_POINT:
+    info.min_filter = WMTSamplerMinMagFilterLinear;
+    info.mag_filter = WMTSamplerMinMagFilterNearest;
+    info.mip_filter = WMTSamplerMipFilterNearest;
+    break;
+  case D3D12_FILTER_MIN_LINEAR_MAG_POINT_MIP_LINEAR:
+    info.min_filter = WMTSamplerMinMagFilterLinear;
+    info.mag_filter = WMTSamplerMinMagFilterNearest;
+    info.mip_filter = WMTSamplerMipFilterLinear;
+    break;
+  case D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT:
+    info.min_filter = WMTSamplerMinMagFilterLinear;
+    info.mag_filter = WMTSamplerMinMagFilterLinear;
+    info.mip_filter = WMTSamplerMipFilterNearest;
+    break;
+  case D3D12_FILTER_MIN_MAG_MIP_LINEAR:
+  case D3D12_FILTER_ANISOTROPIC:
+  case D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR:
+  case D3D12_FILTER_COMPARISON_ANISOTROPIC:
+    info.min_filter = WMTSamplerMinMagFilterLinear;
+    info.mag_filter = WMTSamplerMinMagFilterLinear;
+    info.mip_filter = WMTSamplerMipFilterLinear;
+    break;
+  default:
+    info.min_filter = WMTSamplerMinMagFilterLinear;
+    info.mag_filter = WMTSamplerMinMagFilterLinear;
+    info.mip_filter = WMTSamplerMipFilterLinear;
+    break;
+  }
+
+  if (desc.Filter == D3D12_FILTER_ANISOTROPIC ||
+      desc.Filter == D3D12_FILTER_COMPARISON_ANISOTROPIC)
+    info.max_anisotroy = desc.MaxAnisotropy;
+
+  info.s_address_mode = map_sampler_address_mode(desc.AddressU);
+  info.t_address_mode = map_sampler_address_mode(desc.AddressV);
+  info.r_address_mode = map_sampler_address_mode(desc.AddressW);
+  info.border_color = map_sampler_border_color(desc.BorderColor);
+  info.lod_min_clamp = desc.MinLOD;
+  info.lod_max_clamp = desc.MaxLOD;
+  info.normalized_coords = true;
+  info.support_argument_buffers = true;
+  if (desc.Filter >= D3D12_FILTER_COMPARISON_MIN_MAG_MIP_POINT &&
+      desc.Filter <= D3D12_FILTER_COMPARISON_ANISOTROPIC &&
+      desc.ComparisonFunc >= D3D12_COMPARISON_FUNC_LESS &&
+      desc.ComparisonFunc <= D3D12_COMPARISON_FUNC_ALWAYS) {
+    info.compare_function =
+        static_cast<WMTCompareFunction>(desc.ComparisonFunc - 1);
+  }
+  return info;
+}
+
+static uint64_t sampler_lod_bias_bits(float lod_bias) {
+  uint32_t bits = 0;
+  static_assert(sizeof(bits) == sizeof(lod_bias));
+  memcpy(&bits, &lod_bias, sizeof(bits));
+  return bits;
+}
+
+RootStaticSampler make_static_sampler(WMT::Device device,
+                                      const D3D12_STATIC_SAMPLER_DESC &desc) {
+  RootStaticSampler sampler = {};
+  sampler.shader_register = desc.ShaderRegister;
+  sampler.register_space = desc.RegisterSpace;
+  sampler.shader_visibility = desc.ShaderVisibility;
+  sampler.lod_bias_bits = sampler_lod_bias_bits(desc.MipLODBias);
+
+  WMTSamplerInfo info = sampler_info_from_static_desc(desc);
+  sampler.sampler = device.newSamplerState(info);
+  sampler.sampler_gpu_id = info.gpu_resource_id;
+
+  WMTSamplerInfo cube_info = info;
+  if (cube_info.min_filter == WMTSamplerMinMagFilterLinear &&
+      cube_info.mag_filter == WMTSamplerMinMagFilterLinear) {
+    cube_info.s_address_mode = WMTSamplerAddressModeClampToBorderColor;
+    cube_info.t_address_mode = WMTSamplerAddressModeClampToBorderColor;
+    cube_info.r_address_mode = WMTSamplerAddressModeClampToBorderColor;
+  } else {
+    cube_info.s_address_mode = WMTSamplerAddressModeClampToEdge;
+    cube_info.t_address_mode = WMTSamplerAddressModeClampToEdge;
+    cube_info.r_address_mode = WMTSamplerAddressModeClampToEdge;
+  }
+  sampler.sampler_cube = device.newSamplerState(cube_info);
+  sampler.sampler_cube_gpu_id = cube_info.gpu_resource_id;
+  return sampler;
 }
 
 MTLD3D12RootSignature::MTLD3D12RootSignature(MTLD3D12Device *device,
@@ -145,6 +319,7 @@ void MTLD3D12RootSignature::Parse(const void *blob, SIZE_T blob_size) {
       return false;
 
     m_parameters.clear();
+    m_static_samplers.clear();
     m_num_static_samplers = header->num_static_samplers;
     m_flags = static_cast<D3D12_ROOT_SIGNATURE_FLAGS>(header->flags);
 
@@ -258,6 +433,33 @@ void MTLD3D12RootSignature::Parse(const void *blob, SIZE_T blob_size) {
       m_parameters.push_back(rp);
     }
 
+    auto static_samplers = reinterpret_cast<const DXStaticSampler *>(
+        data + header->static_sampler_offset);
+    for (uint32_t i = 0; i < header->num_static_samplers; i++) {
+      D3D12_STATIC_SAMPLER_DESC desc = {};
+      desc.Filter = static_cast<D3D12_FILTER>(static_samplers[i].filter);
+      desc.AddressU =
+          static_cast<D3D12_TEXTURE_ADDRESS_MODE>(static_samplers[i].address_u);
+      desc.AddressV =
+          static_cast<D3D12_TEXTURE_ADDRESS_MODE>(static_samplers[i].address_v);
+      desc.AddressW =
+          static_cast<D3D12_TEXTURE_ADDRESS_MODE>(static_samplers[i].address_w);
+      desc.MipLODBias = static_samplers[i].mip_lod_bias;
+      desc.MaxAnisotropy = static_samplers[i].max_anisotropy;
+      desc.ComparisonFunc =
+          static_cast<D3D12_COMPARISON_FUNC>(static_samplers[i].comparison_func);
+      desc.BorderColor = static_cast<D3D12_STATIC_BORDER_COLOR>(
+          static_samplers[i].border_color);
+      desc.MinLOD = static_samplers[i].min_lod;
+      desc.MaxLOD = static_samplers[i].max_lod;
+      desc.ShaderRegister = static_samplers[i].shader_register;
+      desc.RegisterSpace = static_samplers[i].register_space;
+      desc.ShaderVisibility =
+          static_cast<D3D12_SHADER_VISIBILITY>(static_samplers[i].shader_visibility);
+      m_static_samplers.push_back(
+          make_static_sampler(m_device->GetMTLDevice(), desc));
+    }
+
     RSTRACE("RootSignature parsed RTS0 version=%u params=%u samplers=%u flags=0x%x",
             header->version, header->num_parameters,
             header->num_static_samplers, header->flags);
@@ -304,6 +506,7 @@ void MTLD3D12RootSignature::Parse(const void *blob, SIZE_T blob_size) {
   }
 
   m_parameters.clear();
+  m_static_samplers.clear();
   m_num_static_samplers = header->num_static_samplers;
   m_flags = static_cast<D3D12_ROOT_SIGNATURE_FLAGS>(header->flags);
 
@@ -363,6 +566,35 @@ void MTLD3D12RootSignature::Parse(const void *blob, SIZE_T blob_size) {
     }
     m_parameters.push_back(rp);
     params += sizeof(RSParameter);
+  }
+
+  for (uint32_t i = 0; i < header->num_static_samplers; i++) {
+    if (params + sizeof(RSStaticSampler) > end)
+      return;
+    auto sampler = reinterpret_cast<const RSStaticSampler *>(params);
+    D3D12_STATIC_SAMPLER_DESC desc = {};
+    desc.Filter = static_cast<D3D12_FILTER>(sampler->filter);
+    desc.AddressU =
+        static_cast<D3D12_TEXTURE_ADDRESS_MODE>(sampler->address_u);
+    desc.AddressV =
+        static_cast<D3D12_TEXTURE_ADDRESS_MODE>(sampler->address_v);
+    desc.AddressW =
+        static_cast<D3D12_TEXTURE_ADDRESS_MODE>(sampler->address_w);
+    desc.MipLODBias = sampler->mip_lod_bias;
+    desc.MaxAnisotropy = sampler->max_anisotropy;
+    desc.ComparisonFunc =
+        static_cast<D3D12_COMPARISON_FUNC>(sampler->comparison_func);
+    desc.BorderColor =
+        static_cast<D3D12_STATIC_BORDER_COLOR>(sampler->border_color);
+    desc.MinLOD = sampler->min_lod;
+    desc.MaxLOD = sampler->max_lod;
+    desc.ShaderRegister = sampler->register_index;
+    desc.RegisterSpace = sampler->register_space;
+    desc.ShaderVisibility =
+        static_cast<D3D12_SHADER_VISIBILITY>(sampler->shader_visibility);
+    m_static_samplers.push_back(
+        make_static_sampler(m_device->GetMTLDevice(), desc));
+    params += sizeof(RSStaticSampler);
   }
 }
 
@@ -429,6 +661,25 @@ bool MTLD3D12RootSignature::FindDescriptorTableRangeForVisibility(
   }
 
   return false;
+}
+
+const RootStaticSampler *MTLD3D12RootSignature::FindStaticSampler(
+    uint32_t shader_register, uint32_t register_space,
+    D3D12_SHADER_VISIBILITY shader_visibility) const {
+  for (uint32_t pass = 0; pass < 2; pass++) {
+    for (const auto &sampler : m_static_samplers) {
+      if (sampler.shader_register != shader_register ||
+          sampler.register_space != register_space)
+        continue;
+      if (pass == 0 && sampler.shader_visibility != shader_visibility)
+        continue;
+      if (pass == 1 &&
+          sampler.shader_visibility != D3D12_SHADER_VISIBILITY_ALL)
+        continue;
+      return &sampler;
+    }
+  }
+  return nullptr;
 }
 
 HRESULT STDMETHODCALLTYPE

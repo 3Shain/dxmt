@@ -2,6 +2,7 @@
 
 #include "com/com_pointer.hpp"
 #include "d3d12.h"
+#include "Metal.hpp"
 #include <atomic>
 #include <vector>
 
@@ -26,6 +27,17 @@ struct RootParameter {
   D3D12_DESCRIPTOR_RANGE_TYPE range_type;
   uint32_t descriptor_table_entries;
   std::vector<RootDescriptorRange> ranges;
+};
+
+struct RootStaticSampler {
+  uint32_t shader_register;
+  uint32_t register_space;
+  uint32_t shader_visibility;
+  uint64_t sampler_gpu_id;
+  uint64_t sampler_cube_gpu_id;
+  uint64_t lod_bias_bits;
+  WMT::Reference<WMT::SamplerState> sampler;
+  WMT::Reference<WMT::SamplerState> sampler_cube;
 };
 
 class MTLD3D12RootSignature : public ID3D12RootSignature {
@@ -69,6 +81,9 @@ public:
       D3D12_DESCRIPTOR_RANGE_TYPE range_type, uint32_t shader_register,
       uint32_t register_space, D3D12_SHADER_VISIBILITY shader_visibility,
       uint32_t *root_parameter_index, uint32_t *descriptor_offset) const;
+  const RootStaticSampler *FindStaticSampler(
+      uint32_t shader_register, uint32_t register_space,
+      D3D12_SHADER_VISIBILITY shader_visibility) const;
   uint32_t GetNumParameters() const { return m_parameters.size(); }
   uint32_t GetNumStaticSamplers() const { return m_num_static_samplers; }
   D3D12_ROOT_SIGNATURE_FLAGS GetFlags() const { return m_flags; }
@@ -78,6 +93,7 @@ private:
 
   MTLD3D12Device *m_device;
   std::vector<RootParameter> m_parameters;
+  std::vector<RootStaticSampler> m_static_samplers;
   uint32_t m_num_static_samplers = 0;
   D3D12_ROOT_SIGNATURE_FLAGS m_flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
   std::atomic<uint32_t> m_refCount = {1ul};
