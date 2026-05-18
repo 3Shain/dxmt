@@ -1444,6 +1444,203 @@ WMTIndexType DXGIToWMTIndexFormat(DXGI_FORMAT fmt) {
   }
 }
 
+static void ReplayComputeDispatch(ReplayState &st, MTLD3D12Device *device,
+                                  WMT::CommandBuffer cmdbuf, uint32_t x,
+                                  uint32_t y, uint32_t z,
+                                  const char *trace_prefix) {
+  QTRACE("%s x=%u y=%u z=%u pso=%p compiled=%d compute=%d heaps=%u stage=%s detail=%s",
+         trace_prefix, x, y, z, (void*)st.pso,
+         st.pso ? st.pso->IsCompiled() : 0,
+         st.pso ? st.pso->IsCompute() : 0,
+         st.desc_heap_count,
+         st.pso ? st.pso->GetCompileFailureStage() : "no_pso",
+         st.pso ? st.pso->GetCompileFailureDetail() : "");
+  if (!(st.pso && st.pso->IsCompiled() && st.pso->IsCompute() &&
+        st.pso->GetComputePSO().handle)) {
+    QTRACE("%s SKIPPED x=%u y=%u z=%u pso=%p compiled=%d compute=%d stage=%s detail=%s",
+           trace_prefix, x, y, z, (void*)st.pso,
+           st.pso ? st.pso->IsCompiled() : 0,
+           st.pso ? st.pso->IsCompute() : 0,
+           st.pso ? st.pso->GetCompileFailureStage() : "no_pso",
+           st.pso ? st.pso->GetCompileFailureDetail() : "");
+    return;
+  }
+
+  st.CloseRenderEncoder();
+  auto comp = cmdbuf.computeCommandEncoder(false);
+  ENC_CREATE("compute_dispatch", comp.handle);
+
+  uint8_t cmd_buf[4096];
+  uint8_t *cmd_ptr = cmd_buf;
+  wmtcmd_compute_nop *chain_head = nullptr;
+  wmtcmd_base *chain_tail = nullptr;
+
+  auto append_cmd = [&](void *data, size_t sz) -> wmtcmd_base * {
+    auto *c = (wmtcmd_base *)cmd_ptr;
+    memcpy(cmd_ptr, data, sz);
+    cmd_ptr += sz;
+    c->next.set(nullptr);
+    if (chain_tail)
+      chain_tail->next.set(c);
+    else
+      chain_head = (wmtcmd_compute_nop *)c;
+    chain_tail = c;
+    return c;
+  };
+
+  struct wmtcmd_compute_setpso setpso = {};
+  setpso.type = WMTComputeCommandSetPSO;
+  setpso.pso = st.pso->GetComputePSO();
+  setpso.threadgroup_size = st.pso->GetThreadgroupSize();
+  append_cmd(&setpso, sizeof(setpso));
+
+  uint32_t comp_cb_qwords = st.BuildComputeConstantBufferTable(device);
+  if (comp_cb_qwords > 0 && st.comp_cbv_table_buf.handle) {
+    struct wmtcmd_compute_setbuffer sbuf = {};
+    sbuf.type = WMTComputeCommandSetBuffer;
+    sbuf.buffer = st.comp_cbv_table_buf.handle;
+    sbuf.offset = 0;
+    sbuf.index = st.kConstantBufferTableSlot;
+    append_cmd(&sbuf, sizeof(sbuf));
+    QTRACE("%s: bound compute CBV table slot=%u qwords=%u handle=%llu",
+           trace_prefix, st.kConstantBufferTableSlot, comp_cb_qwords,
+           (unsigned long long)st.comp_cbv_table_buf.handle);
+  }
+
+  uint32_t comp_arg_qwords = st.BuildComputeArgumentBuffer(device);
+  if (comp_arg_qwords > 0 && st.comp_arg_buf.handle) {
+    struct wmtcmd_compute_setbuffer sbuf = {};
+    sbuf.type = WMTComputeCommandSetBuffer;
+    sbuf.buffer = st.comp_arg_buf.handle;
+    sbuf.offset = 0;
+    sbuf.index = st.kArgBufSlot;
+    append_cmd(&sbuf, sizeof(sbuf));
+    QTRACE("%s: bound compute arg table slot=%u qwords=%u handle=%llu",
+           trace_prefix, st.kArgBufSlot, comp_arg_qwords,
+           (unsigned long long)st.comp_arg_buf.handle);
+  }
+
+  bool is_uav_slot[16] = {};
+  if (st.compute_root_sig) {
+    auto &params = st.compute_root_sig->GetParameters();
+    QTRACE("ECL UAV scan: root_sig=%p num_params=%u", (void*)st.compute_root_sig, (uint32_t)params.size());
+    for (uint32_t p = 0; p < params.size() && p < 16; p++) {
+      QTRACE("  param[%u] type=%u range_type=%u vis=%u", p, params[p].type, params[p].range_type, params[p].shader_visibility);
+      if (params[p].type == D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE &&
+          params[p].range_type == D3D12_DESCRIPTOR_RANGE_TYPE_UAV) {
+        is_uav_slot[p] = true;
+      } else if (params[p].type == D3D12_ROOT_PARAMETER_TYPE_UAV) {
+        is_uav_slot[p] = true;
+      }
+    }
+  } else {
+    QTRACE("ECL UAV scan: no compute_root_sig set!");
+  }
+
+  for (uint32_t i = 0; i < 16; i++) {
+    bool const_set = st.comp_constant_set[i] || st.root_constant_set[i];
+    uint32_t const_size = st.comp_constant_set[i] ? st.comp_constant_sizes[i] : st.root_constant_sizes[i];
+    uint32_t const_off = st.comp_constant_set[i] ? st.comp_constant_offsets[i] : st.root_constant_offsets[i];
+    uint8_t *const_buf = st.comp_constant_set[i] ? st.comp_constants_buf : st.root_constants_buf;
+
+    bool cbv_set = st.comp_cbv_set[i] || st.root_cbv_set[i];
+    D3D12_GPU_VIRTUAL_ADDRESS cbv_addr = st.comp_cbv_set[i] ? st.comp_cbvs[i] : st.root_cbvs[i];
+
+    bool tbl_set = st.comp_table_set[i] || st.root_table_set[i];
+    D3D12_GPU_DESCRIPTOR_HANDLE tbl_handle = st.comp_table_set[i] ? st.comp_tables[i] : st.root_tables[i];
+
+    if (const_set && const_size > 0) {
+      struct wmtcmd_compute_setbytes sb = {};
+      sb.type = WMTComputeCommandSetBytes;
+      sb.length = const_size;
+      sb.index = i;
+      sb.bytes.ptr = (void *)(const_buf + const_off);
+      append_cmd(&sb, sizeof(sb));
+    }
+    if (cbv_set && cbv_addr) {
+      auto *res = device->LookupResourceByGPUAddress(cbv_addr);
+      if (res && res->GetMTLBuffer().handle) {
+        struct wmtcmd_compute_setbuffer sbuf = {};
+        sbuf.type = WMTComputeCommandSetBuffer;
+        sbuf.buffer = res->GetMTLBuffer().handle;
+        sbuf.offset = cbv_addr - res->GetGPUVirtualAddress();
+        sbuf.index = i;
+        append_cmd(&sbuf, sizeof(sbuf));
+      }
+    }
+    if (tbl_set && st.desc_heap_count > 0) {
+      for (uint32_t h = 0; h < st.desc_heap_count; h++) {
+        auto *heap = static_cast<MTLD3D12DescriptorHeap *>(st.desc_heaps[h]);
+        if (heap) {
+          auto *desc = heap->GetDescriptorFromGPUHandle(tbl_handle);
+          QTRACE("  tbl[%u] heap=%u handle=0x%llx desc=%p res=%p", i, h,
+                 (unsigned long long)tbl_handle.ptr, (void*)desc,
+                 desc ? (void*)desc->resource : nullptr);
+          if (desc && desc->resource) {
+            auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
+            if (res->GetMTLBuffer().handle) {
+              struct wmtcmd_compute_setbuffer sbuf = {};
+              sbuf.type = WMTComputeCommandSetBuffer;
+              sbuf.buffer = res->GetMTLBuffer().handle;
+              sbuf.offset = 0;
+              sbuf.index = i;
+              append_cmd(&sbuf, sizeof(sbuf));
+              if (is_uav_slot[i]) {
+                struct wmtcmd_compute_useresource use = {};
+                use.type = WMTComputeCommandUseResource;
+                use.resource = res->GetMTLBuffer().handle;
+                use.usage = (WMTResourceUsage)(WMTResourceUsageRead | WMTResourceUsageWrite);
+                append_cmd(&use, sizeof(use));
+              }
+            } else if (res->GetMTLTexture().handle) {
+              struct wmtcmd_compute_settexture stex = {};
+              stex.type = WMTComputeCommandSetTexture;
+              stex.texture = res->GetMTLTexture().handle;
+              stex.index = i;
+              append_cmd(&stex, sizeof(stex));
+              if (is_uav_slot[i]) {
+                QTRACE("  UAV UseResource tex slot=%u handle=%llu", i, (unsigned long long)res->GetMTLTexture().handle);
+                struct wmtcmd_compute_useresource use = {};
+                use.type = WMTComputeCommandUseResource;
+                use.resource = res->GetMTLTexture().handle;
+                use.usage = (WMTResourceUsage)(WMTResourceUsageRead | WMTResourceUsageWrite);
+                append_cmd(&use, sizeof(use));
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  int num_consts = 0, num_cbvs = 0, num_tables = 0;
+  for (uint32_t i = 0; i < 16; i++) {
+    if ((st.comp_constant_set[i] || st.root_constant_set[i]) &&
+        (st.comp_constant_sizes[i] > 0 || st.root_constant_sizes[i] > 0))
+      num_consts++;
+    if ((st.comp_cbv_set[i] && st.comp_cbvs[i]) ||
+        (st.root_cbv_set[i] && st.root_cbvs[i]))
+      num_cbvs++;
+    if (st.comp_table_set[i] || st.root_table_set[i])
+      num_tables++;
+  }
+  QTRACE("  bindings: consts=%d cbvs=%d tables=%d tg=%llux%llux%llu",
+         num_consts, num_cbvs, num_tables,
+         st.pso->GetThreadgroupSize().width,
+         st.pso->GetThreadgroupSize().height,
+         st.pso->GetThreadgroupSize().depth);
+
+  struct wmtcmd_compute_dispatch disp = {};
+  disp.type = WMTComputeCommandDispatch;
+  disp.size = {(uint64_t)x, (uint64_t)y, (uint64_t)z};
+  append_cmd(&disp, sizeof(disp));
+
+  if (chain_head)
+    comp.encodeCommands(chain_head);
+  ENC_END(comp.handle);
+  comp.endEncoding();
+}
+
 } // anonymous namespace
 
 static bool rt_handles_match(D3D12_CPU_DESCRIPTOR_HANDLE a,
@@ -1698,196 +1895,8 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
       }
       case CmdType::Dispatch: {
         auto *cmd = reinterpret_cast<const CmdDispatch *>(header);
-        QTRACE("Dispatch x=%u y=%u z=%u pso=%p compiled=%d compute=%d heaps=%u stage=%s detail=%s",
-               cmd->x, cmd->y, cmd->z, (void*)st.pso,
-               st.pso ? st.pso->IsCompiled() : 0,
-               st.pso ? st.pso->IsCompute() : 0,
-               st.desc_heap_count,
-               st.pso ? st.pso->GetCompileFailureStage() : "no_pso",
-               st.pso ? st.pso->GetCompileFailureDetail() : "");
-        if (st.pso && st.pso->IsCompiled() && st.pso->IsCompute() &&
-            st.pso->GetComputePSO().handle) {
-          st.CloseRenderEncoder();
-          auto comp = cmdbuf.computeCommandEncoder(false);
-          ENC_CREATE("compute_dispatch", comp.handle);
-
-          uint8_t cmd_buf[4096];
-          uint8_t *cmd_ptr = cmd_buf;
-          wmtcmd_compute_nop *chain_head = nullptr;
-          wmtcmd_base *chain_tail = nullptr;
-
-          auto append_cmd = [&](void *data, size_t sz) -> wmtcmd_base * {
-            auto *c = (wmtcmd_base *)cmd_ptr;
-            memcpy(cmd_ptr, data, sz);
-            cmd_ptr += sz;
-            c->next.set(nullptr);
-            if (chain_tail)
-              chain_tail->next.set(c);
-            else
-              chain_head = (wmtcmd_compute_nop *)c;
-            chain_tail = c;
-            return c;
-          };
-
-          struct wmtcmd_compute_setpso setpso = {};
-          setpso.type = WMTComputeCommandSetPSO;
-          setpso.pso = st.pso->GetComputePSO();
-          setpso.threadgroup_size = st.pso->GetThreadgroupSize();
-          append_cmd(&setpso, sizeof(setpso));
-
-          uint32_t comp_cb_qwords = st.BuildComputeConstantBufferTable(m_device);
-          if (comp_cb_qwords > 0 && st.comp_cbv_table_buf.handle) {
-            struct wmtcmd_compute_setbuffer sbuf = {};
-            sbuf.type = WMTComputeCommandSetBuffer;
-            sbuf.buffer = st.comp_cbv_table_buf.handle;
-            sbuf.offset = 0;
-            sbuf.index = st.kConstantBufferTableSlot;
-            append_cmd(&sbuf, sizeof(sbuf));
-            QTRACE("Dispatch: bound compute CBV table slot=%u qwords=%u handle=%llu",
-                   st.kConstantBufferTableSlot, comp_cb_qwords,
-                   (unsigned long long)st.comp_cbv_table_buf.handle);
-          }
-
-          uint32_t comp_arg_qwords = st.BuildComputeArgumentBuffer(m_device);
-          if (comp_arg_qwords > 0 && st.comp_arg_buf.handle) {
-            struct wmtcmd_compute_setbuffer sbuf = {};
-            sbuf.type = WMTComputeCommandSetBuffer;
-            sbuf.buffer = st.comp_arg_buf.handle;
-            sbuf.offset = 0;
-            sbuf.index = st.kArgBufSlot;
-            append_cmd(&sbuf, sizeof(sbuf));
-            QTRACE("Dispatch: bound compute arg table slot=%u qwords=%u handle=%llu",
-                   st.kArgBufSlot, comp_arg_qwords,
-                   (unsigned long long)st.comp_arg_buf.handle);
-          }
-
-          bool is_uav_slot[16] = {};
-          if (st.compute_root_sig) {
-            auto &params = st.compute_root_sig->GetParameters();
-            QTRACE("ECL UAV scan: root_sig=%p num_params=%u", (void*)st.compute_root_sig, (uint32_t)params.size());
-            for (uint32_t p = 0; p < params.size() && p < 16; p++) {
-              QTRACE("  param[%u] type=%u range_type=%u vis=%u", p, params[p].type, params[p].range_type, params[p].shader_visibility);
-              if (params[p].type == D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE &&
-                  params[p].range_type == D3D12_DESCRIPTOR_RANGE_TYPE_UAV) {
-                is_uav_slot[p] = true;
-              } else if (params[p].type == D3D12_ROOT_PARAMETER_TYPE_UAV) {
-                is_uav_slot[p] = true;
-              }
-            }
-          } else {
-            QTRACE("ECL UAV scan: no compute_root_sig set!");
-          }
-
-          for (uint32_t i = 0; i < 16; i++) {
-            bool const_set = st.comp_constant_set[i] || st.root_constant_set[i];
-            uint32_t const_size = st.comp_constant_set[i] ? st.comp_constant_sizes[i] : st.root_constant_sizes[i];
-            uint32_t const_off = st.comp_constant_set[i] ? st.comp_constant_offsets[i] : st.root_constant_offsets[i];
-            uint8_t *const_buf = st.comp_constant_set[i] ? st.comp_constants_buf : st.root_constants_buf;
-
-            bool cbv_set = st.comp_cbv_set[i] || st.root_cbv_set[i];
-            D3D12_GPU_VIRTUAL_ADDRESS cbv_addr = st.comp_cbv_set[i] ? st.comp_cbvs[i] : st.root_cbvs[i];
-
-            bool tbl_set = st.comp_table_set[i] || st.root_table_set[i];
-            D3D12_GPU_DESCRIPTOR_HANDLE tbl_handle = st.comp_table_set[i] ? st.comp_tables[i] : st.root_tables[i];
-
-            if (const_set && const_size > 0) {
-              struct wmtcmd_compute_setbytes sb = {};
-              sb.type = WMTComputeCommandSetBytes;
-              sb.length = const_size;
-              sb.index = i;
-              sb.bytes.ptr = (void *)(const_buf + const_off);
-              append_cmd(&sb, sizeof(sb));
-            }
-            if (cbv_set && cbv_addr) {
-              auto *res = m_device->LookupResourceByGPUAddress(cbv_addr);
-              if (res && res->GetMTLBuffer().handle) {
-                struct wmtcmd_compute_setbuffer sbuf = {};
-                sbuf.type = WMTComputeCommandSetBuffer;
-                sbuf.buffer = res->GetMTLBuffer().handle;
-                sbuf.offset = cbv_addr - res->GetGPUVirtualAddress();
-                sbuf.index = i;
-                append_cmd(&sbuf, sizeof(sbuf));
-              }
-            }
-            if (tbl_set && st.desc_heap_count > 0) {
-              for (uint32_t h = 0; h < st.desc_heap_count; h++) {
-                auto *heap = static_cast<MTLD3D12DescriptorHeap *>(st.desc_heaps[h]);
-                if (heap) {
-                  auto *desc = heap->GetDescriptorFromGPUHandle(tbl_handle);
-                  QTRACE("  tbl[%u] heap=%u handle=0x%llx desc=%p res=%p", i, h,
-                         (unsigned long long)tbl_handle.ptr, (void*)desc,
-                         desc ? (void*)desc->resource : nullptr);
-                  if (desc && desc->resource) {
-                    auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
-                    if (res->GetMTLBuffer().handle) {
-                      struct wmtcmd_compute_setbuffer sbuf = {};
-                      sbuf.type = WMTComputeCommandSetBuffer;
-                      sbuf.buffer = res->GetMTLBuffer().handle;
-                      sbuf.offset = 0;
-                      sbuf.index = i;
-                      append_cmd(&sbuf, sizeof(sbuf));
-                      if (is_uav_slot[i]) {
-                        struct wmtcmd_compute_useresource use = {};
-                        use.type = WMTComputeCommandUseResource;
-                        use.resource = res->GetMTLBuffer().handle;
-                        use.usage = (WMTResourceUsage)(WMTResourceUsageRead | WMTResourceUsageWrite);
-                        append_cmd(&use, sizeof(use));
-                      }
-                    } else if (res->GetMTLTexture().handle) {
-                      struct wmtcmd_compute_settexture stex = {};
-                      stex.type = WMTComputeCommandSetTexture;
-                      stex.texture = res->GetMTLTexture().handle;
-                      stex.index = i;
-                      append_cmd(&stex, sizeof(stex));
-                      if (is_uav_slot[i]) {
-                        QTRACE("  UAV UseResource tex slot=%u handle=%llu", i, (unsigned long long)res->GetMTLTexture().handle);
-                        struct wmtcmd_compute_useresource use = {};
-                        use.type = WMTComputeCommandUseResource;
-                        use.resource = res->GetMTLTexture().handle;
-                        use.usage = (WMTResourceUsage)(WMTResourceUsageRead | WMTResourceUsageWrite);
-                        append_cmd(&use, sizeof(use));
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-
-          int num_consts = 0, num_cbvs = 0, num_tables = 0;
-          for (uint32_t i = 0; i < 16; i++) {
-            if ((st.comp_constant_set[i] || st.root_constant_set[i]) &&
-                (st.comp_constant_sizes[i] > 0 || st.root_constant_sizes[i] > 0))
-              num_consts++;
-            if ((st.comp_cbv_set[i] && st.comp_cbvs[i]) ||
-                (st.root_cbv_set[i] && st.root_cbvs[i]))
-              num_cbvs++;
-            if (st.comp_table_set[i] || st.root_table_set[i])
-              num_tables++;
-          }
-          QTRACE("  bindings: consts=%d cbvs=%d tables=%d tg=%llux%llux%llu",
-                 num_consts, num_cbvs, num_tables,
-                 st.pso->GetThreadgroupSize().width,
-                 st.pso->GetThreadgroupSize().height,
-                 st.pso->GetThreadgroupSize().depth);
-
-          struct wmtcmd_compute_dispatch disp = {};
-          disp.type = WMTComputeCommandDispatch;
-          disp.size = {(uint64_t)cmd->x, (uint64_t)cmd->y, (uint64_t)cmd->z};
-          append_cmd(&disp, sizeof(disp));
-
-          if (chain_head)
-            comp.encodeCommands(chain_head);
-          ENC_END(comp.handle);
-          comp.endEncoding();
-        } else {
-          QTRACE("Dispatch SKIPPED x=%u y=%u z=%u pso=%p compiled=%d compute=%d stage=%s detail=%s",
-                 cmd->x, cmd->y, cmd->z, (void*)st.pso,
-                 st.pso ? st.pso->IsCompiled() : 0,
-                 st.pso ? st.pso->IsCompute() : 0,
-                 st.pso ? st.pso->GetCompileFailureStage() : "no_pso",
-                 st.pso ? st.pso->GetCompileFailureDetail() : "");
-        }
+        ReplayComputeDispatch(st, m_device, cmdbuf, cmd->x, cmd->y, cmd->z,
+                              "Dispatch");
         break;
       }
       case CmdType::ExecuteIndirect: {
@@ -2066,8 +2075,16 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
                 valid_record = false;
                 break;
               }
-              QTRACE("ExecuteIndirect DISPATCH currently traced but not replayed");
-              cursor += sizeof(D3D12_DISPATCH_ARGUMENTS);
+              {
+                D3D12_DISPATCH_ARGUMENTS args = {};
+                memcpy(&args, src, sizeof(args));
+                cursor += sizeof(args);
+                ReplayComputeDispatch(st, m_device, cmdbuf,
+                                      args.ThreadGroupCountX,
+                                      args.ThreadGroupCountY,
+                                      args.ThreadGroupCountZ,
+                                      "ExecuteIndirect DISPATCH");
+              }
               break;
             case D3D12_INDIRECT_ARGUMENT_TYPE_VERTEX_BUFFER_VIEW: {
               if (!can_read(sizeof(D3D12_VERTEX_BUFFER_VIEW))) {
