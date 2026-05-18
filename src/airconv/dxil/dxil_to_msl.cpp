@@ -39,8 +39,12 @@ enum DXIntrinsicOpcode {
   DXOP_Dot4 = 56,
   DXOP_MakeDouble = 101,
   DXOP_SplitDouble = 102,
-  DXOP_RawBufferLoad = 1025,
-  DXOP_RawBufferStore = 1026,
+  DXOP_RawBufferLoad = 139,
+  DXOP_RawBufferStore = 140,
+  DXOP_RawBufferVectorLoad = 303,
+  DXOP_RawBufferVectorStore = 304,
+  DXOP_RawBufferLoadLegacy = 1025,
+  DXOP_RawBufferStoreLegacy = 1026,
   DXOP_AtomicBinOp = 78,
   DXOP_AtomicCompareExchange = 79,
   DXOP_DerivCoarseX = 83,
@@ -231,6 +235,10 @@ static bool isKnownDXIntrinsic(uint32_t intrinsic_id) {
   case DXOP_SplitDouble:
   case DXOP_RawBufferLoad:
   case DXOP_RawBufferStore:
+  case DXOP_RawBufferVectorLoad:
+  case DXOP_RawBufferVectorStore:
+  case DXOP_RawBufferLoadLegacy:
+  case DXOP_RawBufferStoreLegacy:
   case DXOP_AtomicBinOp:
   case DXOP_AtomicCompareExchange:
   case DXOP_DerivCoarseX:
@@ -592,7 +600,9 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     return "(reinterpret_cast<device float4&>(" + handle + "[(" + index + ")*16]))";
   }
 
-  case DXOP_RawBufferLoad: {
+  case DXOP_RawBufferLoad:
+  case DXOP_RawBufferVectorLoad:
+  case DXOP_RawBufferLoadLegacy: {
     if (args.size() < 3) return "uint4(0)";
     auto handle = resolveBindingName(valueArg(0, "srv0"), "buf");
     auto index = valueArg(1, "0");
@@ -602,7 +612,8 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
   }
 
   case DXOP_BufferStore:
-  case DXOP_RawBufferStore: {
+  case DXOP_RawBufferStore:
+  case DXOP_RawBufferStoreLegacy: {
     if (args.size() < 4) return "";
     auto handle = resolveBindingName(valueArg(0, "uav0"), "buf");
     auto index = valueArg(1, "0");
@@ -616,6 +627,24 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
       store << "reinterpret_cast<device uint&>(" << handle << "[(" << base_offset
             << ") + " << (i * 4) << "]) = (uint)(" << valueArg(3 + i, "0")
             << ")";
+    }
+    return store.str();
+  }
+
+  case DXOP_RawBufferVectorStore: {
+    if (args.size() < 4) return "";
+    auto handle = resolveBindingName(valueArg(0, "uav0"), "buf");
+    auto index = valueArg(1, "0");
+    auto elem_offset = valueArg(2, "0");
+    auto value = valueArg(3, "uint4(0)");
+    std::string base_offset = "((" + index + ")*4 + (" + elem_offset + "))";
+    std::ostringstream store;
+    for (uint32_t i = 0; i < 4; i++) {
+      if (i)
+        store << ";\n  ";
+      store << "reinterpret_cast<device uint&>(" << handle << "[(" << base_offset
+            << ") + " << (i * 4) << "]) = (uint)(" << value
+            << componentSuffix(i) << ")";
     }
     return store.str();
   }
