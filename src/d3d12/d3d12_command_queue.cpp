@@ -1659,6 +1659,10 @@ static void ReplayComputeDispatch(ReplayState &st, MTLD3D12Device *device,
 
     bool cbv_set = st.comp_cbv_set[i] || st.root_cbv_set[i];
     D3D12_GPU_VIRTUAL_ADDRESS cbv_addr = st.comp_cbv_set[i] ? st.comp_cbvs[i] : st.root_cbvs[i];
+    bool srv_set = st.comp_srv_set[i] || st.root_srv_set[i];
+    D3D12_GPU_VIRTUAL_ADDRESS srv_addr = st.comp_srv_set[i] ? st.comp_srvs[i] : st.root_srvs[i];
+    bool uav_set = st.comp_uav_set[i] || st.root_uav_set[i];
+    D3D12_GPU_VIRTUAL_ADDRESS uav_addr = st.comp_uav_set[i] ? st.comp_uavs[i] : st.root_uavs[i];
 
     bool tbl_set = st.comp_table_set[i] || st.root_table_set[i];
     D3D12_GPU_DESCRIPTOR_HANDLE tbl_handle = st.comp_table_set[i] ? st.comp_tables[i] : st.root_tables[i];
@@ -1671,21 +1675,131 @@ static void ReplayComputeDispatch(ReplayState &st, MTLD3D12Device *device,
       sb.bytes.ptr = (void *)(const_buf + const_off);
       append_cmd(&sb, sizeof(sb));
     }
-    if (cbv_set && cbv_addr) {
-      auto *res = device->LookupResourceByGPUAddress(cbv_addr);
+    auto compute_root_register = [&](D3D12_ROOT_PARAMETER_TYPE type) {
+      if (st.compute_root_sig && i < st.compute_root_sig->GetParameters().size()) {
+        const auto &param = st.compute_root_sig->GetParameters()[i];
+        if (param.type == type)
+          return param.register_index;
+      }
+      return i;
+    };
+
+    auto bind_compute_buffer_address = [&](D3D12_GPU_VIRTUAL_ADDRESS address,
+                                           D3D12_ROOT_PARAMETER_TYPE type,
+                                           bool writable,
+                                           const char *label) {
+      if (!address)
+        return;
+      auto *res = device->LookupResourceByGPUAddress(address);
       if (res && res->GetMTLBuffer().handle) {
+        uint32_t slot = compute_root_register(type);
+        if (slot >= 8)
+          return;
         struct wmtcmd_compute_setbuffer sbuf = {};
         sbuf.type = WMTComputeCommandSetBuffer;
         sbuf.buffer = res->GetMTLBuffer().handle;
-        sbuf.offset = cbv_addr - res->GetGPUVirtualAddress();
-        sbuf.index = i;
+        sbuf.offset = address - res->GetGPUVirtualAddress();
+        sbuf.index = slot;
         append_cmd(&sbuf, sizeof(sbuf));
+        if (writable) {
+          struct wmtcmd_compute_useresource use = {};
+          use.type = WMTComputeCommandUseResource;
+          use.resource = res->GetMTLBuffer().handle;
+          use.usage = (WMTResourceUsage)(WMTResourceUsageRead | WMTResourceUsageWrite);
+          append_cmd(&use, sizeof(use));
+        }
+        QTRACE("%s: root %s param=%u -> slot=%u gpu=0x%llx",
+               trace_prefix, label, i, slot, (unsigned long long)address);
       }
-    }
+    };
+
+    if (cbv_set)
+      bind_compute_buffer_address(cbv_addr, D3D12_ROOT_PARAMETER_TYPE_CBV,
+                                  false, "CBV");
+    if (srv_set)
+      bind_compute_buffer_address(srv_addr, D3D12_ROOT_PARAMETER_TYPE_SRV,
+                                  false, "SRV");
+    if (uav_set)
+      bind_compute_buffer_address(uav_addr, D3D12_ROOT_PARAMETER_TYPE_UAV,
+                                  true, "UAV");
+
+    auto bind_compute_descriptor =
+        [&](D3D12Descriptor *desc, D3D12_DESCRIPTOR_RANGE_TYPE range_type,
+            uint32_t shader_register) {
+      if (!desc)
+        return;
+      if (range_type == D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER) {
+        // Current WMT compute command stream has no sampler command; fixed
+        // DXIL compute shaders generally use buffer/texture UAV/SRV resources.
+        return;
+      }
+      if (!desc->resource || shader_register >= 8)
+        return;
+      auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
+      bool writable = range_type == D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
+      if (res->GetMTLBuffer().handle) {
+        struct wmtcmd_compute_setbuffer sbuf = {};
+        sbuf.type = WMTComputeCommandSetBuffer;
+        sbuf.buffer = res->GetMTLBuffer().handle;
+        sbuf.offset = 0;
+        if (desc->cbv.BufferLocation) {
+          auto *cbv_res = device->LookupResourceByGPUAddress(desc->cbv.BufferLocation);
+          if (cbv_res)
+            sbuf.offset = desc->cbv.BufferLocation - cbv_res->GetGPUVirtualAddress();
+        }
+        sbuf.index = shader_register;
+        append_cmd(&sbuf, sizeof(sbuf));
+        if (writable) {
+          struct wmtcmd_compute_useresource use = {};
+          use.type = WMTComputeCommandUseResource;
+          use.resource = res->GetMTLBuffer().handle;
+          use.usage = (WMTResourceUsage)(WMTResourceUsageRead | WMTResourceUsageWrite);
+          append_cmd(&use, sizeof(use));
+        }
+      } else if (res->GetMTLTexture().handle) {
+        struct wmtcmd_compute_settexture stex = {};
+        stex.type = WMTComputeCommandSetTexture;
+        stex.texture = res->GetMTLTexture().handle;
+        stex.index = shader_register;
+        append_cmd(&stex, sizeof(stex));
+        if (writable) {
+          struct wmtcmd_compute_useresource use = {};
+          use.type = WMTComputeCommandUseResource;
+          use.resource = res->GetMTLTexture().handle;
+          use.usage = (WMTResourceUsage)(WMTResourceUsageRead | WMTResourceUsageWrite);
+          append_cmd(&use, sizeof(use));
+        }
+      }
+    };
+
     if (tbl_set && st.desc_heap_count > 0) {
       for (uint32_t h = 0; h < st.desc_heap_count; h++) {
         auto *heap = static_cast<MTLD3D12DescriptorHeap *>(st.desc_heaps[h]);
         if (heap) {
+          if (st.compute_root_sig && i < st.compute_root_sig->GetParameters().size()) {
+            const auto &param = st.compute_root_sig->GetParameters()[i];
+            if (param.type == D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE &&
+                !param.ranges.empty()) {
+              for (const auto &range : param.ranges) {
+                uint32_t max_slots =
+                    range.range_type == D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER ? 4 : 8;
+                if (range.base_register >= max_slots)
+                  continue;
+                uint32_t count = range.num_descriptors == UINT32_MAX
+                                     ? 1
+                                     : range.num_descriptors;
+                count = std::min<uint32_t>(count, max_slots - range.base_register);
+                for (uint32_t d = 0; d < count; d++) {
+                  auto *desc = heap->GetDescriptorFromGPUHandle(
+                      tbl_handle, range.offset_in_table + d);
+                  bind_compute_descriptor(desc, range.range_type,
+                                          range.base_register + d);
+                }
+              }
+              continue;
+            }
+          }
+
           auto *desc = heap->GetDescriptorFromGPUHandle(tbl_handle);
           QTRACE("  tbl[%u] heap=%u handle=0x%llx desc=%p res=%p", i, h,
                  (unsigned long long)tbl_handle.ptr, (void*)desc,
