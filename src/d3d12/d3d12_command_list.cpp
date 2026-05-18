@@ -604,6 +604,15 @@ void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ExecuteIndirect(
     ID3D12Resource *arg_buffer, UINT64 arg_buffer_offset,
     ID3D12Resource *count_buffer, UINT64 count_buffer_offset) {
   CLTRACE("ExecuteIndirect max=%u", max_command_count);
+  CmdExecuteIndirect cmd = {};
+  cmd.header = {CmdType::ExecuteIndirect, sizeof(cmd)};
+  cmd.signature = command_signature;
+  cmd.max_command_count = max_command_count;
+  cmd.argument_buffer = arg_buffer;
+  cmd.argument_buffer_offset = arg_buffer_offset;
+  cmd.count_buffer = count_buffer;
+  cmd.count_buffer_offset = count_buffer_offset;
+  Emit(cmd);
 }
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::AtomicCopyBufferUINT(

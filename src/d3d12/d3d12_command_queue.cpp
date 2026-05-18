@@ -1582,7 +1582,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
     QTRACE("ExecuteCommandLists: cmd_size=%zu", cmds.size());
     size_t offset = 0;
     size_t cmd_count = 0;
-    uint32_t type_counts[30] = {};
+    uint32_t type_counts[40] = {};
     while (offset < cmds.size()) {
       if (offset + sizeof(CmdHeader) > cmds.size())
         break;
@@ -1593,7 +1593,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         break;
       }
 
-      if ((uint32_t)header->type < 30)
+      if ((uint32_t)header->type < 40)
         type_counts[(uint32_t)header->type]++;
       cmd_count++;
 
@@ -1888,6 +1888,291 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
                  st.pso ? st.pso->GetCompileFailureStage() : "no_pso",
                  st.pso ? st.pso->GetCompileFailureDetail() : "");
         }
+        break;
+      }
+      case CmdType::ExecuteIndirect: {
+        auto *cmd = reinterpret_cast<const CmdExecuteIndirect *>(header);
+        const auto *sig_desc = GetD3D12CommandSignatureDesc(cmd->signature);
+        QTRACE("ExecuteIndirect max=%u sig=%p args=%p+%llu count=%p+%llu",
+               cmd->max_command_count, (void *)cmd->signature,
+               (void *)cmd->argument_buffer,
+               (unsigned long long)cmd->argument_buffer_offset,
+               (void *)cmd->count_buffer,
+               (unsigned long long)cmd->count_buffer_offset);
+        if (!sig_desc || !sig_desc->pArgumentDescs || sig_desc->ByteStride == 0 ||
+            !cmd->argument_buffer) {
+          QTRACE("ExecuteIndirect SKIPPED invalid signature/argument buffer");
+          break;
+        }
+
+        auto *arg_res = static_cast<MTLD3D12Resource *>(cmd->argument_buffer);
+        void *arg_base = nullptr;
+        HRESULT map_hr = arg_res->Map(0, nullptr, &arg_base);
+        if (FAILED(map_hr) || !arg_base) {
+          QTRACE("ExecuteIndirect SKIPPED argument buffer not CPU-visible hr=0x%08x",
+                 (unsigned)map_hr);
+          break;
+        }
+
+        uint32_t command_count = cmd->max_command_count;
+        if (cmd->count_buffer) {
+          auto *count_res = static_cast<MTLD3D12Resource *>(cmd->count_buffer);
+          void *count_base = nullptr;
+          HRESULT count_hr = count_res->Map(0, nullptr, &count_base);
+          if (SUCCEEDED(count_hr) && count_base &&
+              cmd->count_buffer_offset + sizeof(uint32_t) <=
+                  count_res->GetBufferByteLength()) {
+            uint32_t gpu_count = *reinterpret_cast<const uint32_t *>(
+                static_cast<const uint8_t *>(count_base) +
+                cmd->count_buffer_offset);
+            command_count = std::min(command_count, gpu_count);
+            QTRACE("ExecuteIndirect count buffer value=%u clamped=%u", gpu_count,
+                   command_count);
+          } else {
+            QTRACE("ExecuteIndirect count buffer unavailable hr=0x%08x",
+                   (unsigned)count_hr);
+          }
+          count_res->Unmap(0, nullptr);
+        }
+
+        auto replay_indirect_draw = [&](const D3D12_DRAW_ARGUMENTS &args) {
+          st.EnsureRenderEncoder();
+          st.ApplyRootBindings(m_device);
+          st.BuildVertexConstantBufferTable(m_device);
+          st.BuildVertexArgumentBuffer(m_device);
+          st.BuildConstantBufferTable(m_device);
+          st.BuildArgumentBuffer(m_device);
+          if (st.render_enc_open && st.arg_buf.handle)
+            st.render_enc.setFragmentBuffer(st.arg_buf, 0, st.kArgBufSlot);
+          st.ApplyVertexBuffers(m_device);
+          QTRACE("ExecuteIndirect DRAW v=%u i=%u start_v=%u start_i=%u enc_open=%d",
+                 args.VertexCountPerInstance, args.InstanceCount,
+                 args.StartVertexLocation, args.StartInstanceLocation,
+                 st.render_enc_open);
+          if (args.InstanceCount > 0 && args.VertexCountPerInstance > 0 &&
+              st.render_enc_open) {
+            struct wmtcmd_render_draw draw = {};
+            draw.type = WMTRenderCommandDraw;
+            draw.next.set(nullptr);
+            draw.primitive_type = st.GetMetalPrimitiveType();
+            draw.vertex_start = args.StartVertexLocation;
+            draw.vertex_count = args.VertexCountPerInstance;
+            draw.base_instance = args.StartInstanceLocation;
+            draw.instance_count = args.InstanceCount;
+            st.render_enc.encodeCommands(
+                reinterpret_cast<const wmtcmd_render_nop *>(&draw));
+          }
+        };
+
+        auto replay_indirect_draw_indexed =
+            [&](const D3D12_DRAW_INDEXED_ARGUMENTS &args) {
+          st.EnsureRenderEncoder();
+          st.ApplyRootBindings(m_device);
+          st.BuildVertexConstantBufferTable(m_device);
+          st.BuildVertexArgumentBuffer(m_device);
+          st.BuildConstantBufferTable(m_device);
+          st.BuildArgumentBuffer(m_device);
+          if (st.render_enc_open && st.arg_buf.handle)
+            st.render_enc.setFragmentBuffer(st.arg_buf, 0, st.kArgBufSlot);
+          st.ApplyVertexBuffers(m_device);
+          if (args.InstanceCount > 0 && args.IndexCountPerInstance > 0 &&
+              st.ib.BufferLocation) {
+            auto *ib_res = m_device->LookupResourceByGPUAddress(st.ib.BufferLocation);
+            if (!ib_res && st.ib.BufferLocation)
+              ib_res = reinterpret_cast<MTLD3D12Resource *>(st.ib.BufferLocation);
+            uint64_t index_buffer_offset = 0;
+            if (ib_res) {
+              index_buffer_offset =
+                  st.ib.BufferLocation - ib_res->GetGPUVirtualAddress();
+              if (st.render_enc_open && ib_res->GetMTLBuffer().handle)
+                st.render_enc.useResource(ib_res->GetMTLBuffer(),
+                                          WMTResourceUsageRead,
+                                          WMTRenderStageVertex);
+            }
+            QTRACE("ExecuteIndirect DRAW_INDEXED idx=%u inst=%u start=%u base=%d ib=0x%llx enc_open=%d",
+                   args.IndexCountPerInstance, args.InstanceCount,
+                   args.StartIndexLocation, args.BaseVertexLocation,
+                   (unsigned long long)st.ib.BufferLocation,
+                   st.render_enc_open);
+            struct wmtcmd_render_draw_indexed draw = {};
+            draw.type = WMTRenderCommandDrawIndexed;
+            draw.next.set(nullptr);
+            draw.primitive_type = st.GetMetalPrimitiveType();
+            draw.index_type = DXGIToWMTIndexFormat(st.ib.Format);
+            draw.index_count = args.IndexCountPerInstance;
+            draw.index_buffer =
+                ib_res ? ib_res->GetMTLBuffer().handle : NULL_OBJECT_HANDLE;
+            draw.index_buffer_offset = index_buffer_offset;
+            draw.instance_count = args.InstanceCount;
+            draw.base_vertex = args.BaseVertexLocation;
+            draw.base_instance = args.StartInstanceLocation;
+            if (st.render_enc_open)
+              st.render_enc.encodeCommands(
+                  reinterpret_cast<const wmtcmd_render_nop *>(&draw));
+          } else {
+            QTRACE("ExecuteIndirect DRAW_INDEXED SKIPPED idx=%u inst=%u ib=0x%llx enc_open=%d",
+                   args.IndexCountPerInstance, args.InstanceCount,
+                   (unsigned long long)st.ib.BufferLocation,
+                   st.render_enc_open);
+          }
+        };
+
+        const auto arg_len = arg_res->GetBufferByteLength();
+        const uint8_t *arg_bytes = static_cast<const uint8_t *>(arg_base);
+        for (uint32_t ci = 0; ci < command_count; ci++) {
+          uint64_t record_off = cmd->argument_buffer_offset +
+                                uint64_t(ci) * sig_desc->ByteStride;
+          uint64_t cursor = 0;
+          bool valid_record = true;
+          for (uint32_t ai = 0; ai < sig_desc->NumArgumentDescs; ai++) {
+            const auto &arg_desc = sig_desc->pArgumentDescs[ai];
+            auto can_read = [&](uint64_t size) {
+              bool ok = record_off + cursor + size <= arg_len &&
+                        cursor + size <= sig_desc->ByteStride;
+              if (!ok) {
+                QTRACE("ExecuteIndirect cmd=%u arg=%u type=%u out-of-bounds cursor=%llu size=%llu stride=%u len=%llu",
+                       ci, ai, (unsigned)arg_desc.Type,
+                       (unsigned long long)cursor, (unsigned long long)size,
+                       sig_desc->ByteStride, (unsigned long long)arg_len);
+              }
+              return ok;
+            };
+            const uint8_t *src = arg_bytes + record_off + cursor;
+            switch (arg_desc.Type) {
+            case D3D12_INDIRECT_ARGUMENT_TYPE_DRAW: {
+              if (!can_read(sizeof(D3D12_DRAW_ARGUMENTS))) {
+                valid_record = false;
+                break;
+              }
+              D3D12_DRAW_ARGUMENTS args = {};
+              memcpy(&args, src, sizeof(args));
+              cursor += sizeof(args);
+              replay_indirect_draw(args);
+              break;
+            }
+            case D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED: {
+              if (!can_read(sizeof(D3D12_DRAW_INDEXED_ARGUMENTS))) {
+                valid_record = false;
+                break;
+              }
+              D3D12_DRAW_INDEXED_ARGUMENTS args = {};
+              memcpy(&args, src, sizeof(args));
+              cursor += sizeof(args);
+              replay_indirect_draw_indexed(args);
+              break;
+            }
+            case D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH:
+              if (!can_read(sizeof(D3D12_DISPATCH_ARGUMENTS))) {
+                valid_record = false;
+                break;
+              }
+              QTRACE("ExecuteIndirect DISPATCH currently traced but not replayed");
+              cursor += sizeof(D3D12_DISPATCH_ARGUMENTS);
+              break;
+            case D3D12_INDIRECT_ARGUMENT_TYPE_VERTEX_BUFFER_VIEW: {
+              if (!can_read(sizeof(D3D12_VERTEX_BUFFER_VIEW))) {
+                valid_record = false;
+                break;
+              }
+              D3D12_VERTEX_BUFFER_VIEW view = {};
+              memcpy(&view, src, sizeof(view));
+              cursor += sizeof(view);
+              uint32_t slot = arg_desc.VertexBuffer.Slot;
+              if (slot < ReplayState::kVertexBufferSlotCount)
+                st.vbs[slot] = view;
+              QTRACE("ExecuteIndirect VBV slot=%u gpu=0x%llx size=%u stride=%u",
+                     slot, (unsigned long long)view.BufferLocation,
+                     view.SizeInBytes, view.StrideInBytes);
+              break;
+            }
+            case D3D12_INDIRECT_ARGUMENT_TYPE_INDEX_BUFFER_VIEW: {
+              if (!can_read(sizeof(D3D12_INDEX_BUFFER_VIEW))) {
+                valid_record = false;
+                break;
+              }
+              memcpy(&st.ib, src, sizeof(st.ib));
+              cursor += sizeof(D3D12_INDEX_BUFFER_VIEW);
+              QTRACE("ExecuteIndirect IBV gpu=0x%llx size=%u format=%u",
+                     (unsigned long long)st.ib.BufferLocation,
+                     st.ib.SizeInBytes, st.ib.Format);
+              break;
+            }
+            case D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT: {
+              uint32_t byte_count = arg_desc.Constant.Num32BitValuesToSet * 4;
+              if (!can_read(byte_count)) {
+                valid_record = false;
+                break;
+              }
+              uint32_t idx = arg_desc.Constant.RootParameterIndex;
+              uint32_t local_off = arg_desc.Constant.DestOffsetIn32BitValues * 4;
+              if (idx < 16 && local_off + byte_count <= st.kRootConstantBytes) {
+                uint32_t off = idx * st.kRootConstantBytes + local_off;
+                memcpy(st.root_constants_buf + off, src, byte_count);
+                memcpy(st.comp_constants_buf + off, src, byte_count);
+                st.root_constant_offsets[idx] = idx * st.kRootConstantBytes;
+                st.comp_constant_offsets[idx] = idx * st.kRootConstantBytes;
+                st.root_constant_sizes[idx] =
+                    std::max(st.root_constant_sizes[idx],
+                             local_off + byte_count);
+                st.comp_constant_sizes[idx] =
+                    std::max(st.comp_constant_sizes[idx],
+                             local_off + byte_count);
+                st.root_constant_set[idx] = true;
+                st.comp_constant_set[idx] = true;
+              }
+              cursor += byte_count;
+              break;
+            }
+            case D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW:
+            case D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW:
+            case D3D12_INDIRECT_ARGUMENT_TYPE_UNORDERED_ACCESS_VIEW: {
+              if (!can_read(sizeof(D3D12_GPU_VIRTUAL_ADDRESS))) {
+                valid_record = false;
+                break;
+              }
+              D3D12_GPU_VIRTUAL_ADDRESS addr = 0;
+              memcpy(&addr, src, sizeof(addr));
+              cursor += sizeof(addr);
+              uint32_t idx = 0;
+              if (arg_desc.Type == D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW) {
+                idx = arg_desc.ConstantBufferView.RootParameterIndex;
+              } else if (arg_desc.Type == D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW) {
+                idx = arg_desc.ShaderResourceView.RootParameterIndex;
+              } else {
+                idx = arg_desc.UnorderedAccessView.RootParameterIndex;
+              }
+              if (idx < 16) {
+                if (arg_desc.Type == D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW) {
+                  st.root_cbvs[idx] = addr;
+                  st.comp_cbvs[idx] = addr;
+                  st.root_cbv_set[idx] = true;
+                  st.comp_cbv_set[idx] = true;
+                } else if (arg_desc.Type == D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW) {
+                  st.root_srvs[idx] = addr;
+                  st.comp_srvs[idx] = addr;
+                  st.root_srv_set[idx] = true;
+                  st.comp_srv_set[idx] = true;
+                } else {
+                  st.root_uavs[idx] = addr;
+                  st.comp_uavs[idx] = addr;
+                  st.root_uav_set[idx] = true;
+                  st.comp_uav_set[idx] = true;
+                }
+              }
+              QTRACE("ExecuteIndirect root addr type=%u idx=%u gpu=0x%llx",
+                     (unsigned)arg_desc.Type, idx, (unsigned long long)addr);
+              break;
+            }
+            default:
+              QTRACE("ExecuteIndirect unsupported arg type=%u", (unsigned)arg_desc.Type);
+              valid_record = false;
+              break;
+            }
+            if (!valid_record)
+              break;
+          }
+        }
+        arg_res->Unmap(0, nullptr);
         break;
       }
       case CmdType::CopyBufferRegion: {

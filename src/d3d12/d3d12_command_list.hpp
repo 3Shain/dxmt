@@ -17,6 +17,7 @@ enum class CmdType : uint32_t {
   DrawInstanced,
   DrawIndexedInstanced,
   Dispatch,
+  ExecuteIndirect,
   CopyBufferRegion,
   CopyTextureRegion,
   CopyResource,
@@ -73,6 +74,16 @@ struct CmdDrawIndexedInstanced {
 struct CmdDispatch {
   CmdHeader header;
   uint32_t x, y, z;
+};
+
+struct CmdExecuteIndirect {
+  CmdHeader header;
+  ID3D12CommandSignature *signature;
+  uint32_t max_command_count;
+  ID3D12Resource *argument_buffer;
+  uint64_t argument_buffer_offset;
+  ID3D12Resource *count_buffer;
+  uint64_t count_buffer_offset;
 };
 
 struct CmdCopyBufferRegion {

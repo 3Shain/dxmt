@@ -14,6 +14,9 @@ namespace dxmt {
 
 class MTLD3D12Resource;
 
+const D3D12_COMMAND_SIGNATURE_DESC *
+GetD3D12CommandSignatureDesc(ID3D12CommandSignature *signature);
+
 class MTLD3D12Device : public ID3D12Device10 {
 public:
   MTLD3D12Device(std::unique_ptr<Device> &&device,

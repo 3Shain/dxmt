@@ -17,6 +17,7 @@
 #include "util_string.hpp"
 #include "d3d12_resource.hpp"
 #include <thread>
+#include <vector>
 #include <d3d12.h>
 #include <windows.h>
 
@@ -163,7 +164,14 @@ convert_depth_stencil_desc1(const D3D12DepthStencilDesc1 &desc1) {
 class MTLD3D12CommandSignature : public ComObject<ID3D12CommandSignature> {
 public:
   MTLD3D12CommandSignature(MTLD3D12Device *device, const D3D12_COMMAND_SIGNATURE_DESC &desc)
-      : m_device(device), m_desc(desc) { m_device->AddRef(); }
+      : m_device(device), m_desc(desc) {
+    if (desc.pArgumentDescs && desc.NumArgumentDescs) {
+      m_argument_descs.assign(desc.pArgumentDescs,
+                             desc.pArgumentDescs + desc.NumArgumentDescs);
+      m_desc.pArgumentDescs = m_argument_descs.data();
+    }
+    m_device->AddRef();
+  }
   ~MTLD3D12CommandSignature() { m_device->Release(); }
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppv) override {
     if (!ppv) return E_POINTER;
@@ -178,10 +186,19 @@ public:
   HRESULT STDMETHODCALLTYPE SetPrivateDataInterface(REFGUID, const IUnknown *) override { return S_OK; }
   HRESULT STDMETHODCALLTYPE SetName(LPCWSTR) override { return S_OK; }
   HRESULT STDMETHODCALLTYPE GetDevice(REFIID riid, void **device) override { return m_device->QueryInterface(riid, device); }
+  const D3D12_COMMAND_SIGNATURE_DESC &GetDesc() const { return m_desc; }
 private:
   MTLD3D12Device *m_device;
   D3D12_COMMAND_SIGNATURE_DESC m_desc;
+  std::vector<D3D12_INDIRECT_ARGUMENT_DESC> m_argument_descs;
 };
+
+const D3D12_COMMAND_SIGNATURE_DESC *
+GetD3D12CommandSignatureDesc(ID3D12CommandSignature *signature) {
+  if (!signature)
+    return nullptr;
+  return &static_cast<MTLD3D12CommandSignature *>(signature)->GetDesc();
+}
 
 } // namespace dxmt
 
