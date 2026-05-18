@@ -283,6 +283,11 @@ struct ReplayState {
   bool root_uav_set[16] = {};
   bool root_table_set[16] = {};
 
+  bool HasUsableRenderPSO() const {
+    return pso && pso->IsCompiled() && !pso->IsCompute() &&
+           pso->GetRenderPSO().handle;
+  }
+
   MTLD3D12RootSignature *compute_root_sig = nullptr;
   D3D12_GPU_VIRTUAL_ADDRESS comp_cbvs[16] = {};
   D3D12_GPU_VIRTUAL_ADDRESS comp_srvs[16] = {};
@@ -1820,7 +1825,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         break;
       auto *header = reinterpret_cast<const CmdHeader *>(cmds.data() + offset);
       if (header->size < sizeof(CmdHeader) || header->size > 65536 || offset + header->size > cmds.size()) {
-        QTRACE("ECL: corrupt cmd at offset=%zu type=%d size=%zu cmds_size=%zu — skipping rest",
+        QTRACE("ECL: corrupt cmd at offset=%zu type=%d size=%u cmds_size=%zu - skipping rest",
                offset, (int)header->type, header->size, cmds.size());
         break;
       }
@@ -1851,7 +1856,8 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
                st.pso ? st.pso->GetCompileFailureStage() : "no_pso",
                st.pso ? st.pso->GetCompileFailureDetail() : "");
 
-        if (cmd->instance_count > 0 && cmd->vertex_count > 0 && st.render_enc_open) {
+        if (cmd->instance_count > 0 && cmd->vertex_count > 0 &&
+            st.render_enc_open && st.HasUsableRenderPSO()) {
           struct wmtcmd_render_draw draw = {};
           draw.type = WMTRenderCommandDraw;
           draw.next.set(nullptr);
@@ -1863,9 +1869,10 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
           st.render_enc.encodeCommands(
               reinterpret_cast<const wmtcmd_render_nop *>(&draw));
         } else {
-          QTRACE("DrawInstanced SKIPPED v=%u i=%u enc_open=%d pso=%p compiled=%d stage=%s detail=%s",
+          QTRACE("DrawInstanced SKIPPED v=%u i=%u enc_open=%d pso=%p compiled=%d render_handle=%llu stage=%s detail=%s",
                  cmd->vertex_count, cmd->instance_count, st.render_enc_open,
                  (void*)st.pso, st.pso ? st.pso->IsCompiled() : 0,
+                 (unsigned long long)(st.pso ? st.pso->GetRenderPSO().handle : 0),
                  st.pso ? st.pso->GetCompileFailureStage() : "no_pso",
                  st.pso ? st.pso->GetCompileFailureDetail() : "");
         }
@@ -1884,7 +1891,9 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         }
         st.ApplyVertexBuffers(m_device);
 
-        if (cmd->instance_count > 0 && cmd->index_count > 0 && st.ib.BufferLocation) {
+        if (cmd->instance_count > 0 && cmd->index_count > 0 &&
+            st.ib.BufferLocation && st.render_enc_open &&
+            st.HasUsableRenderPSO()) {
           auto *ib_res = m_device->LookupResourceByGPUAddress(st.ib.BufferLocation);
           if (!ib_res && st.ib.BufferLocation) {
             ib_res = reinterpret_cast<MTLD3D12Resource *>(st.ib.BufferLocation);
@@ -1919,10 +1928,11 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
           st.render_enc.encodeCommands(
               reinterpret_cast<const wmtcmd_render_nop *>(&draw));
         } else {
-          QTRACE("DrawIndexedInstanced SKIPPED idx=%u inst=%u ib_gpu=0x%llx enc_open=%d pso=%p compiled=%d stage=%s detail=%s",
+          QTRACE("DrawIndexedInstanced SKIPPED idx=%u inst=%u ib_gpu=0x%llx enc_open=%d pso=%p compiled=%d render_handle=%llu stage=%s detail=%s",
                  cmd->index_count, cmd->instance_count,
                  (unsigned long long)st.ib.BufferLocation, st.render_enc_open,
                  (void*)st.pso, st.pso ? st.pso->IsCompiled() : 0,
+                 (unsigned long long)(st.pso ? st.pso->GetRenderPSO().handle : 0),
                  st.pso ? st.pso->GetCompileFailureStage() : "no_pso",
                  st.pso ? st.pso->GetCompileFailureDetail() : "");
         }
