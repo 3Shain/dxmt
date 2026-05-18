@@ -101,16 +101,29 @@ static constexpr uint32_t kBlockID_Constants = 11;
 static constexpr uint32_t kTypeCode_Void = 2;
 static constexpr uint32_t kTypeCode_Float = 3;
 static constexpr uint32_t kTypeCode_Double = 4;
+static constexpr uint32_t kTypeCode_Label = 5;
+static constexpr uint32_t kTypeCode_Opaque = 6;
 static constexpr uint32_t kTypeCode_Integer = 7;
 static constexpr uint32_t kTypeCode_Pointer = 8;
 static constexpr uint32_t kTypeCode_FunctionOld = 9;
-static constexpr uint32_t kTypeCode_Struct = 10;
+static constexpr uint32_t kTypeCode_Half = 10;
 static constexpr uint32_t kTypeCode_Array = 11;
 static constexpr uint32_t kTypeCode_Vector = 12;
+static constexpr uint32_t kTypeCode_X86FP80 = 13;
+static constexpr uint32_t kTypeCode_FP128 = 14;
+static constexpr uint32_t kTypeCode_PPCFP128 = 15;
+static constexpr uint32_t kTypeCode_Metadata = 16;
+static constexpr uint32_t kTypeCode_X86MMX = 17;
 static constexpr uint32_t kTypeCode_StructAnon = 18;
+static constexpr uint32_t kTypeCode_StructName = 19;
 static constexpr uint32_t kTypeCode_StructNamed = 20;
 static constexpr uint32_t kTypeCode_Function = 21;
+static constexpr uint32_t kTypeCode_Token = 22;
+static constexpr uint32_t kTypeCode_BFloat = 23;
+static constexpr uint32_t kTypeCode_X86AMX = 24;
 static constexpr uint32_t kTypeCode_OpaquePointer = 25;
+static constexpr uint32_t kTypeCode_TargetType = 26;
+static constexpr uint32_t kTypeCode_Byte = 27;
 
 static constexpr uint32_t kModuleCode_Function = 8;
 static constexpr uint32_t kModuleCode_GlobalVar = 7;
@@ -402,14 +415,33 @@ static bool parseTypeBlock(ParseContext &ctx, uint32_t abbrev_len, uint32_t end_
       t.kind = LLVMType::Void;
       ctx.module.types.push_back(t);
       break;
+    case kTypeCode_Label:
+    case kTypeCode_Metadata:
+    case kTypeCode_Token:
+      t.kind = LLVMType::Void;
+      ctx.module.types.push_back(t);
+      break;
     case kTypeCode_Float:
       t.kind = LLVMType::Float;
       t.bit_width = 32;
       ctx.module.types.push_back(t);
       break;
+    case kTypeCode_Half:
+    case kTypeCode_BFloat:
+      t.kind = LLVMType::Float;
+      t.bit_width = 16;
+      ctx.module.types.push_back(t);
+      break;
     case kTypeCode_Double:
       t.kind = LLVMType::Double;
       t.bit_width = 64;
+      ctx.module.types.push_back(t);
+      break;
+    case kTypeCode_X86FP80:
+    case kTypeCode_FP128:
+    case kTypeCode_PPCFP128:
+      t.kind = LLVMType::Double;
+      t.bit_width = 128;
       ctx.module.types.push_back(t);
       break;
     case kTypeCode_Integer: {
@@ -432,25 +464,36 @@ static bool parseTypeBlock(ParseContext &ctx, uint32_t abbrev_len, uint32_t end_
       ctx.module.types.push_back(t);
       break;
     }
-    case kTypeCode_Struct: {
+    case kTypeCode_Opaque:
+    case kTypeCode_X86MMX:
+    case kTypeCode_X86AMX:
+    case kTypeCode_TargetType: {
       t.kind = LLVMType::Struct;
-      for (size_t i = 1; i < ops.size(); i++) {
-        t.subtypes.push_back({LLVMType::Void, 0, {}, {}});
-        t.type_refs.push_back((uint32_t)ops[i]);
-      }
+      ctx.module.types.push_back(t);
+      break;
+    }
+    case kTypeCode_Byte: {
+      t.kind = LLVMType::Integer;
+      t.bit_width = ops.size() > 1 ? (uint32_t)ops[1] : 8;
       ctx.module.types.push_back(t);
       break;
     }
     case kTypeCode_StructAnon:
     case kTypeCode_StructNamed: {
       t.kind = LLVMType::Struct;
-      for (size_t i = 2; i < ops.size(); i++) {
+      size_t first_type = rec_code == kTypeCode_StructAnon ||
+                              rec_code == kTypeCode_StructNamed
+                          ? 2
+                          : 1;
+      for (size_t i = first_type; i < ops.size(); i++) {
         t.subtypes.push_back({LLVMType::Void, 0, {}, {}});
         t.type_refs.push_back((uint32_t)ops[i]);
       }
       ctx.module.types.push_back(t);
       break;
     }
+    case kTypeCode_StructName:
+      break;
     case kTypeCode_Array: {
       t.kind = LLVMType::Array;
       t.bit_width = ops.size() > 1 ? (uint32_t)ops[1] : 0;
