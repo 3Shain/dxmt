@@ -116,22 +116,25 @@ static constexpr uint32_t kFuncCode_DeclareBlocks = 1;
 static constexpr uint32_t kFuncCode_InstRet = 10;
 static constexpr uint32_t kFuncCode_InstBr = 11;
 static constexpr uint32_t kFuncCode_InstCall = 34;
-static constexpr uint32_t kFuncCode_InstPHI = 4;
+static constexpr uint32_t kFuncCode_InstPHI = 16;
 static constexpr uint32_t kFuncCode_InstBinop = 2;
 static constexpr uint32_t kFuncCode_InstCast = 3;
-static constexpr uint32_t kFuncCode_InstGEP = 26;
+static constexpr uint32_t kFuncCode_InstGEP_OLD = 4;
+static constexpr uint32_t kFuncCode_InstInBoundsGEP_OLD = 30;
+static constexpr uint32_t kFuncCode_InstGEP = 43;
 static constexpr uint32_t kFuncCode_InstLoad = 20;
 static constexpr uint32_t kFuncCode_InstStore = 44;
-static constexpr uint32_t kFuncCode_InstExtractVal = 55;
-static constexpr uint32_t kFuncCode_InstInsertVal = 56;
-static constexpr uint32_t kFuncCode_InstSelect = 17;
-static constexpr uint32_t kFuncCode_InstICmp = 45;
-static constexpr uint32_t kFuncCode_InstFCmp = 46;
+static constexpr uint32_t kFuncCode_InstExtractVal = 26;
+static constexpr uint32_t kFuncCode_InstInsertVal = 27;
+static constexpr uint32_t kFuncCode_InstSelect = 5;
+static constexpr uint32_t kFuncCode_InstVSelect = 29;
+static constexpr uint32_t kFuncCode_InstCmp = 9;
+static constexpr uint32_t kFuncCode_InstCmp2 = 28;
 static constexpr uint32_t kFuncCode_InstUnreachable = 15;
 static constexpr uint32_t kFuncCode_InstAlloca = 19;
-static constexpr uint32_t kFuncCode_InstExtractElt = 57;
-static constexpr uint32_t kFuncCode_InstInsertElt = 58;
-static constexpr uint32_t kFuncCode_InstShuffleVec = 59;
+static constexpr uint32_t kFuncCode_InstExtractElt = 6;
+static constexpr uint32_t kFuncCode_InstInsertElt = 7;
+static constexpr uint32_t kFuncCode_InstShuffleVec = 8;
 static constexpr uint32_t kFuncCode_InstSwitch = 12;
 static constexpr uint32_t kFuncCode_InstInvoke = 13;
 
@@ -152,6 +155,46 @@ static int64_t decodeSignedVBR(uint64_t value) {
   if (value != 1)
     return -(int64_t)(value >> 1);
   return INT64_MIN;
+}
+
+static LLVMInstruction::Opcode decodeBinop(uint32_t opcode) {
+  switch (opcode) {
+  case 0: return LLVMInstruction::Add;
+  case 1: return LLVMInstruction::Sub;
+  case 2: return LLVMInstruction::Mul;
+  case 3: return LLVMInstruction::UDiv;
+  case 4: return LLVMInstruction::SDiv;
+  case 5: return LLVMInstruction::URem;
+  case 6: return LLVMInstruction::SRem;
+  case 7: return LLVMInstruction::Shl;
+  case 8: return LLVMInstruction::LShr;
+  case 9: return LLVMInstruction::AShr;
+  case 10: return LLVMInstruction::And;
+  case 11: return LLVMInstruction::Or;
+  case 12: return LLVMInstruction::Xor;
+  default: return LLVMInstruction::Add;
+  }
+}
+
+static LLVMInstruction::Opcode decodeCast(uint32_t opcode) {
+  switch (opcode) {
+  case 0: return LLVMInstruction::Trunc;
+  case 1: return LLVMInstruction::ZExt;
+  case 2: return LLVMInstruction::SExt;
+  case 3: return LLVMInstruction::FPToUI;
+  case 4: return LLVMInstruction::FPToSI;
+  case 5: return LLVMInstruction::UIToFP;
+  case 6: return LLVMInstruction::SIToFP;
+  case 7: return LLVMInstruction::FPTrunc;
+  case 8: return LLVMInstruction::FPExt;
+  case 9: return LLVMInstruction::PtrToInt;
+  case 10: return LLVMInstruction::IntToPtr;
+  default: return LLVMInstruction::BitCast;
+  }
+}
+
+static LLVMInstruction::Opcode decodeCmp(uint32_t predicate) {
+  return predicate >= 32 ? LLVMInstruction::ICmp : LLVMInstruction::FCmp;
 }
 
 struct Abbrev {
@@ -384,6 +427,21 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
         fn.blocks[cur_block].instructions.push_back(inst);
       }
       break;
+    case kFuncCode_InstBr: {
+      if (cur_block < fn.blocks.size()) {
+        LLVMInstruction inst;
+        inst.opcode = LLVMInstruction::Br;
+        if (ops.size() == 2) {
+          inst.operands.push_back((uint32_t)ops[1]);
+        } else if (ops.size() >= 4) {
+          inst.operands.push_back((uint32_t)ops[3]);
+          inst.operands.push_back((uint32_t)ops[1]);
+          inst.operands.push_back((uint32_t)ops[2]);
+        }
+        fn.blocks[cur_block].instructions.push_back(inst);
+      }
+      break;
+    }
     case kFuncCode_InstCall: {
       if (cur_block < fn.blocks.size()) {
         LLVMInstruction inst;
@@ -398,9 +456,10 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
     case kFuncCode_InstBinop: {
       if (cur_block < fn.blocks.size()) {
         LLVMInstruction inst;
-        inst.opcode = LLVMInstruction::Add;
-        if (ops.size() > 1) inst.type_id = (uint32_t)ops[1];
-        for (size_t i = 2; i < ops.size(); i++)
+        inst.opcode = ops.size() > 1 ? decodeBinop((uint32_t)ops[1])
+                                     : LLVMInstruction::Add;
+        if (ops.size() > 2) inst.type_id = (uint32_t)ops[2];
+        for (size_t i = 3; i < ops.size() && i < 5; i++)
           inst.operands.push_back((uint32_t)ops[i]);
         fn.blocks[cur_block].instructions.push_back(inst);
       }
@@ -409,19 +468,23 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
     case kFuncCode_InstCast: {
       if (cur_block < fn.blocks.size()) {
         LLVMInstruction inst;
-        inst.opcode = LLVMInstruction::BitCast;
-        if (ops.size() > 1) inst.type_id = (uint32_t)ops[1];
-        for (size_t i = 2; i < ops.size(); i++)
-          inst.operands.push_back((uint32_t)ops[i]);
+        inst.opcode = ops.size() > 1 ? decodeCast((uint32_t)ops[1])
+                                     : LLVMInstruction::BitCast;
+        if (ops.size() > 2) inst.type_id = (uint32_t)ops[2];
+        if (ops.size() > 4)
+          inst.operands.push_back((uint32_t)ops[4]);
         fn.blocks[cur_block].instructions.push_back(inst);
       }
       break;
     }
+    case kFuncCode_InstGEP_OLD:
+    case kFuncCode_InstInBoundsGEP_OLD:
     case kFuncCode_InstGEP: {
       if (cur_block < fn.blocks.size()) {
         LLVMInstruction inst;
         inst.opcode = LLVMInstruction::GetElementPtr;
-        for (size_t i = 1; i < ops.size(); i++)
+        size_t first_operand = rec_code == kFuncCode_InstGEP ? 2 : 1;
+        for (size_t i = first_operand; i < ops.size(); i++)
           inst.operands.push_back((uint32_t)ops[i]);
         fn.blocks[cur_block].instructions.push_back(inst);
       }
@@ -442,26 +505,108 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
       if (cur_block < fn.blocks.size()) {
         LLVMInstruction inst;
         inst.opcode = LLVMInstruction::Store;
-        for (size_t i = 1; i < ops.size(); i++)
-          inst.operands.push_back((uint32_t)ops[i]);
+        if (ops.size() > 2)
+          inst.operands.push_back((uint32_t)ops[2]);
+        if (ops.size() > 4)
+          inst.operands.push_back((uint32_t)ops[4]);
+        fn.blocks[cur_block].instructions.push_back(inst);
+      }
+      break;
+    }
+    case kFuncCode_InstSelect:
+    case kFuncCode_InstVSelect: {
+      if (cur_block < fn.blocks.size() && ops.size() >= 5) {
+        LLVMInstruction inst;
+        inst.opcode = LLVMInstruction::Select;
+        inst.type_id = (uint32_t)ops[1];
+        if (rec_code == kFuncCode_InstVSelect && ops.size() >= 6) {
+          inst.operands.push_back((uint32_t)ops[5]);
+          inst.operands.push_back((uint32_t)ops[2]);
+          inst.operands.push_back((uint32_t)ops[3]);
+        } else {
+          inst.operands.push_back((uint32_t)ops[4]);
+          inst.operands.push_back((uint32_t)ops[2]);
+          inst.operands.push_back((uint32_t)ops[3]);
+        }
+        fn.blocks[cur_block].instructions.push_back(inst);
+      }
+      break;
+    }
+    case kFuncCode_InstCmp:
+    case kFuncCode_InstCmp2: {
+      if (cur_block < fn.blocks.size() && ops.size() >= 5) {
+        LLVMInstruction inst;
+        uint32_t pred = (uint32_t)ops[4];
+        inst.opcode = decodeCmp(pred);
+        inst.type_id = (uint32_t)ops[1];
+        inst.operands.push_back(pred);
+        inst.operands.push_back((uint32_t)ops[2]);
+        inst.operands.push_back((uint32_t)ops[3]);
+        fn.blocks[cur_block].instructions.push_back(inst);
+      }
+      break;
+    }
+    case kFuncCode_InstAlloca: {
+      if (cur_block < fn.blocks.size()) {
+        LLVMInstruction inst;
+        inst.opcode = LLVMInstruction::Alloca;
+        if (ops.size() > 1) inst.type_id = (uint32_t)ops[1];
+        fn.blocks[cur_block].instructions.push_back(inst);
+      }
+      break;
+    }
+    case kFuncCode_InstExtractElt: {
+      if (cur_block < fn.blocks.size() && ops.size() >= 4) {
+        LLVMInstruction inst;
+        inst.opcode = LLVMInstruction::ExtractElement;
+        inst.type_id = (uint32_t)ops[1];
+        inst.operands.push_back((uint32_t)ops[2]);
+        inst.operands.push_back((uint32_t)ops[3]);
+        fn.blocks[cur_block].instructions.push_back(inst);
+      }
+      break;
+    }
+    case kFuncCode_InstInsertElt:
+    case kFuncCode_InstShuffleVec: {
+      if (cur_block < fn.blocks.size() && ops.size() >= 5) {
+        LLVMInstruction inst;
+        inst.opcode = rec_code == kFuncCode_InstInsertElt
+                          ? LLVMInstruction::InsertElement
+                          : LLVMInstruction::ShuffleVector;
+        inst.type_id = (uint32_t)ops[1];
+        inst.operands.push_back((uint32_t)ops[2]);
+        inst.operands.push_back((uint32_t)ops[3]);
+        inst.operands.push_back((uint32_t)ops[4]);
         fn.blocks[cur_block].instructions.push_back(inst);
       }
       break;
     }
     case kFuncCode_InstExtractVal:
     case kFuncCode_InstInsertVal:
-    case kFuncCode_InstSelect:
-    case kFuncCode_InstICmp:
-    case kFuncCode_InstFCmp:
+    case kFuncCode_InstPHI: {
+      if (cur_block < fn.blocks.size()) {
+        LLVMInstruction inst;
+        inst.opcode = rec_code == kFuncCode_InstExtractVal
+                          ? LLVMInstruction::ExtractValue
+                          : rec_code == kFuncCode_InstInsertVal
+                                ? LLVMInstruction::InsertValue
+                                : LLVMInstruction::PHI;
+        if (ops.size() > 1) inst.type_id = (uint32_t)ops[1];
+        for (size_t i = 2; i < ops.size(); i++)
+          inst.operands.push_back((uint32_t)ops[i]);
+        fn.blocks[cur_block].instructions.push_back(inst);
+      }
+      break;
+    }
     case kFuncCode_InstUnreachable:
-    case kFuncCode_InstAlloca:
-    case kFuncCode_InstExtractElt:
-    case kFuncCode_InstInsertElt:
-    case kFuncCode_InstShuffleVec:
+      if (cur_block < fn.blocks.size()) {
+        LLVMInstruction inst;
+        inst.opcode = LLVMInstruction::Unreachable;
+        fn.blocks[cur_block].instructions.push_back(inst);
+      }
+      break;
     case kFuncCode_InstSwitch:
     case kFuncCode_InstInvoke:
-    case kFuncCode_InstPHI:
-    case kFuncCode_InstBr:
     default:
       break;
     }
