@@ -205,6 +205,12 @@ struct _DXRootDescriptor10 {
   uint32_t register_space;
 };
 
+struct _DXRootDescriptor11 {
+  uint32_t shader_register;
+  uint32_t register_space;
+  uint32_t flags;
+};
+
 struct _DXDescriptorTable {
   uint32_t num_ranges;
   uint32_t ranges_offset;
@@ -321,28 +327,48 @@ public:
     if (!desc)
       return E_POINTER;
     *desc = nullptr;
-    if (version != D3D_ROOT_SIGNATURE_VERSION_1_0)
-      return E_INVALIDARG;
-    *desc = &m_versioned_desc;
-    return S_OK;
+
+    if (version == D3D_ROOT_SIGNATURE_VERSION_1_0) {
+      *desc = &m_versioned_desc0;
+      return S_OK;
+    }
+
+    if (version == D3D_ROOT_SIGNATURE_VERSION_1_1) {
+      *desc = &m_versioned_desc1;
+      return S_OK;
+    }
+
+    return E_INVALIDARG;
   }
 
   const D3D12_VERSIONED_ROOT_SIGNATURE_DESC *STDMETHODCALLTYPE
   GetUnconvertedRootSignatureDesc() override {
-    return &m_versioned_desc;
+    return m_unconverted_version == D3D_ROOT_SIGNATURE_VERSION_1_1
+               ? &m_versioned_desc1
+               : &m_versioned_desc0;
   }
 
 private:
-  void FinalizeDesc(UINT flags) {
-    m_desc.NumParameters = static_cast<UINT>(m_params.size());
-    m_desc.pParameters = m_params.empty() ? nullptr : m_params.data();
+  void FinalizeDescs(UINT flags, D3D_ROOT_SIGNATURE_VERSION original_version) {
+    m_desc.NumParameters = static_cast<UINT>(m_params0.size());
+    m_desc.pParameters = m_params0.empty() ? nullptr : m_params0.data();
     m_desc.NumStaticSamplers = static_cast<UINT>(m_static_samplers.size());
     m_desc.pStaticSamplers =
         m_static_samplers.empty() ? nullptr : m_static_samplers.data();
     m_desc.Flags = static_cast<D3D12_ROOT_SIGNATURE_FLAGS>(flags);
 
-    m_versioned_desc.Version = D3D_ROOT_SIGNATURE_VERSION_1_0;
-    m_versioned_desc.Desc_1_0 = m_desc;
+    m_desc1.NumParameters = static_cast<UINT>(m_params1.size());
+    m_desc1.pParameters = m_params1.empty() ? nullptr : m_params1.data();
+    m_desc1.NumStaticSamplers = static_cast<UINT>(m_static_samplers.size());
+    m_desc1.pStaticSamplers =
+        m_static_samplers.empty() ? nullptr : m_static_samplers.data();
+    m_desc1.Flags = static_cast<D3D12_ROOT_SIGNATURE_FLAGS>(flags);
+
+    m_versioned_desc0.Version = D3D_ROOT_SIGNATURE_VERSION_1_0;
+    m_versioned_desc0.Desc_1_0 = m_desc;
+    m_versioned_desc1.Version = D3D_ROOT_SIGNATURE_VERSION_1_1;
+    m_versioned_desc1.Desc_1_1 = m_desc1;
+    m_unconverted_version = original_version;
   }
 
   bool ParseRTS0(const uint8_t *data, SIZE_T size) {
@@ -362,11 +388,15 @@ private:
                           hdr->num_static_samplers * sizeof(_DXStaticSampler)))
       return false;
 
-    m_params.clear();
-    m_ranges.clear();
+    m_params0.clear();
+    m_ranges0.clear();
+    m_params1.clear();
+    m_ranges1.clear();
     m_static_samplers.clear();
-    m_params.resize(hdr->num_parameters);
-    m_ranges.resize(hdr->num_parameters);
+    m_params0.resize(hdr->num_parameters);
+    m_ranges0.resize(hdr->num_parameters);
+    m_params1.resize(hdr->num_parameters);
+    m_ranges1.resize(hdr->num_parameters);
     m_static_samplers.resize(hdr->num_static_samplers);
 
     auto *param_headers = reinterpret_cast<const _DXRootParameterHeader *>(
@@ -377,13 +407,16 @@ private:
       if (!_RSRangeContains(size, src.parameter_offset, sizeof(uint32_t)))
         return false;
 
-      auto &dst = m_params[i];
-      dst.ParameterType =
+      auto &dst0 = m_params0[i];
+      auto &dst1 = m_params1[i];
+      dst0.ParameterType =
           static_cast<D3D12_ROOT_PARAMETER_TYPE>(src.parameter_type);
-      dst.ShaderVisibility =
+      dst0.ShaderVisibility =
           static_cast<D3D12_SHADER_VISIBILITY>(src.shader_visibility);
+      dst1.ParameterType = dst0.ParameterType;
+      dst1.ShaderVisibility = dst0.ShaderVisibility;
 
-      switch (dst.ParameterType) {
+      switch (dst0.ParameterType) {
       case D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS: {
         if (!_RSRangeContains(size, src.parameter_offset,
                               sizeof(_DXRootConstants)))
@@ -391,9 +424,10 @@ private:
 
         auto *constants = reinterpret_cast<const _DXRootConstants *>(
             data + src.parameter_offset);
-        dst.Constants.RegisterSpace = constants->register_space;
-        dst.Constants.ShaderRegister = constants->shader_register;
-        dst.Constants.Num32BitValues = constants->num_32bit_values;
+        dst0.Constants.RegisterSpace = constants->register_space;
+        dst0.Constants.ShaderRegister = constants->shader_register;
+        dst0.Constants.Num32BitValues = constants->num_32bit_values;
+        dst1.Constants = dst0.Constants;
         break;
       }
       case D3D12_ROOT_PARAMETER_TYPE_CBV:
@@ -408,8 +442,17 @@ private:
 
         auto *descriptor = reinterpret_cast<const _DXRootDescriptor10 *>(
             data + src.parameter_offset);
-        dst.Descriptor.RegisterSpace = descriptor->register_space;
-        dst.Descriptor.ShaderRegister = descriptor->shader_register;
+        dst0.Descriptor.RegisterSpace = descriptor->register_space;
+        dst0.Descriptor.ShaderRegister = descriptor->shader_register;
+        dst1.Descriptor.RegisterSpace = descriptor->register_space;
+        dst1.Descriptor.ShaderRegister = descriptor->shader_register;
+        dst1.Descriptor.Flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE;
+        if (hdr->version == D3D_ROOT_SIGNATURE_VERSION_1_1) {
+          auto *descriptor1 = reinterpret_cast<const _DXRootDescriptor11 *>(
+              data + src.parameter_offset);
+          dst1.Descriptor.Flags =
+              static_cast<D3D12_ROOT_DESCRIPTOR_FLAGS>(descriptor1->flags);
+        }
         break;
       }
       case D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE: {
@@ -436,34 +479,54 @@ private:
           return false;
         }
 
-        m_ranges[i].resize(table->num_ranges);
+        m_ranges0[i].resize(table->num_ranges);
+        m_ranges1[i].resize(table->num_ranges);
         for (UINT r = 0; r < table->num_ranges; r++) {
-          auto &out_range = m_ranges[i][r];
+          auto &out_range0 = m_ranges0[i][r];
+          auto &out_range1 = m_ranges1[i][r];
           if (hdr->version == D3D_ROOT_SIGNATURE_VERSION_1_0) {
             auto *src_range = reinterpret_cast<const _DXDescriptorRange10 *>(
                 ranges_base + r * range_size);
-            out_range.RangeType =
+            out_range0.RangeType =
                 static_cast<D3D12_DESCRIPTOR_RANGE_TYPE>(src_range->range_type);
-            out_range.NumDescriptors = src_range->num_descriptors;
-            out_range.BaseShaderRegister = src_range->base_shader_register;
-            out_range.RegisterSpace = src_range->register_space;
-            out_range.OffsetInDescriptorsFromTableStart =
+            out_range0.NumDescriptors = src_range->num_descriptors;
+            out_range0.BaseShaderRegister = src_range->base_shader_register;
+            out_range0.RegisterSpace = src_range->register_space;
+            out_range0.OffsetInDescriptorsFromTableStart =
                 src_range->offset_in_table;
+            out_range1.RangeType = out_range0.RangeType;
+            out_range1.NumDescriptors = out_range0.NumDescriptors;
+            out_range1.BaseShaderRegister = out_range0.BaseShaderRegister;
+            out_range1.RegisterSpace = out_range0.RegisterSpace;
+            out_range1.Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE;
+            out_range1.OffsetInDescriptorsFromTableStart =
+                out_range0.OffsetInDescriptorsFromTableStart;
           } else {
             auto *src_range = reinterpret_cast<const _DXDescriptorRange11 *>(
                 ranges_base + r * range_size);
-            out_range.RangeType =
+            out_range0.RangeType =
                 static_cast<D3D12_DESCRIPTOR_RANGE_TYPE>(src_range->range_type);
-            out_range.NumDescriptors = src_range->num_descriptors;
-            out_range.BaseShaderRegister = src_range->base_shader_register;
-            out_range.RegisterSpace = src_range->register_space;
-            out_range.OffsetInDescriptorsFromTableStart =
+            out_range0.NumDescriptors = src_range->num_descriptors;
+            out_range0.BaseShaderRegister = src_range->base_shader_register;
+            out_range0.RegisterSpace = src_range->register_space;
+            out_range0.OffsetInDescriptorsFromTableStart =
                 src_range->offset_in_table;
+            out_range1.RangeType = out_range0.RangeType;
+            out_range1.NumDescriptors = out_range0.NumDescriptors;
+            out_range1.BaseShaderRegister = out_range0.BaseShaderRegister;
+            out_range1.RegisterSpace = out_range0.RegisterSpace;
+            out_range1.Flags =
+                static_cast<D3D12_DESCRIPTOR_RANGE_FLAGS>(src_range->flags);
+            out_range1.OffsetInDescriptorsFromTableStart =
+                out_range0.OffsetInDescriptorsFromTableStart;
           }
         }
-        dst.DescriptorTable.NumDescriptorRanges = table->num_ranges;
-        dst.DescriptorTable.pDescriptorRanges =
-            m_ranges[i].empty() ? nullptr : m_ranges[i].data();
+        dst0.DescriptorTable.NumDescriptorRanges = table->num_ranges;
+        dst0.DescriptorTable.pDescriptorRanges =
+            m_ranges0[i].empty() ? nullptr : m_ranges0[i].data();
+        dst1.DescriptorTable.NumDescriptorRanges = table->num_ranges;
+        dst1.DescriptorTable.pDescriptorRanges =
+            m_ranges1[i].empty() ? nullptr : m_ranges1[i].data();
         break;
       }
       default:
@@ -494,7 +557,8 @@ private:
           static_cast<D3D12_SHADER_VISIBILITY>(src.shader_visibility);
     }
 
-    FinalizeDesc(hdr->flags);
+    FinalizeDescs(hdr->flags,
+                  static_cast<D3D_ROOT_SIGNATURE_VERSION>(hdr->version));
     TraceAgility("D3D12RootSignatureDeserializer parsed RTS0 version=%u "
                  "params=%u samplers=%u flags=0x%x",
                  hdr->version, hdr->num_parameters, hdr->num_static_samplers,
@@ -518,11 +582,15 @@ private:
       return false;
 
     ptr += sizeof(_RSHeader);
-    m_params.clear();
-    m_ranges.clear();
+    m_params0.clear();
+    m_ranges0.clear();
+    m_params1.clear();
+    m_ranges1.clear();
     m_static_samplers.clear();
-    m_params.resize(hdr->num_parameters);
-    m_ranges.resize(hdr->num_parameters);
+    m_params0.resize(hdr->num_parameters);
+    m_ranges0.resize(hdr->num_parameters);
+    m_params1.resize(hdr->num_parameters);
+    m_ranges1.resize(hdr->num_parameters);
     m_static_samplers.resize(hdr->num_static_samplers);
 
     for (UINT i = 0; i < hdr->num_parameters; i++) {
@@ -530,42 +598,60 @@ private:
         return false;
 
       auto *src = reinterpret_cast<const _RSParameter *>(ptr);
-      auto &dst = m_params[i];
-      dst.ParameterType = static_cast<D3D12_ROOT_PARAMETER_TYPE>(src->type);
-      dst.ShaderVisibility =
+      auto &dst0 = m_params0[i];
+      auto &dst1 = m_params1[i];
+      dst0.ParameterType = static_cast<D3D12_ROOT_PARAMETER_TYPE>(src->type);
+      dst0.ShaderVisibility =
           static_cast<D3D12_SHADER_VISIBILITY>(src->visibility);
+      dst1.ParameterType = dst0.ParameterType;
+      dst1.ShaderVisibility = dst0.ShaderVisibility;
       ptr += sizeof(_RSParameter);
 
-      switch (dst.ParameterType) {
+      switch (dst0.ParameterType) {
       case D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS:
-        dst.Constants.RegisterSpace = src->constants.register_space;
-        dst.Constants.ShaderRegister = src->constants.register_index;
-        dst.Constants.Num32BitValues = src->constants.num_32bit_values;
+        dst0.Constants.RegisterSpace = src->constants.register_space;
+        dst0.Constants.ShaderRegister = src->constants.register_index;
+        dst0.Constants.Num32BitValues = src->constants.num_32bit_values;
+        dst1.Constants = dst0.Constants;
         break;
       case D3D12_ROOT_PARAMETER_TYPE_CBV:
       case D3D12_ROOT_PARAMETER_TYPE_SRV:
       case D3D12_ROOT_PARAMETER_TYPE_UAV:
-        dst.Descriptor.RegisterSpace = src->descriptor.register_space;
-        dst.Descriptor.ShaderRegister = src->descriptor.register_index;
+        dst0.Descriptor.RegisterSpace = src->descriptor.register_space;
+        dst0.Descriptor.ShaderRegister = src->descriptor.register_index;
+        dst1.Descriptor.RegisterSpace = dst0.Descriptor.RegisterSpace;
+        dst1.Descriptor.ShaderRegister = dst0.Descriptor.ShaderRegister;
+        dst1.Descriptor.Flags = D3D12_ROOT_DESCRIPTOR_FLAG_NONE;
         break;
       case D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE:
         if (src->table.num_ranges >
             static_cast<UINT>((end - ptr) / sizeof(_RSDescriptorRange)))
           return false;
-        m_ranges[i].resize(src->table.num_ranges);
+        m_ranges0[i].resize(src->table.num_ranges);
+        m_ranges1[i].resize(src->table.num_ranges);
         for (UINT r = 0; r < src->table.num_ranges; r++) {
           auto *range = reinterpret_cast<const _RSDescriptorRange *>(ptr);
-          auto &out_range = m_ranges[i][r];
-          out_range.RangeType =
+          auto &out_range0 = m_ranges0[i][r];
+          auto &out_range1 = m_ranges1[i][r];
+          out_range0.RangeType =
               static_cast<D3D12_DESCRIPTOR_RANGE_TYPE>(range->range_type);
-          out_range.NumDescriptors = range->num_descriptors;
-          out_range.BaseShaderRegister = range->base_register;
-          out_range.RegisterSpace = range->register_space;
-          out_range.OffsetInDescriptorsFromTableStart = range->offset_in_table;
+          out_range0.NumDescriptors = range->num_descriptors;
+          out_range0.BaseShaderRegister = range->base_register;
+          out_range0.RegisterSpace = range->register_space;
+          out_range0.OffsetInDescriptorsFromTableStart = range->offset_in_table;
+          out_range1.RangeType = out_range0.RangeType;
+          out_range1.NumDescriptors = out_range0.NumDescriptors;
+          out_range1.BaseShaderRegister = out_range0.BaseShaderRegister;
+          out_range1.RegisterSpace = out_range0.RegisterSpace;
+          out_range1.Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE;
+          out_range1.OffsetInDescriptorsFromTableStart =
+              out_range0.OffsetInDescriptorsFromTableStart;
           ptr += sizeof(_RSDescriptorRange);
         }
-        dst.DescriptorTable.NumDescriptorRanges = src->table.num_ranges;
-        dst.DescriptorTable.pDescriptorRanges = m_ranges[i].data();
+        dst0.DescriptorTable.NumDescriptorRanges = src->table.num_ranges;
+        dst0.DescriptorTable.pDescriptorRanges = m_ranges0[i].data();
+        dst1.DescriptorTable.NumDescriptorRanges = src->table.num_ranges;
+        dst1.DescriptorTable.pDescriptorRanges = m_ranges1[i].data();
         break;
       default:
         return false;
@@ -597,7 +683,7 @@ private:
       ptr += sizeof(_RSStaticSampler);
     }
 
-    FinalizeDesc(hdr->flags);
+    FinalizeDescs(hdr->flags, D3D_ROOT_SIGNATURE_VERSION_1_0);
     return ptr <= end;
   }
 
@@ -638,10 +724,16 @@ private:
 
   ULONG m_ref = 1;
   bool m_valid = false;
+  D3D_ROOT_SIGNATURE_VERSION m_unconverted_version =
+      D3D_ROOT_SIGNATURE_VERSION_1_0;
   D3D12_ROOT_SIGNATURE_DESC m_desc = {};
-  D3D12_VERSIONED_ROOT_SIGNATURE_DESC m_versioned_desc = {};
-  std::vector<D3D12_ROOT_PARAMETER> m_params;
-  std::vector<std::vector<D3D12_DESCRIPTOR_RANGE>> m_ranges;
+  D3D12_ROOT_SIGNATURE_DESC1 m_desc1 = {};
+  D3D12_VERSIONED_ROOT_SIGNATURE_DESC m_versioned_desc0 = {};
+  D3D12_VERSIONED_ROOT_SIGNATURE_DESC m_versioned_desc1 = {};
+  std::vector<D3D12_ROOT_PARAMETER> m_params0;
+  std::vector<std::vector<D3D12_DESCRIPTOR_RANGE>> m_ranges0;
+  std::vector<D3D12_ROOT_PARAMETER1> m_params1;
+  std::vector<std::vector<D3D12_DESCRIPTOR_RANGE1>> m_ranges1;
   std::vector<D3D12_STATIC_SAMPLER_DESC> m_static_samplers;
 };
 
