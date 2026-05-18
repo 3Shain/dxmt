@@ -192,6 +192,172 @@ public:
   SIZE_T STDMETHODCALLTYPE GetBufferSize() { return m_data.size(); }
 };
 
+class _RSDeserializer final : public ID3D12RootSignatureDeserializer,
+                              public ID3D12VersionedRootSignatureDeserializer {
+public:
+  _RSDeserializer(const void *data, SIZE_T size) { m_valid = Parse(data, size); }
+
+  bool Valid() const { return m_valid; }
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppv) override {
+    if (!ppv)
+      return E_POINTER;
+    *ppv = nullptr;
+
+    if (riid == IID_IUnknown || riid == IID_ID3D12RootSignatureDeserializer) {
+      *ppv = static_cast<ID3D12RootSignatureDeserializer *>(this);
+      AddRef();
+      return S_OK;
+    }
+    if (riid == IID_ID3D12VersionedRootSignatureDeserializer) {
+      *ppv = static_cast<ID3D12VersionedRootSignatureDeserializer *>(this);
+      AddRef();
+      return S_OK;
+    }
+    return E_NOINTERFACE;
+  }
+
+  ULONG STDMETHODCALLTYPE AddRef() override { return ++m_ref; }
+
+  ULONG STDMETHODCALLTYPE Release() override {
+    ULONG r = --m_ref;
+    if (!r)
+      delete this;
+    return r;
+  }
+
+  const D3D12_ROOT_SIGNATURE_DESC *STDMETHODCALLTYPE
+  GetRootSignatureDesc() override {
+    return &m_desc;
+  }
+
+  HRESULT STDMETHODCALLTYPE GetRootSignatureDescAtVersion(
+      D3D_ROOT_SIGNATURE_VERSION version,
+      const D3D12_VERSIONED_ROOT_SIGNATURE_DESC **desc) override {
+    if (!desc)
+      return E_POINTER;
+    *desc = nullptr;
+    if (version != D3D_ROOT_SIGNATURE_VERSION_1_0)
+      return E_INVALIDARG;
+    *desc = &m_versioned_desc;
+    return S_OK;
+  }
+
+  const D3D12_VERSIONED_ROOT_SIGNATURE_DESC *STDMETHODCALLTYPE
+  GetUnconvertedRootSignatureDesc() override {
+    return &m_versioned_desc;
+  }
+
+private:
+  bool Parse(const void *data, SIZE_T size) {
+    if (!data || size < sizeof(_RSHeader))
+      return false;
+
+    const uint8_t *ptr = static_cast<const uint8_t *>(data);
+    const uint8_t *end = ptr + size;
+    auto canRead = [&](SIZE_T bytes) -> bool {
+      return bytes <= static_cast<SIZE_T>(end - ptr);
+    };
+
+    auto *hdr = reinterpret_cast<const _RSHeader *>(ptr);
+    if (hdr->num_parameters > size / sizeof(_RSParameter) ||
+        hdr->num_static_samplers > size / sizeof(_RSStaticSampler))
+      return false;
+
+    ptr += sizeof(_RSHeader);
+    m_params.resize(hdr->num_parameters);
+    m_ranges.resize(hdr->num_parameters);
+    m_static_samplers.resize(hdr->num_static_samplers);
+
+    for (UINT i = 0; i < hdr->num_parameters; i++) {
+      if (!canRead(sizeof(_RSParameter)))
+        return false;
+
+      auto *src = reinterpret_cast<const _RSParameter *>(ptr);
+      auto &dst = m_params[i];
+      dst.ParameterType = static_cast<D3D12_ROOT_PARAMETER_TYPE>(src->type);
+      dst.ShaderVisibility = static_cast<D3D12_SHADER_VISIBILITY>(src->visibility);
+      ptr += sizeof(_RSParameter);
+
+      switch (dst.ParameterType) {
+      case D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS:
+        dst.Constants.RegisterSpace = src->constants.register_space;
+        dst.Constants.ShaderRegister = src->constants.register_index;
+        dst.Constants.Num32BitValues = src->constants.num_32bit_values;
+        break;
+      case D3D12_ROOT_PARAMETER_TYPE_CBV:
+      case D3D12_ROOT_PARAMETER_TYPE_SRV:
+      case D3D12_ROOT_PARAMETER_TYPE_UAV:
+        dst.Descriptor.RegisterSpace = src->descriptor.register_space;
+        dst.Descriptor.ShaderRegister = src->descriptor.register_index;
+        break;
+      case D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE:
+        if (src->table.num_ranges > static_cast<UINT>((end - ptr) / sizeof(_RSDescriptorRange)))
+          return false;
+        m_ranges[i].resize(src->table.num_ranges);
+        for (UINT r = 0; r < src->table.num_ranges; r++) {
+          auto *range = reinterpret_cast<const _RSDescriptorRange *>(ptr);
+          auto &out_range = m_ranges[i][r];
+          out_range.RangeType =
+              static_cast<D3D12_DESCRIPTOR_RANGE_TYPE>(range->range_type);
+          out_range.NumDescriptors = range->num_descriptors;
+          out_range.BaseShaderRegister = range->base_register;
+          out_range.RegisterSpace = range->register_space;
+          out_range.OffsetInDescriptorsFromTableStart = range->offset_in_table;
+          ptr += sizeof(_RSDescriptorRange);
+        }
+        dst.DescriptorTable.NumDescriptorRanges = src->table.num_ranges;
+        dst.DescriptorTable.pDescriptorRanges = m_ranges[i].data();
+        break;
+      default:
+        return false;
+      }
+    }
+
+    for (UINT i = 0; i < hdr->num_static_samplers; i++) {
+      if (!canRead(sizeof(_RSStaticSampler)))
+        return false;
+
+      auto *src = reinterpret_cast<const _RSStaticSampler *>(ptr);
+      auto &dst = m_static_samplers[i];
+      dst.Filter = static_cast<D3D12_FILTER>(src->filter);
+      dst.AddressU = static_cast<D3D12_TEXTURE_ADDRESS_MODE>(src->address_u);
+      dst.AddressV = static_cast<D3D12_TEXTURE_ADDRESS_MODE>(src->address_v);
+      dst.AddressW = static_cast<D3D12_TEXTURE_ADDRESS_MODE>(src->address_w);
+      dst.MipLODBias = src->mip_lod_bias;
+      dst.MaxAnisotropy = src->max_anisotropy;
+      dst.ComparisonFunc = static_cast<D3D12_COMPARISON_FUNC>(src->comparison_func);
+      dst.BorderColor = static_cast<D3D12_STATIC_BORDER_COLOR>(src->border_color);
+      dst.MinLOD = src->min_lod;
+      dst.MaxLOD = src->max_lod;
+      dst.ShaderRegister = src->register_index;
+      dst.RegisterSpace = src->register_space;
+      dst.ShaderVisibility =
+          static_cast<D3D12_SHADER_VISIBILITY>(src->shader_visibility);
+      ptr += sizeof(_RSStaticSampler);
+    }
+
+    m_desc.NumParameters = hdr->num_parameters;
+    m_desc.pParameters = m_params.empty() ? nullptr : m_params.data();
+    m_desc.NumStaticSamplers = hdr->num_static_samplers;
+    m_desc.pStaticSamplers =
+        m_static_samplers.empty() ? nullptr : m_static_samplers.data();
+    m_desc.Flags = static_cast<D3D12_ROOT_SIGNATURE_FLAGS>(hdr->flags);
+
+    m_versioned_desc.Version = D3D_ROOT_SIGNATURE_VERSION_1_0;
+    m_versioned_desc.Desc_1_0 = m_desc;
+    return ptr <= end;
+  }
+
+  ULONG m_ref = 1;
+  bool m_valid = false;
+  D3D12_ROOT_SIGNATURE_DESC m_desc = {};
+  D3D12_VERSIONED_ROOT_SIGNATURE_DESC m_versioned_desc = {};
+  std::vector<D3D12_ROOT_PARAMETER> m_params;
+  std::vector<std::vector<D3D12_DESCRIPTOR_RANGE>> m_ranges;
+  std::vector<D3D12_STATIC_SAMPLER_DESC> m_static_samplers;
+};
+
 static HRESULT _SerializeRootSig(const D3D12_ROOT_SIGNATURE_DESC *desc,
                                  ID3DBlob **ppBlob) {
   if (!desc || !ppBlob)
@@ -460,8 +626,29 @@ extern "C" HRESULT WINAPI D3D12SerializeVersionedRootSignature(
 
 extern "C" HRESULT WINAPI D3D12CreateRootSignatureDeserializer(
     const void *pData, SIZE_T NumBytes, REFIID riid, void **ppDeserializer) {
-  Logger::info("D3D12CreateRootSignatureDeserializer: stub");
-  return E_NOTIMPL;
+  if (!ppDeserializer)
+    return E_POINTER;
+  *ppDeserializer = nullptr;
+
+  auto *deserializer = new _RSDeserializer(pData, NumBytes);
+  if (!deserializer->Valid()) {
+    deserializer->Release();
+    TraceAgility("D3D12CreateRootSignatureDeserializer bytes=%zu -> E_INVALIDARG",
+                 NumBytes);
+    return E_INVALIDARG;
+  }
+
+  HRESULT hr = deserializer->QueryInterface(riid, ppDeserializer);
+  deserializer->Release();
+  TraceAgility("D3D12CreateRootSignatureDeserializer bytes=%zu riid=%s -> 0x%lx",
+               NumBytes, str::format(riid).c_str(), hr);
+  return hr;
+}
+
+extern "C" HRESULT WINAPI D3D12CreateVersionedRootSignatureDeserializer(
+    const void *pData, SIZE_T NumBytes, REFIID riid, void **ppDeserializer) {
+  return D3D12CreateRootSignatureDeserializer(pData, NumBytes, riid,
+                                              ppDeserializer);
 }
 
 extern "C" HRESULT WINAPI D3D12GetDebugInterface(REFIID riid, void **ppDebug) {
