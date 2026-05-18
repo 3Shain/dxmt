@@ -494,12 +494,18 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
                   func_name, &compile_result, &sm50_err)) {
     char err_buf[256] = {};
     SM50GetErrorMessage(sm50_err, err_buf, sizeof(err_buf));
-    PSTRACE("SM50Compile failed for %s: %s", func_name, err_buf);
+    char dxbc_path[256];
+    snprintf(dxbc_path, sizeof(dxbc_path),
+             "/tmp/dxmt_shader_cache/%016zx.sm50_compile_failed.dxbc", hash);
+    DumpShaderBlob(dxbc_path, bytecode, size);
+    PSTRACE("SM50Compile failed for %s: %s (dumped %s)",
+            func_name, err_buf, dxbc_path);
     Logger::err(str::format("SM50Compile failed for ", func_name, ": ", err_buf));
     SM50FreeError(sm50_err);
     SM50Destroy(shader);
     return RecordCompileFailure("shader/sm50_compile",
-                                str::format(func_name, " SM50Compile failed: ", err_buf));
+                                str::format(func_name, " SM50Compile failed: ",
+                                            err_buf, "; dumped ", dxbc_path));
   }
 
   SM50_COMPILED_BITCODE bitcode = {};
@@ -520,14 +526,19 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
 
   if (err.handle) {
     char *err_desc = (char *)NSObject_description(err.handle);
-    PSTRACE("Failed to create Metal library for %s: %s",
-            func_name, err_desc ? err_desc : "unknown");
+    char dxbc_path[256];
+    snprintf(dxbc_path, sizeof(dxbc_path),
+             "/tmp/dxmt_shader_cache/%016zx.sm50_metal_library_failed.dxbc", hash);
+    DumpShaderBlob(dxbc_path, bytecode, size);
+    PSTRACE("Failed to create Metal library for %s: %s (dumped %s)",
+            func_name, err_desc ? err_desc : "unknown", dxbc_path);
     Logger::err(str::format("Failed to create Metal library for ", func_name));
     SM50DestroyBitcode(compile_result);
     SM50Destroy(shader);
     return RecordCompileFailure("shader/sm50_metal_library",
                                 str::format(func_name, " SM50 Metal library creation failed: ",
-                                            err_desc ? err_desc : "unknown"));
+                                            err_desc ? err_desc : "unknown",
+                                            "; dumped ", dxbc_path));
   }
 
   out_func = library.newFunction(func_name);
@@ -544,10 +555,17 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
   }
 
   if (!out_func.handle) {
-    PSTRACE("Failed to get function %s from Metal library", func_name);
+    char dxbc_path[256];
+    snprintf(dxbc_path, sizeof(dxbc_path),
+             "/tmp/dxmt_shader_cache/%016zx.sm50_function_lookup_failed.dxbc", hash);
+    DumpShaderBlob(dxbc_path, bytecode, size);
+    PSTRACE("Failed to get function %s from Metal library (dumped %s)",
+            func_name, dxbc_path);
     Logger::err(str::format("Failed to get function ", func_name));
     return RecordCompileFailure("shader/sm50_function_lookup",
-                                str::format(func_name, " SM50 function lookup failed"));
+                                str::format(func_name,
+                                            " SM50 function lookup failed; dumped ",
+                                            dxbc_path));
   }
 
   PSTRACE("CompileShader: %s SM50 OK function=%llu", func_name,
