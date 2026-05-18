@@ -197,6 +197,12 @@ static LLVMInstruction::Opcode decodeCmp(uint32_t predicate) {
   return predicate >= 32 ? LLVMInstruction::ICmp : LLVMInstruction::FCmp;
 }
 
+static uint32_t decodeRelativeValue(uint64_t encoded, uint32_t next_value) {
+  if (encoded <= next_value)
+    return next_value - (uint32_t)encoded;
+  return (uint32_t)encoded;
+}
+
 struct Abbrev {
   std::vector<std::pair<uint32_t, uint64_t>> ops;
 };
@@ -413,7 +419,20 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
   if (!abbrev_len) return false;
 
   uint32_t cur_block = 0;
-  uint32_t value_id = 0;
+  uint32_t next_value = (uint32_t)ctx.module.constants.size();
+
+  auto value = [&](uint64_t encoded) {
+    return decodeRelativeValue(encoded, next_value);
+  };
+
+  auto noteResult = [&]() {
+    next_value++;
+  };
+
+  auto nextBlock = [&]() {
+    if (cur_block + 1 < fn.blocks.size())
+      cur_block++;
+  };
 
   while (!ctx.reader.atEnd()) {
     uint32_t code = ctx.reader.read(*abbrev_len);
@@ -446,6 +465,7 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
         LLVMInstruction inst;
         inst.opcode = LLVMInstruction::Ret;
         fn.blocks[cur_block].instructions.push_back(inst);
+        nextBlock();
       }
       break;
     case kFuncCode_InstBr: {
@@ -455,11 +475,12 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
         if (ops.size() == 2) {
           inst.operands.push_back((uint32_t)ops[1]);
         } else if (ops.size() >= 4) {
-          inst.operands.push_back((uint32_t)ops[3]);
+          inst.operands.push_back(value(ops[3]));
           inst.operands.push_back((uint32_t)ops[1]);
           inst.operands.push_back((uint32_t)ops[2]);
         }
         fn.blocks[cur_block].instructions.push_back(inst);
+        nextBlock();
       }
       break;
     }
@@ -469,8 +490,10 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
         inst.opcode = LLVMInstruction::Call;
         if (ops.size() > 1) inst.type_id = (uint32_t)ops[1];
         for (size_t i = 2; i < ops.size(); i++)
-          inst.operands.push_back((uint32_t)ops[i]);
+          inst.operands.push_back(value(ops[i]));
         fn.blocks[cur_block].instructions.push_back(inst);
+        if (inst.type_id != 0)
+          noteResult();
       }
       break;
     }
@@ -481,10 +504,11 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
                                      : LLVMInstruction::Add;
         if (ops.size() > 2) inst.type_id = (uint32_t)ops[2];
         if (ops.size() > 1)
-          inst.operands.push_back((uint32_t)ops[1]);
+          inst.operands.push_back(value(ops[1]));
         if (ops.size() > 3)
-          inst.operands.push_back((uint32_t)ops[3]);
+          inst.operands.push_back(value(ops[3]));
         fn.blocks[cur_block].instructions.push_back(inst);
+        noteResult();
       }
       break;
     }
@@ -495,8 +519,9 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
                                      : LLVMInstruction::BitCast;
         if (ops.size() > 3) inst.type_id = (uint32_t)ops[3];
         if (ops.size() > 1)
-          inst.operands.push_back((uint32_t)ops[1]);
+          inst.operands.push_back(value(ops[1]));
         fn.blocks[cur_block].instructions.push_back(inst);
+        noteResult();
       }
       break;
     }
@@ -508,10 +533,11 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
         inst.opcode = LLVMInstruction::GetElementPtr;
         size_t first_operand = rec_code == kFuncCode_InstGEP ? 3 : 1;
         if (first_operand < ops.size())
-          inst.operands.push_back((uint32_t)ops[first_operand]);
+          inst.operands.push_back(value(ops[first_operand]));
         for (size_t i = first_operand + 2; i < ops.size(); i += 2)
-          inst.operands.push_back((uint32_t)ops[i]);
+          inst.operands.push_back(value(ops[i]));
         fn.blocks[cur_block].instructions.push_back(inst);
+        noteResult();
       }
       break;
     }
@@ -522,8 +548,9 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
         if (ops.size() > 2 && ops.size() >= 5)
           inst.type_id = (uint32_t)ops[2];
         if (ops.size() > 1)
-          inst.operands.push_back((uint32_t)ops[1]);
+          inst.operands.push_back(value(ops[1]));
         fn.blocks[cur_block].instructions.push_back(inst);
+        noteResult();
       }
       break;
     }
@@ -532,9 +559,9 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
         LLVMInstruction inst;
         inst.opcode = LLVMInstruction::Store;
         if (ops.size() > 1)
-          inst.operands.push_back((uint32_t)ops[1]);
+          inst.operands.push_back(value(ops[1]));
         if (ops.size() > 3)
-          inst.operands.push_back((uint32_t)ops[3]);
+          inst.operands.push_back(value(ops[3]));
         fn.blocks[cur_block].instructions.push_back(inst);
       }
       break;
@@ -546,15 +573,16 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
         inst.opcode = LLVMInstruction::Select;
         inst.type_id = (uint32_t)ops[1];
         if (rec_code == kFuncCode_InstVSelect && ops.size() >= 6) {
-          inst.operands.push_back((uint32_t)ops[4]);
-          inst.operands.push_back((uint32_t)ops[1]);
-          inst.operands.push_back((uint32_t)ops[3]);
+          inst.operands.push_back(value(ops[4]));
+          inst.operands.push_back(value(ops[1]));
+          inst.operands.push_back(value(ops[3]));
         } else {
-          inst.operands.push_back((uint32_t)ops[4]);
-          inst.operands.push_back((uint32_t)ops[1]);
-          inst.operands.push_back((uint32_t)ops[3]);
+          inst.operands.push_back(value(ops[4]));
+          inst.operands.push_back(value(ops[1]));
+          inst.operands.push_back(value(ops[3]));
         }
         fn.blocks[cur_block].instructions.push_back(inst);
+        noteResult();
       }
       break;
     }
@@ -566,9 +594,10 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
         inst.opcode = decodeCmp(pred);
         inst.type_id = (uint32_t)ops[1];
         inst.operands.push_back(pred);
-        inst.operands.push_back((uint32_t)ops[1]);
-        inst.operands.push_back((uint32_t)ops[3]);
+        inst.operands.push_back(value(ops[1]));
+        inst.operands.push_back(value(ops[3]));
         fn.blocks[cur_block].instructions.push_back(inst);
+        noteResult();
       }
       break;
     }
@@ -578,6 +607,7 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
         inst.opcode = LLVMInstruction::Alloca;
         if (ops.size() > 1) inst.type_id = (uint32_t)ops[1];
         fn.blocks[cur_block].instructions.push_back(inst);
+        noteResult();
       }
       break;
     }
@@ -586,9 +616,10 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
         LLVMInstruction inst;
         inst.opcode = LLVMInstruction::ExtractElement;
         inst.type_id = (uint32_t)ops[2];
-        inst.operands.push_back((uint32_t)ops[1]);
-        inst.operands.push_back((uint32_t)ops[3]);
+        inst.operands.push_back(value(ops[1]));
+        inst.operands.push_back(value(ops[3]));
         fn.blocks[cur_block].instructions.push_back(inst);
+        noteResult();
       }
       break;
     }
@@ -600,10 +631,11 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
                           ? LLVMInstruction::InsertElement
                           : LLVMInstruction::ShuffleVector;
         inst.type_id = (uint32_t)ops[2];
-        inst.operands.push_back((uint32_t)ops[1]);
-        inst.operands.push_back((uint32_t)ops[3]);
-        inst.operands.push_back((uint32_t)ops[4]);
+        inst.operands.push_back(value(ops[1]));
+        inst.operands.push_back(value(ops[3]));
+        inst.operands.push_back(value(ops[4]));
         fn.blocks[cur_block].instructions.push_back(inst);
+        noteResult();
       }
       break;
     }
@@ -620,21 +652,22 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
         if (ops.size() > 1) inst.type_id = (uint32_t)ops[1];
         if (rec_code == kFuncCode_InstExtractVal) {
           if (ops.size() > 1)
-            inst.operands.push_back((uint32_t)ops[1]);
+            inst.operands.push_back(value(ops[1]));
           for (size_t i = 3; i < ops.size(); i++)
             inst.operands.push_back((uint32_t)ops[i]);
         } else if (rec_code == kFuncCode_InstInsertVal) {
           if (ops.size() > 1)
-            inst.operands.push_back((uint32_t)ops[1]);
+            inst.operands.push_back(value(ops[1]));
           if (ops.size() > 3)
-            inst.operands.push_back((uint32_t)ops[3]);
+            inst.operands.push_back(value(ops[3]));
           for (size_t i = 5; i < ops.size(); i++)
             inst.operands.push_back((uint32_t)ops[i]);
         } else {
           for (size_t i = 2; i < ops.size(); i += 2)
-            inst.operands.push_back((uint32_t)ops[i]);
+            inst.operands.push_back(value(ops[i]));
         }
         fn.blocks[cur_block].instructions.push_back(inst);
+        noteResult();
       }
       break;
     }
@@ -643,6 +676,7 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
         LLVMInstruction inst;
         inst.opcode = LLVMInstruction::Unreachable;
         fn.blocks[cur_block].instructions.push_back(inst);
+        nextBlock();
       }
       break;
     case kFuncCode_InstSwitch:
