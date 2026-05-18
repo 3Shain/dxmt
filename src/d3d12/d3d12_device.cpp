@@ -54,6 +54,26 @@ static const GUID IID_ID3D12Device11_ = {0x5405c344, 0xd457, 0x444e, {0xb4, 0xdd
 static const GUID IID_ID3D12Device12_ = {0x5af5c532, 0x4c91, 0x4cd0, {0xb5, 0x41, 0x15, 0xa4, 0x05, 0x39, 0x5f, 0xc5}};
 static const GUID IID_ID3D12PipelineLibrary_ = {0xc64226a8, 0x9201, 0x46af, {0xb4, 0xcc, 0x53, 0xfb, 0x9f, 0xf7, 0x41, 0x4f}};
 static const GUID IID_ID3D12PipelineLibrary1_ = {0x80eabf42, 0x2568, 0x4e5e, {0xbd, 0x82, 0xc3, 0x7f, 0x86, 0x96, 0x1d, 0xc3}};
+static const GUID IID_ID3D12StateObjectProperties1_ = {0x460caac7, 0x1d24, 0x446a, {0xa1, 0x84, 0xca, 0x67, 0xdb, 0x49, 0x41, 0x38}};
+static const GUID IID_ID3D12StateObjectProperties2_ = {0xd5e82917, 0xf0f1, 0x44cf, {0xae, 0x5e, 0xce, 0x22, 0x2d, 0xd0, 0xb8, 0x84}};
+
+struct D3D12ProgramIdentifierCompat {
+  UINT64 OpaqueData[4];
+};
+
+struct ID3D12StateObjectProperties1Compat
+    : public ID3D12StateObjectProperties {
+  virtual D3D12ProgramIdentifierCompat *STDMETHODCALLTYPE GetProgramIdentifier(
+      D3D12ProgramIdentifierCompat *ret, LPCWSTR program_name) = 0;
+};
+
+struct ID3D12StateObjectProperties2Compat
+    : public ID3D12StateObjectProperties1Compat {
+  virtual HRESULT STDMETHODCALLTYPE GetGlobalRootSignatureForProgram(
+      LPCWSTR program_name, REFIID riid, void **root_signature) = 0;
+  virtual HRESULT STDMETHODCALLTYPE GetGlobalRootSignatureForShader(
+      LPCWSTR export_name, REFIID riid, void **root_signature) = 0;
+};
 
 Logger Logger::s_instance("d3d12.log");
 
@@ -607,7 +627,7 @@ private:
 };
 
 class MTLD3D12StateObject : public ID3D12StateObject,
-                            public ID3D12StateObjectProperties {
+                            public ID3D12StateObjectProperties2Compat {
 public:
   MTLD3D12StateObject(MTLD3D12Device *device,
                       const D3D12_STATE_OBJECT_DESC *desc,
@@ -645,8 +665,10 @@ public:
         riid == IID_ID3D12DeviceChild || riid == IID_ID3D12Pageable ||
         riid == IID_ID3D12StateObject) {
       *ppv = static_cast<ID3D12StateObject *>(this);
-    } else if (riid == IID_ID3D12StateObjectProperties) {
-      *ppv = static_cast<ID3D12StateObjectProperties *>(this);
+    } else if (riid == IID_ID3D12StateObjectProperties ||
+               riid == IID_ID3D12StateObjectProperties1_ ||
+               riid == IID_ID3D12StateObjectProperties2_) {
+      *ppv = static_cast<ID3D12StateObjectProperties2Compat *>(this);
     } else {
       return E_NOINTERFACE;
     }
@@ -703,6 +725,44 @@ public:
     TRACE("StateObjectProperties::SetPipelineStackSize %llu",
           (unsigned long long)stack_size);
     m_pipeline_stack_size = stack_size;
+  }
+
+  D3D12ProgramIdentifierCompat *STDMETHODCALLTYPE GetProgramIdentifier(
+      D3D12ProgramIdentifierCompat *ret, LPCWSTR program_name) override {
+    TRACE("StateObjectProperties1::GetProgramIdentifier program=%ls",
+          program_name ? program_name : L"(null)");
+    if (!ret)
+      return nullptr;
+    for (size_t i = 0; i < 4; i++) {
+      uint64_t word = 0x4d313250524f4755ull ^ (uint64_t)i * 0x9e3779b97f4a7c15ull;
+      if (program_name) {
+        for (const WCHAR *p = program_name; *p; p++)
+          word = (word ^ (uint16_t)*p) * 1099511628211ull;
+      }
+      word ^= ((uint64_t)m_type << 48) ^ ((uint64_t)m_subobject_types.size() << 32);
+      ret->OpaqueData[i] = word;
+    }
+    return ret;
+  }
+
+  HRESULT STDMETHODCALLTYPE GetGlobalRootSignatureForProgram(
+      LPCWSTR program_name, REFIID, void **root_signature) override {
+    TRACE("StateObjectProperties2::GetGlobalRootSignatureForProgram program=%ls -> E_NOINTERFACE",
+          program_name ? program_name : L"(null)");
+    if (!root_signature)
+      return E_POINTER;
+    *root_signature = nullptr;
+    return E_NOINTERFACE;
+  }
+
+  HRESULT STDMETHODCALLTYPE GetGlobalRootSignatureForShader(
+      LPCWSTR export_name, REFIID, void **root_signature) override {
+    TRACE("StateObjectProperties2::GetGlobalRootSignatureForShader export=%ls -> E_NOINTERFACE",
+          export_name ? export_name : L"(null)");
+    if (!root_signature)
+      return E_POINTER;
+    *root_signature = nullptr;
+    return E_NOINTERFACE;
   }
 
 private:
