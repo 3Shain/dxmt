@@ -2490,6 +2490,61 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         }
         break;
       }
+      case CmdType::WriteBufferImmediate: {
+        auto *cmd = reinterpret_cast<const CmdWriteBufferImmediate *>(header);
+        auto *entries = reinterpret_cast<const CmdWriteBufferImmediateEntry *>(
+            reinterpret_cast<const uint8_t *>(cmd) +
+            sizeof(CmdWriteBufferImmediate) -
+            sizeof(CmdWriteBufferImmediateEntry));
+        st.CloseRenderEncoder();
+        for (uint32_t i = 0; i < cmd->count; i++) {
+          D3D12_GPU_VIRTUAL_ADDRESS dest = entries[i].parameter.Dest;
+          uint32_t value = entries[i].parameter.Value;
+          auto *res = m_device->LookupResourceByGPUAddress(dest);
+          QTRACE("WriteBufferImmediate[%u] dest=0x%llx value=0x%08x mode=%u res=%p",
+                 i, (unsigned long long)dest, value, entries[i].mode,
+                 (void*)res);
+          if (!res || !res->GetMTLBuffer().handle) {
+            QTRACE("WriteBufferImmediate[%u] SKIPPED unresolved buffer", i);
+            continue;
+          }
+
+          uint64_t dst_offset = dest - res->GetGPUVirtualAddress();
+          void *mapped = nullptr;
+          HRESULT map_hr = res->Map(0, nullptr, &mapped);
+          if (SUCCEEDED(map_hr) && mapped &&
+              dst_offset + sizeof(value) <= res->GetBufferByteLength()) {
+            memcpy(static_cast<uint8_t *>(mapped) + dst_offset, &value,
+                   sizeof(value));
+            res->Unmap(0, nullptr);
+            continue;
+          }
+
+          WMTBufferInfo buf_info = {};
+          buf_info.length = sizeof(value);
+          buf_info.options = WMTResourceStorageModeShared;
+          auto staging = m_device->GetDXMTDevice().device().newBuffer(buf_info);
+          if (!staging.handle) {
+            QTRACE("WriteBufferImmediate[%u] SKIPPED staging allocation failed", i);
+            continue;
+          }
+          staging.updateContents(0, &value, sizeof(value));
+          auto blit = cmdbuf.blitCommandEncoder();
+          ENC_CREATE("blit_writeimm", blit.handle);
+          struct wmtcmd_blit_copy_from_buffer_to_buffer copy = {};
+          copy.type = WMTBlitCommandCopyFromBufferToBuffer;
+          copy.next.set(nullptr);
+          copy.src = staging.handle;
+          copy.src_offset = 0;
+          copy.dst = res->GetMTLBuffer().handle;
+          copy.dst_offset = dst_offset;
+          copy.copy_length = sizeof(value);
+          blit.encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&copy));
+          ENC_END(blit.handle);
+          blit.endEncoding();
+        }
+        break;
+      }
       case CmdType::SetPipelineState: {
         auto *cmd = reinterpret_cast<const CmdSetPipelineState *>(header);
         st.pso = static_cast<MTLD3D12PipelineState *>(cmd->pso);

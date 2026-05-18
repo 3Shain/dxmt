@@ -48,6 +48,7 @@ enum class CmdType : uint32_t {
   ResourceBarrier,
   SetDescriptorHeaps,
   ResolveSubresource,
+  WriteBufferImmediate,
 };
 
 struct CmdHeader {
@@ -250,6 +251,17 @@ struct CmdResolveSubresource {
   D3D12_RESOLVE_MODE mode;
   uint8_t has_src_rect;
   D3D12_RECT src_rect;
+};
+
+struct CmdWriteBufferImmediateEntry {
+  D3D12_WRITEBUFFERIMMEDIATE_PARAMETER parameter;
+  D3D12_WRITEBUFFERIMMEDIATE_MODE mode;
+};
+
+struct CmdWriteBufferImmediate {
+  CmdHeader header;
+  uint32_t count;
+  CmdWriteBufferImmediateEntry entries[1];
 };
 
 class MTLD3D12GraphicsCommandList : public ID3D12GraphicsCommandList6 {

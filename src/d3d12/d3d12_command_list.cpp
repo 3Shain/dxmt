@@ -684,7 +684,29 @@ void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetViewInstanceMask(
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::WriteBufferImmediate(
     UINT count, const D3D12_WRITEBUFFERIMMEDIATE_PARAMETER *parameters,
-    const D3D12_WRITEBUFFERIMMEDIATE_MODE *modes) {}
+    const D3D12_WRITEBUFFERIMMEDIATE_MODE *modes) {
+  if (!count || !parameters)
+    return;
+  std::vector<CmdWriteBufferImmediateEntry> entries(count);
+  for (UINT i = 0; i < count; i++) {
+    entries[i].parameter = parameters[i];
+    entries[i].mode = modes ? modes[i] : D3D12_WRITEBUFFERIMMEDIATE_MODE_DEFAULT;
+  }
+  CmdWriteBufferImmediate cmd = {};
+  size_t extra = count * sizeof(CmdWriteBufferImmediateEntry);
+  auto total = sizeof(CmdWriteBufferImmediate) -
+               sizeof(CmdWriteBufferImmediateEntry) + extra;
+  auto offset = m_cmds.size();
+  m_cmds.resize(offset + total);
+  cmd.header = {CmdType::WriteBufferImmediate, (uint32_t)total};
+  cmd.count = count;
+  memcpy(m_cmds.data() + offset, &cmd,
+         sizeof(CmdWriteBufferImmediate) -
+             sizeof(CmdWriteBufferImmediateEntry));
+  memcpy(m_cmds.data() + offset + sizeof(CmdWriteBufferImmediate) -
+             sizeof(CmdWriteBufferImmediateEntry),
+         entries.data(), extra);
+}
 
 /*** ID3D12GraphicsCommandList3 ***/
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetProtectedResourceSession(
