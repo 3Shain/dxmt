@@ -39,7 +39,75 @@ struct RSDescriptorRange {
   uint32_t register_space;
   uint32_t offset_in_table;
 };
+
+struct DXContainerHeader {
+  uint8_t magic[4];
+  uint8_t digest[16];
+  uint16_t major;
+  uint16_t minor;
+  uint32_t file_size;
+  uint32_t part_count;
+};
+
+struct DXContainerPartHeader {
+  uint8_t name[4];
+  uint32_t size;
+};
+
+struct DXRootSignatureHeader {
+  uint32_t version;
+  uint32_t num_parameters;
+  uint32_t parameters_offset;
+  uint32_t num_static_samplers;
+  uint32_t static_sampler_offset;
+  uint32_t flags;
+};
+
+struct DXRootParameterHeader {
+  uint32_t parameter_type;
+  uint32_t shader_visibility;
+  uint32_t parameter_offset;
+};
+
+struct DXRootConstants {
+  uint32_t shader_register;
+  uint32_t register_space;
+  uint32_t num_32bit_values;
+};
+
+struct DXRootDescriptor10 {
+  uint32_t shader_register;
+  uint32_t register_space;
+};
+
+struct DXDescriptorTable {
+  uint32_t num_ranges;
+  uint32_t ranges_offset;
+};
+
+struct DXDescriptorRange10 {
+  uint32_t range_type;
+  uint32_t num_descriptors;
+  uint32_t base_shader_register;
+  uint32_t register_space;
+  uint32_t offset_in_table;
+};
+
+struct DXDescriptorRange11 {
+  uint32_t range_type;
+  uint32_t num_descriptors;
+  uint32_t base_shader_register;
+  uint32_t register_space;
+  uint32_t flags;
+  uint32_t offset_in_table;
+};
 #pragma pack(pop)
+
+#define RSTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
+
+static bool range_contains(size_t size, uint32_t offset, size_t bytes) {
+  return offset <= size && bytes <= size - offset;
+}
 
 MTLD3D12RootSignature::MTLD3D12RootSignature(MTLD3D12Device *device,
                                              const void *blob, SIZE_T blob_size)
@@ -54,15 +122,196 @@ MTLD3D12RootSignature::MTLD3D12RootSignature(MTLD3D12Device *device,
 MTLD3D12RootSignature::~MTLD3D12RootSignature() { m_device->Release(); }
 
 void MTLD3D12RootSignature::Parse(const void *blob, SIZE_T blob_size) {
-  if (blob_size < sizeof(RSHeader))
+  if (!blob || blob_size < sizeof(RSHeader))
+    return;
+
+  auto parse_rts0 = [&](const uint8_t *data, size_t size) -> bool {
+    if (size < sizeof(DXRootSignatureHeader))
+      return false;
+
+    auto header = reinterpret_cast<const DXRootSignatureHeader *>(data);
+    if ((header->version != D3D_ROOT_SIGNATURE_VERSION_1_0 &&
+         header->version != D3D_ROOT_SIGNATURE_VERSION_1_1) ||
+        !range_contains(size, header->parameters_offset,
+                        header->num_parameters *
+                            sizeof(DXRootParameterHeader)) ||
+        header->num_parameters > 64 ||
+        header->num_static_samplers > 64)
+      return false;
+
+    if (header->num_static_samplers > 0 &&
+        !range_contains(size, header->static_sampler_offset,
+                        header->num_static_samplers * 52u))
+      return false;
+
+    m_parameters.clear();
+    m_num_static_samplers = header->num_static_samplers;
+    m_flags = static_cast<D3D12_ROOT_SIGNATURE_FLAGS>(header->flags);
+
+    auto param_headers = reinterpret_cast<const DXRootParameterHeader *>(
+        data + header->parameters_offset);
+
+    for (uint32_t i = 0; i < header->num_parameters; i++) {
+      const auto &src = param_headers[i];
+      if (!range_contains(size, src.parameter_offset, sizeof(uint32_t)))
+        return false;
+
+      RootParameter rp = {};
+      rp.type = static_cast<D3D12_ROOT_PARAMETER_TYPE>(src.parameter_type);
+      rp.shader_visibility = src.shader_visibility;
+
+      switch (rp.type) {
+      case D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS: {
+        if (!range_contains(size, src.parameter_offset,
+                            sizeof(DXRootConstants)))
+          return false;
+        auto constants = reinterpret_cast<const DXRootConstants *>(
+            data + src.parameter_offset);
+        rp.register_space = constants->register_space;
+        rp.register_index = constants->shader_register;
+        break;
+      }
+      case D3D12_ROOT_PARAMETER_TYPE_CBV:
+      case D3D12_ROOT_PARAMETER_TYPE_SRV:
+      case D3D12_ROOT_PARAMETER_TYPE_UAV: {
+        size_t descriptor_size = header->version == D3D_ROOT_SIGNATURE_VERSION_1_0
+                                     ? sizeof(DXRootDescriptor10)
+                                     : sizeof(DXRootDescriptor10) + sizeof(uint32_t);
+        if (!range_contains(size, src.parameter_offset, descriptor_size))
+          return false;
+        auto descriptor = reinterpret_cast<const DXRootDescriptor10 *>(
+            data + src.parameter_offset);
+        rp.register_space = descriptor->register_space;
+        rp.register_index = descriptor->shader_register;
+        break;
+      }
+      case D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE: {
+        if (!range_contains(size, src.parameter_offset,
+                            sizeof(DXDescriptorTable)))
+          return false;
+        auto table = reinterpret_cast<const DXDescriptorTable *>(
+            data + src.parameter_offset);
+        if (table->num_ranges > 256)
+          return false;
+
+        size_t range_size = header->version == D3D_ROOT_SIGNATURE_VERSION_1_0
+                                ? sizeof(DXDescriptorRange10)
+                                : sizeof(DXDescriptorRange11);
+        const uint8_t *ranges_base = data + src.parameter_offset + sizeof(*table);
+        uint32_t ranges_offset = table->ranges_offset;
+        if (range_contains(size, ranges_offset, table->num_ranges * range_size))
+          ranges_base = data + ranges_offset;
+        else if (!range_contains(size,
+                                 (uint32_t)(src.parameter_offset + sizeof(*table)),
+                                 table->num_ranges * range_size))
+          return false;
+
+        rp.descriptor_table_entries = table->num_ranges;
+        uint32_t append_offset = 0;
+        for (uint32_t r = 0; r < table->num_ranges; r++) {
+          RootDescriptorRange range = {};
+          if (header->version == D3D_ROOT_SIGNATURE_VERSION_1_0) {
+            auto src_range = reinterpret_cast<const DXDescriptorRange10 *>(
+                ranges_base + r * range_size);
+            range.range_type =
+                static_cast<D3D12_DESCRIPTOR_RANGE_TYPE>(src_range->range_type);
+            range.num_descriptors = src_range->num_descriptors;
+            range.base_register = src_range->base_shader_register;
+            range.register_space = src_range->register_space;
+            range.offset_in_table = src_range->offset_in_table;
+          } else {
+            auto src_range = reinterpret_cast<const DXDescriptorRange11 *>(
+                ranges_base + r * range_size);
+            range.range_type =
+                static_cast<D3D12_DESCRIPTOR_RANGE_TYPE>(src_range->range_type);
+            range.num_descriptors = src_range->num_descriptors;
+            range.base_register = src_range->base_shader_register;
+            range.register_space = src_range->register_space;
+            range.offset_in_table = src_range->offset_in_table;
+          }
+
+          range.offset_in_table =
+              range.offset_in_table == D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND
+                  ? append_offset
+                  : range.offset_in_table;
+          rp.ranges.push_back(range);
+
+          if (r == 0) {
+            rp.range_type = range.range_type;
+            rp.num_descriptors = range.num_descriptors;
+            rp.register_space = range.register_space;
+            rp.register_index = range.base_register;
+          }
+
+          if (range.num_descriptors != UINT32_MAX)
+            append_offset = range.offset_in_table + range.num_descriptors;
+          else
+            append_offset = range.offset_in_table;
+        }
+        break;
+      }
+      default:
+        RSTRACE("RootSignature RTS0 unknown parameter type=%u", src.parameter_type);
+        return false;
+      }
+
+      m_parameters.push_back(rp);
+    }
+
+    RSTRACE("RootSignature parsed RTS0 version=%u params=%u samplers=%u flags=0x%x",
+            header->version, header->num_parameters,
+            header->num_static_samplers, header->flags);
+    return true;
+  };
+
+  auto bytes = static_cast<const uint8_t *>(blob);
+  if (blob_size >= sizeof(DXContainerHeader) &&
+      memcmp(bytes, "DXBC", 4) == 0) {
+    auto container = reinterpret_cast<const DXContainerHeader *>(bytes);
+    if (container->part_count <= 256 &&
+        container->file_size <= blob_size &&
+        range_contains(blob_size, sizeof(DXContainerHeader),
+                       container->part_count * sizeof(uint32_t))) {
+      auto part_offsets = reinterpret_cast<const uint32_t *>(
+          bytes + sizeof(DXContainerHeader));
+      for (uint32_t i = 0; i < container->part_count; i++) {
+        uint32_t offset = part_offsets[i];
+        if (!range_contains(blob_size, offset, sizeof(DXContainerPartHeader)))
+          continue;
+        auto part = reinterpret_cast<const DXContainerPartHeader *>(
+            bytes + offset);
+        if (memcmp(part->name, "RTS0", 4) != 0)
+          continue;
+        if (!range_contains(blob_size, offset + sizeof(*part), part->size))
+          continue;
+        if (parse_rts0(bytes + offset + sizeof(*part), part->size))
+          return;
+      }
+    }
+  }
+
+  if (parse_rts0(bytes, blob_size))
     return;
 
   auto header = static_cast<const RSHeader *>(blob);
+  size_t min_size = sizeof(RSHeader) +
+                    header->num_parameters * sizeof(RSParameter);
+  if (header->num_parameters > 64 || header->num_static_samplers > 64 ||
+      min_size > blob_size) {
+    RSTRACE("RootSignature parse failed: unknown blob size=%zu magic=0x%08x",
+            blob_size, blob_size >= 4 ? *(const uint32_t *)blob : 0);
+    return;
+  }
+
+  m_parameters.clear();
   m_num_static_samplers = header->num_static_samplers;
   m_flags = static_cast<D3D12_ROOT_SIGNATURE_FLAGS>(header->flags);
 
   auto params = reinterpret_cast<const uint8_t *>(blob) + sizeof(RSHeader);
+  auto end = reinterpret_cast<const uint8_t *>(blob) + blob_size;
   for (uint32_t i = 0; i < header->num_parameters; i++) {
+    if (params + sizeof(RSParameter) > end)
+      return;
     auto p = reinterpret_cast<const RSParameter *>(params);
     RootParameter rp = {};
     rp.type = static_cast<D3D12_ROOT_PARAMETER_TYPE>(p->type);
@@ -77,6 +326,10 @@ void MTLD3D12RootSignature::Parse(const void *blob, SIZE_T blob_size) {
       rp.register_space = p->descriptor.register_space;
       rp.register_index = p->descriptor.register_index;
     } else if (p->type == D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE) {
+      if (params + sizeof(RSParameter) +
+              p->table.num_ranges * sizeof(RSDescriptorRange) >
+          end)
+        return;
       auto ranges = reinterpret_cast<const RSDescriptorRange *>(
           params + sizeof(RSParameter));
       rp.descriptor_table_entries = p->table.num_ranges;
