@@ -262,10 +262,13 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
 
           char cache_path[256];
           snprintf(cache_path, sizeof(cache_path), "/tmp/dxmt_shader_cache/%016zx", hash);
-          char dxbc_path[256], metallib_path[256], reflection_path[256];
+          char dxbc_path[256], metallib_path[256], reflection_path[256],
+              metallib_error_path[256];
           snprintf(dxbc_path, sizeof(dxbc_path), "%s.dxbc", cache_path);
           snprintf(metallib_path, sizeof(metallib_path), "%s.metallib", cache_path);
           snprintf(reflection_path, sizeof(reflection_path), "%s.json", cache_path);
+          snprintf(metallib_error_path, sizeof(metallib_error_path),
+                   "%s.metallib.err.txt", cache_path);
           EnsureShaderCacheDir();
 
           FILE *mf = fopen(metallib_path, "rb");
@@ -426,6 +429,14 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
               if (!out_func.handle && actual_entry[0]) {
                 out_func = library.newFunction(func_name);
               }
+              if (!out_func.handle)
+                out_func = library.newFunction("main");
+              if (!out_func.handle)
+                out_func = library.newFunction("cs_main");
+              if (!out_func.handle)
+                out_func = library.newFunction("vs_main");
+              if (!out_func.handle)
+                out_func = library.newFunction("ps_main");
               if (out_func.handle) {
                 PSTRACE("  DXIL loaded from cache OK! entry=%s", fn_name);
                 s_shader_cache[hash] = out_func;
@@ -443,12 +454,36 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
                 return true;
               } else {
                 PSTRACE("  WMT newFunction returned null");
+                DumpShaderBlob(dxbc_path, bytecode, size);
+                return RecordCompileFailure(
+                    "shader/dxil_cached_function_lookup",
+                    str::format(func_name,
+                                " cached metallib function lookup failed; metallib ",
+                                metallib_path, "; reflection ", reflection_path,
+                                "; dxbc ", dxbc_path));
               }
             } else {
-              PSTRACE("  WMT newLibrary FAILED");
+              char *err_desc = (char *)NSObject_description(err.handle);
+              DumpShaderText(metallib_error_path,
+                             err_desc ? err_desc : "unknown");
+              DumpShaderBlob(dxbc_path, bytecode, size);
+              PSTRACE("  WMT newLibrary FAILED: %s",
+                      err_desc ? err_desc : "unknown");
+              return RecordCompileFailure(
+                  "shader/dxil_cached_metallib_load",
+                  str::format(func_name,
+                              " cached metallib load failed: ",
+                              err_desc ? err_desc : "unknown",
+                              "; metallib ", metallib_path, "; error ",
+                              metallib_error_path, "; dxbc ", dxbc_path));
             }
           } else {
             fclose(mf);
+            DumpShaderBlob(dxbc_path, bytecode, size);
+            return RecordCompileFailure(
+                "shader/dxil_cached_metallib_empty",
+                str::format(func_name, " cached metallib empty; metallib ",
+                            metallib_path, "; dxbc ", dxbc_path));
           }
           break;
         }
