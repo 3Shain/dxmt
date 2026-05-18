@@ -26,6 +26,21 @@ namespace dxmt {
 namespace {
 constexpr uint32_t kMetalD3D12VertexBufferSlotCount = 29;
 
+void EnsureShaderCacheDir() {
+  CreateDirectoryA("Z:\\tmp\\dxmt_shader_cache", nullptr);
+}
+
+void DumpShaderBlob(const char *path, const void *bytecode, SIZE_T size) {
+  if (!path || !bytecode || !size)
+    return;
+  EnsureShaderCacheDir();
+  FILE *df = fopen(path, "wb");
+  if (df) {
+    fwrite(bytecode, 1, size, df);
+    fclose(df);
+  }
+}
+
 constexpr WMTColorWriteMask kColorWriteMaskMap[16] = {
     (WMTColorWriteMask)0,
     WMTColorWriteMaskRed,
@@ -240,6 +255,7 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
           snprintf(dxbc_path, sizeof(dxbc_path), "%s.dxbc", cache_path);
           snprintf(metallib_path, sizeof(metallib_path), "%s.metallib", cache_path);
           snprintf(reflection_path, sizeof(reflection_path), "%s.json", cache_path);
+          EnsureShaderCacheDir();
 
           FILE *mf = fopen(metallib_path, "rb");
           if (!mf) {
@@ -248,8 +264,7 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
             auto container = dxmt::dxil::DXILContainer::parse(blob, blob_size);
             if (!container) {
               PSTRACE("  DXILContainer::parse FAILED for %s", func_name);
-              FILE *df = fopen(dxbc_path, "wb");
-              if (df) { fwrite(bytecode, 1, size, df); fclose(df); }
+              DumpShaderBlob(dxbc_path, bytecode, size);
               return RecordCompileFailure("shader/dxil_container_parse",
                                           str::format(func_name, " DXIL container parse failed; dumped ", dxbc_path));
             }
@@ -263,8 +278,7 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
                 shader_info.bitcode.data, shader_info.bitcode.size);
             if (!module) {
               PSTRACE("  BitcodeReader::parse FAILED");
-              FILE *df = fopen(dxbc_path, "wb");
-              if (df) { fwrite(bytecode, 1, size, df); fclose(df); }
+              DumpShaderBlob(dxbc_path, bytecode, size);
               return RecordCompileFailure("shader/bitcode_parse",
                                           str::format(func_name, " DXIL bitcode parse failed; dumped ", dxbc_path));
             }
@@ -275,8 +289,7 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
             auto msl_result = dxmt::dxil::DXILToMSL::convert(*module, shader_info);
             if (!msl_result) {
               PSTRACE("  DXILToMSL::convert FAILED");
-              FILE *df = fopen(dxbc_path, "wb");
-              if (df) { fwrite(bytecode, 1, size, df); fclose(df); }
+              DumpShaderBlob(dxbc_path, bytecode, size);
               return RecordCompileFailure("shader/dxil_to_msl",
                                           str::format(func_name, " DXIL to MSL conversion failed; dumped ", dxbc_path));
             }
@@ -303,8 +316,7 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
               PSTRACE("  newLibraryWithSource FAILED: %s", err_desc ? err_desc : "unknown");
               Logger::err(str::format("DXIL MSL compilation failed for ", func_name, ": ",
                                        err_desc ? err_desc : "unknown error"));
-              FILE *df = fopen(dxbc_path, "wb");
-              if (df) { fwrite(bytecode, 1, size, df); fclose(df); }
+              DumpShaderBlob(dxbc_path, bytecode, size);
               return RecordCompileFailure("shader/metal_library_source",
                                           str::format(func_name, " MSL compile failed: ",
                                                       err_desc ? err_desc : "unknown"));
@@ -430,7 +442,12 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
       }
     }
     if (!has_dxil) {
-      PSTRACE("SM50Init FAILED for %s: %s (no DXIL chunk)", func_name, err_buf);
+      char dxbc_path[256];
+      snprintf(dxbc_path, sizeof(dxbc_path),
+               "/tmp/dxmt_shader_cache/%016zx.sm50_failed.dxbc", hash);
+      DumpShaderBlob(dxbc_path, bytecode, size);
+      PSTRACE("SM50Init FAILED for %s: %s (no DXIL chunk, dumped %s)",
+              func_name, err_buf, dxbc_path);
     }
     return RecordCompileFailure(has_dxil ? "shader/dxil_metallib_cache" : "shader/sm50_init",
                                 str::format(func_name, " SM50Initialize failed: ", err_buf));
