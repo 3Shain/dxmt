@@ -127,6 +127,7 @@ private:
   std::vector<D3D12_INPUT_ELEMENT_DESC> m_input_elements;
   std::vector<std::string> m_input_semantic_names;
   bool m_has_stream_output = false;
+  bool m_vs_uses_stage_in = false;
   D3D12_INDEX_BUFFER_STRIP_CUT_VALUE m_strip_cut_value = {};
   D3D12_PRIMITIVE_TOPOLOGY_TYPE m_topology = {};
   UINT m_num_render_targets = 0;

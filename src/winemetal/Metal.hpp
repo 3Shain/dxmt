@@ -1150,6 +1150,7 @@ InitializeRenderPipelineInfo(WMTRenderPipelineInfo &info) {
   info.binary_archives_for_lookup.set(nullptr);
   info.num_binary_archives_for_lookup = 0;
   info.fail_on_binary_archive_miss = false;
+  info.vertex_descriptor = nullptr;
 }
 
 inline void

@@ -455,6 +455,9 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
               PSTRACE("  DXIL shader compiled OK! entry=%s", entry_name);
               s_shader_cache[hash] = out_func;
 
+              if (type == ShaderType::Vertex)
+                m_vs_uses_stage_in = true;
+
               if (shader_info.kind == dxmt::dxil::DxilShaderKind::Compute) {
                 m_threadgroup_size.width = msl_result->tg_size[0];
                 m_threadgroup_size.height = msl_result->tg_size[1];
@@ -1047,7 +1050,12 @@ bool MTLD3D12PipelineState::Compile() {
       PSTRACE("D3D12 PSO input-layout slot[%u]: stride=%u step=%u",
               s, slot_stride[s], (unsigned)vtx_desc.layouts[s].step_function);
     }
-    PSTRACE("D3D12 PSO input-layout compiled for SM50 vertex pulling; Metal vertex descriptor disabled");
+    if (m_vs_uses_stage_in && attribute_count > 0) {
+      info.vertex_descriptor = &vtx_desc;
+      PSTRACE("D3D12 PSO input-layout attached as Metal vertex descriptor for DXIL stage_in");
+    } else {
+      PSTRACE("D3D12 PSO input-layout compiled for SM50 vertex pulling; Metal vertex descriptor disabled");
+    }
   }
 
   PSTRACE("D3D12 PSO state this=%p rts=%u dsv_fmt=%u depth=%u stencil=%u blend0=%u write_mask0=0x%x cull=%u fill=%u front_ccw=%u depth_clip=%u",
@@ -1216,6 +1224,7 @@ void MTLD3D12PipelineState::SetGraphicsDesc(
                         desc.StreamOutput.NumStrides > 0 ||
                         desc.StreamOutput.pSODeclaration ||
                         desc.StreamOutput.pBufferStrides;
+  m_vs_uses_stage_in = false;
   m_input_elements.clear();
   m_input_semantic_names.clear();
   m_input_layout = {};

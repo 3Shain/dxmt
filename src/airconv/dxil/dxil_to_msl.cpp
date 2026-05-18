@@ -159,6 +159,28 @@ static std::string varyingField(const char *base, uint32_t signature_id) {
   }
 }
 
+static std::string vertexInputField(const char *base, uint32_t signature_id) {
+  switch (signature_id) {
+  case 0: return std::string(base) + ".a0";
+  case 1: return std::string(base) + ".a1";
+  case 2: return std::string(base) + ".a2";
+  case 3: return std::string(base) + ".a3";
+  case 4: return std::string(base) + ".a4";
+  case 5: return std::string(base) + ".a5";
+  case 6: return std::string(base) + ".a6";
+  case 7: return std::string(base) + ".a7";
+  case 8: return std::string(base) + ".a8";
+  case 9: return std::string(base) + ".a9";
+  case 10: return std::string(base) + ".a10";
+  case 11: return std::string(base) + ".a11";
+  case 12: return std::string(base) + ".a12";
+  case 13: return std::string(base) + ".a13";
+  case 14: return std::string(base) + ".a14";
+  case 15: return std::string(base) + ".a15";
+  default: return std::string(base) + ".a0";
+  }
+}
+
 static bool parseUnsignedLiteral(const std::string &text, uint32_t &value) {
   if (text.empty())
     return false;
@@ -427,6 +449,11 @@ void DXILToMSL::emitFunctionPrologue(EmitContext &ctx) {
   os << "  float4 color2 [[user(locn14)]]; float4 color3 [[user(locn15)]];\n";
   os << "};\n\n";
 
+  os << "struct vertex_input_v {\n";
+  for (uint32_t i = 0; i < 16; i++)
+    os << "  float4 a" << i << " [[attribute(" << i << ")]];\n";
+  os << "};\n\n";
+
   if (ctx.shader.kind == DxilShaderKind::Compute) {
     os << "kernel void cs_main(\n";
     os << "  device char* buf0 [[buffer(0)]],\n";
@@ -456,6 +483,7 @@ void DXILToMSL::emitFunctionPrologue(EmitContext &ctx) {
     os << ") {\n";
   } else if (ctx.shader.kind == DxilShaderKind::Vertex) {
     os << "vertex output_v vs_main(\n";
+    os << "  vertex_input_v vin [[stage_in]],\n";
     os << "  uint vid [[vertex_id]],\n";
     os << "  device char* buf0 [[buffer(0)]],\n";
     os << "  device char* buf1 [[buffer(1)]],\n";
@@ -954,6 +982,9 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     uint32_t component = literalArg(2, 0, "input component");
     if (ctx.shader.kind == DxilShaderKind::Pixel) {
       return varyingField("in", input_id) + componentSuffix(component);
+    }
+    if (ctx.shader.kind == DxilShaderKind::Vertex) {
+      return vertexInputField("vin", input_id) + componentSuffix(component);
     }
     DXTRACE("DXIL LoadInput fallback: shader_kind=%u input_id=%u component=%u",
             (uint32_t)ctx.shader.kind, input_id, component);
