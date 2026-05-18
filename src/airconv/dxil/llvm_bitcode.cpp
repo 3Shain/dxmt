@@ -515,9 +515,10 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
       if (cur_block < fn.blocks.size()) {
         LLVMInstruction inst;
         inst.opcode = LLVMInstruction::Load;
-        if (ops.size() > 1) inst.type_id = (uint32_t)ops[1];
-        for (size_t i = 2; i < ops.size(); i++)
-          inst.operands.push_back((uint32_t)ops[i]);
+        if (ops.size() > 2 && ops.size() >= 5)
+          inst.type_id = (uint32_t)ops[2];
+        if (ops.size() > 1)
+          inst.operands.push_back((uint32_t)ops[1]);
         fn.blocks[cur_block].instructions.push_back(inst);
       }
       break;
@@ -526,10 +527,10 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
       if (cur_block < fn.blocks.size()) {
         LLVMInstruction inst;
         inst.opcode = LLVMInstruction::Store;
-        if (ops.size() > 2)
-          inst.operands.push_back((uint32_t)ops[2]);
-        if (ops.size() > 4)
-          inst.operands.push_back((uint32_t)ops[4]);
+        if (ops.size() > 1)
+          inst.operands.push_back((uint32_t)ops[1]);
+        if (ops.size() > 3)
+          inst.operands.push_back((uint32_t)ops[3]);
         fn.blocks[cur_block].instructions.push_back(inst);
       }
       break;
