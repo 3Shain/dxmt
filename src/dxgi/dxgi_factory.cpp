@@ -198,15 +198,18 @@ public:
 
     auto devices = WMT::CopyAllDevices();
     UINT adapter_count = devices.count();
+    auto &config = Config::getInstance();
+    bool mirror_adapter_0_for_adapter_1 =
+        config.getOption<bool>("dxgi.mirrorAdapter0ForAdapter1", false);
     {
       FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
-      if (f) { fprintf(f, "EnumAdapters1: adapter_count=%u\n", adapter_count); fclose(f); }
+      if (f) { fprintf(f, "EnumAdapters1: adapter_count=%u mirror0for1=%u\n",
+                       adapter_count, mirror_adapter_0_for_adapter_1 ? 1 : 0); fclose(f); }
     }
 
     if (Adapter >= adapter_count) {
-      if (adapter_count == 1 && Adapter == 1) {
-        FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
-        if (f) { fprintf(f, "EnumAdapters1: mapping index 1 -> 0 (single adapter)\n"); fclose(f); }
+      if (mirror_adapter_0_for_adapter_1 && adapter_count == 1 && Adapter == 1) {
+        DGTRACE("EnumAdapters1: profile mirror adapter 1 -> adapter 0");
         Adapter = 0;
       } else {
         return DXGI_ERROR_NOT_FOUND;
@@ -228,7 +231,7 @@ public:
 
     auto device = devices.object(adjusted_adapter);
 
-    *ppAdapter = CreateAdapter(device, this, Config::getInstance());
+    *ppAdapter = CreateAdapter(device, this, config);
     // devices->release(); // no you should not release it...
     return S_OK;
   }
@@ -295,7 +298,31 @@ public:
 
   HRESULT STDMETHODCALLTYPE EnumAdapterByLuid(LUID luid, REFIID iid,
                                               void **adapter) override {
-    ERR("DXGIFactory::EnumAdapterByLuid: not implemented");
+    DGTRACE("EnumAdapterByLuid luid=%08lx:%08lx iid=%s adapter=%p",
+            luid.HighPart, luid.LowPart, str::format(iid).c_str(), adapter);
+    InitReturnPtr(adapter);
+
+    if (!adapter)
+      return DXGI_ERROR_INVALID_CALL;
+
+    auto devices = WMT::CopyAllDevices();
+    UINT adapter_count = devices.count();
+    for (UINT i = 0; i < adapter_count; i++) {
+      auto candidate = CreateAdapter(devices.object(i), this, Config::getInstance());
+      DXGI_ADAPTER_DESC1 desc = {};
+      HRESULT desc_hr = candidate->GetDesc1(&desc);
+      DGTRACE("EnumAdapterByLuid candidate=%u desc_hr=0x%lx luid=%08lx:%08lx",
+              i, desc_hr, desc.AdapterLuid.HighPart, desc.AdapterLuid.LowPart);
+      if (SUCCEEDED(desc_hr) && desc.AdapterLuid.HighPart == luid.HighPart &&
+          desc.AdapterLuid.LowPart == luid.LowPart) {
+        HRESULT hr = candidate->QueryInterface(iid, adapter);
+        DGTRACE("EnumAdapterByLuid match candidate=%u -> hr=0x%lx out=%p",
+                i, hr, adapter ? *adapter : nullptr);
+        return hr;
+      }
+    }
+
+    DGTRACE("EnumAdapterByLuid -> DXGI_ERROR_NOT_FOUND");
     return DXGI_ERROR_NOT_FOUND;
   }
 
@@ -328,14 +355,21 @@ public:
   HRESULT STDMETHODCALLTYPE
   EnumAdapterByGpuPreference(UINT Adapter, DXGI_GPU_PREFERENCE GpuPreference,
                              REFIID riid, void **ppvAdapter) override {
+    DGTRACE("EnumAdapterByGpuPreference adapter=%u preference=%u riid=%s out=%p",
+            Adapter, GpuPreference, str::format(riid).c_str(), ppvAdapter);
     // GpuPreference ignored, since Apple Silicon has only 1 GPU anyway
     // FIXME: support Intel Mac with dedicated GPU
     Com<IDXGIAdapter1> adapter;
     HRESULT hr = this->EnumAdapters1(Adapter, &adapter);
 
-    if (FAILED(hr))
+    if (FAILED(hr)) {
+      DGTRACE("EnumAdapterByGpuPreference EnumAdapters1 failed hr=0x%lx", hr);
       return hr;
-    return adapter->QueryInterface(riid, ppvAdapter);
+    }
+    hr = adapter->QueryInterface(riid, ppvAdapter);
+    DGTRACE("EnumAdapterByGpuPreference -> hr=0x%lx out=%p", hr,
+            ppvAdapter ? *ppvAdapter : nullptr);
+    return hr;
   };
 
 private:

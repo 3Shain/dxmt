@@ -3,6 +3,7 @@
 #include "util_env.hpp"
 #include "winemetal.h"
 #include <mutex>
+#include <string>
 
 namespace dxmt {
 Logger Logger::s_instance("dxgi.log");
@@ -20,6 +21,8 @@ static void InitializeVendorExtensionNV() {
   auto name1 = L"{41FCC608-8496-4DEF-B43E-7D9BD675A6FF}";
   auto name2 = L"FullPath";
   WCHAR value3[] = L"C:\\Windows\\System32";
+  const auto exe_name = env::getExeName();
+  const bool enable_nvext = env::getEnvVar("DXMT_ENABLE_NVEXT") == "1";
   if (RegCreateKeyExW(HKEY_LOCAL_MACHINE,
                       L"SOFTWARE\\NVIDIA Corporation\\Global", 0, nullptr, 0,
                       KEY_ALL_ACCESS, nullptr, &key1, nullptr) ||
@@ -31,7 +34,7 @@ static void InitializeVendorExtensionNV() {
                       nullptr, 0, KEY_ALL_ACCESS, nullptr, &key3, nullptr)) {
     goto cleanup;
   }
-  if (env::getEnvVar("DXMT_ENABLE_NVEXT") != "1") {
+  if (!enable_nvext) {
     RegDeleteValueW(key1, name1);
     RegDeleteValueW(key2, name1);
     RegDeleteValueW(key3, name2);
@@ -41,6 +44,12 @@ static void InitializeVendorExtensionNV() {
     RegSetValueExW(key2, name1, 0, REG_DWORD, (const BYTE *)&_1, sizeof(_1));
     RegSetValueExW(key3, name2, 0, REG_SZ, (const BYTE *)value3, sizeof(value3));
     Logger::info("Vendor extension enabled: NVEXT");
+    FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+    if (f) {
+      fprintf(f, "NVEXT enabled exe=%s env=%s\n", exe_name.c_str(),
+              env::getEnvVar("DXMT_ENABLE_NVEXT").c_str());
+      fclose(f);
+    }
     g_extension_enabled = VendorExtension::Nvidia;
   }
   cleanup:
@@ -76,15 +85,42 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason,
 
 extern "C" HRESULT __stdcall DXGIGetDebugInterface1(UINT Flags, REFIID riid,
                                                     void **ppDebug) {
+  {
+    FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+    if (f) {
+      fprintf(f, "DXGIGetDebugInterface1 Flags=0x%x riid=%s out=%p\n", Flags,
+              str::format(riid).c_str(), ppDebug);
+      fclose(f);
+    }
+  }
 #ifdef _WIN32
   // it's a DXMT implementation detail
   if (riid == DXMT_NVEXT_GUID) {
     std::call_once(nvext_init, InitializeVendorExtensionNV);
-    return g_extension_enabled == VendorExtension::Nvidia ? S_OK : E_NOINTERFACE;
+    HRESULT hr = g_extension_enabled == VendorExtension::Nvidia ? S_OK : E_NOINTERFACE;
+    FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+    if (f) {
+      fprintf(f, "DXGIGetDebugInterface1 NVEXT -> 0x%lx\n", hr);
+      fclose(f);
+    }
+    return hr;
   }
 #endif
 
   return E_NOINTERFACE;
+}
+
+extern "C" HRESULT __stdcall DXGIGetDebugInterface(REFIID riid,
+                                                   void **ppDebug) {
+  {
+    FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+    if (f) {
+      fprintf(f, "DXGIGetDebugInterface riid=%s out=%p\n",
+              str::format(riid).c_str(), ppDebug);
+      fclose(f);
+    }
+  }
+  return DXGIGetDebugInterface1(0, riid, ppDebug);
 }
 
 } // namespace dxmt

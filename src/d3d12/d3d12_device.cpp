@@ -4,13 +4,14 @@
 #include "d3d12_command_list.hpp"
 #include "d3d12_descriptor_heap.hpp"
 #include "d3d12_device.hpp"
+#include "d3d12_trace.hpp"
 #include "d3d12_fence.hpp"
 #include "d3d12_heap.hpp"
 #include "d3d12_pipeline_state.hpp"
 #include "d3d12_query_heap.hpp"
 #include "d3d12_resource.hpp"
 
-#define TRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
+#define TRACE(fmt, ...) DXMTD3D12Trace("Device", fmt, ##__VA_ARGS__)
 #define PLTRACE(fmt, ...) TRACE(fmt, ##__VA_ARGS__)
 #include "d3d12_root_signature.hpp"
 #include "com/com_object.hpp"
@@ -1155,6 +1156,28 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateGraphicsPipelineState(
         desc->PS.pShaderBytecode, desc->PS.BytecodeLength,
         desc->NumRenderTargets, (unsigned)desc->DSVFormat,
         (unsigned)desc->PrimitiveTopologyType);
+  TRACE("CreateGraphicsPSO SHADERS: VS_HASH=0x%llx PS_HASH=0x%llx DS_HASH=0x%llx HS_HASH=0x%llx GS_HASH=0x%llx IL=%u",
+        desc->VS.pShaderBytecode
+            ? (unsigned long long)DXMTD3D12Hash64(desc->VS.pShaderBytecode,
+                                                  desc->VS.BytecodeLength)
+            : 0ull,
+        desc->PS.pShaderBytecode
+            ? (unsigned long long)DXMTD3D12Hash64(desc->PS.pShaderBytecode,
+                                                  desc->PS.BytecodeLength)
+            : 0ull,
+        desc->DS.pShaderBytecode
+            ? (unsigned long long)DXMTD3D12Hash64(desc->DS.pShaderBytecode,
+                                                  desc->DS.BytecodeLength)
+            : 0ull,
+        desc->HS.pShaderBytecode
+            ? (unsigned long long)DXMTD3D12Hash64(desc->HS.pShaderBytecode,
+                                                  desc->HS.BytecodeLength)
+            : 0ull,
+        desc->GS.pShaderBytecode
+            ? (unsigned long long)DXMTD3D12Hash64(desc->GS.pShaderBytecode,
+                                                  desc->GS.BytecodeLength)
+            : 0ull,
+        desc->InputLayout.NumElements);
 
   auto pso = new MTLD3D12PipelineState(this, false);
   pso->SetGraphicsDesc(*desc);
@@ -1183,6 +1206,13 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateComputePipelineState(
 
   auto pso = new MTLD3D12PipelineState(this, true);
   pso->SetComputeDesc(*desc);
+  TRACE("CreateComputePSO ENTER: CS=%p(%zu) CS_HASH=0x%llx root=%p",
+        desc->CS.pShaderBytecode, desc->CS.BytecodeLength,
+        desc->CS.pShaderBytecode
+            ? (unsigned long long)DXMTD3D12Hash64(desc->CS.pShaderBytecode,
+                                                  desc->CS.BytecodeLength)
+            : 0ull,
+        (void *)desc->pRootSignature);
   bool compiled = pso->Compile();
   TRACE("CreateComputePSO: compile=%d CS=%p stage=%s detail=%s",
         compiled, desc->CS.pShaderBytecode,

@@ -1,11 +1,12 @@
 #include "d3d12_swapchain.hpp"
 #include "d3d12_device.hpp"
 #include "d3d12_resource.hpp"
+#include "d3d12_trace.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
 #include "Metal.hpp"
 
-#define SCTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, "SwapChain::" fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
+#define SCTRACE(fmt, ...) DXMTD3D12Trace("SwapChain", fmt, ##__VA_ARGS__)
 
 static uint64_t g_sc_enc_id = 0;
 

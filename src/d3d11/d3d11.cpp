@@ -223,19 +223,42 @@ extern "C" HRESULT __stdcall D3D11On12CreateDevice(
     UINT NodeMask, ID3D11Device **ppDevice,
     ID3D11DeviceContext **ppImmediateContext,
     D3D_FEATURE_LEVEL *pChosenFeatureLevel) {
+  if (FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a")) {
+    fprintf(f,
+            "D3D11On12CreateDevice ENTER device=%p flags=0x%x feature_count=%u queues=%u node_mask=%u\n",
+            pDevice, Flags, FeatureLevels, NumQueues, NodeMask);
+    fclose(f);
+  }
+
   InitReturnPtr(ppDevice);
   InitReturnPtr(ppImmediateContext);
   if (pChosenFeatureLevel)
     *pChosenFeatureLevel = D3D_FEATURE_LEVEL(0);
 
-  if (!pDevice)
+  if (!pDevice) {
+    if (FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a")) {
+      fprintf(f, "D3D11On12CreateDevice EXIT hr=0x%lx reason=null-device\n",
+              E_INVALIDARG);
+      fclose(f);
+    }
     return E_INVALIDARG;
+  }
 
   Com<ID3D12Device> d3d12_device;
   HRESULT hr = pDevice->QueryInterface(IID_PPV_ARGS(&d3d12_device));
   if (FAILED(hr)) {
     Logger::err("D3D11On12CreateDevice: supplied device is not ID3D12Device");
+    if (FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a")) {
+      fprintf(f, "D3D11On12CreateDevice EXIT hr=0x%lx reason=device-qi\n",
+              hr);
+      fclose(f);
+    }
     return hr;
+  }
+  if (FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a")) {
+    fprintf(f, "D3D11On12CreateDevice device QI ok d3d12=%p\n",
+            d3d12_device.ptr());
+    fclose(f);
   }
 
   Com<IDXGIAdapter> dxgi_adapter;
@@ -246,7 +269,17 @@ extern "C" HRESULT __stdcall D3D11On12CreateDevice(
 
   if (FAILED(hr)) {
     Logger::warn("D3D11On12CreateDevice: failed to recover DXGI adapter; falling back to default adapter");
+    if (FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a")) {
+      fprintf(f,
+              "D3D11On12CreateDevice adapter recovery failed hr=0x%lx; using default\n",
+              hr);
+      fclose(f);
+    }
     dxgi_adapter = nullptr;
+  } else if (FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a")) {
+    fprintf(f, "D3D11On12CreateDevice adapter recovery ok adapter=%p\n",
+            dxgi_adapter.ptr());
+    fclose(f);
   }
 
   Logger::info(str::format(

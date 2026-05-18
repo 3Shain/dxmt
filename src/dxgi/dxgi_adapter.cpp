@@ -10,6 +10,8 @@
 #include "d3d12.h"
 #include "Metal.hpp"
 
+#define DATRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, "DXGIAdapter::" fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
+
 namespace dxmt {
 
 Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor, DxgiOptions &options);
@@ -42,6 +44,8 @@ public:
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
+    DATRACE("QI this=%p riid=%s out=%p", this, str::format(riid).c_str(),
+            ppvObject);
     if (ppvObject == nullptr)
       return E_POINTER;
 
@@ -52,6 +56,8 @@ public:
         riid == __uuidof(IDXGIAdapter2) || riid == __uuidof(IDXGIAdapter3) ||
         riid == __uuidof(IDXGIAdapter4) || riid == __uuidof(IMTLDXGIAdapter)) {
       *ppvObject = ref(this);
+      DATRACE("QI this=%p riid=%s -> S_OK out=%p", this,
+              str::format(riid).c_str(), *ppvObject);
       return S_OK;
     }
 
@@ -59,6 +65,8 @@ public:
       WARN("DXGIAdapter: Unknown interface query ", str::format(riid));
     }
 
+    DATRACE("QI this=%p riid=%s -> E_NOINTERFACE",
+            this, str::format(riid).c_str());
     return E_NOINTERFACE;
   };
 
@@ -66,6 +74,7 @@ public:
     return factory_->QueryInterface(riid, ppParent);
   }
   HRESULT STDMETHODCALLTYPE GetDesc(DXGI_ADAPTER_DESC *pDesc) final {
+    DATRACE("GetDesc this=%p desc=%p", this, pDesc);
     if (pDesc == nullptr)
       return E_INVALIDARG;
 
@@ -84,9 +93,11 @@ public:
       pDesc->AdapterLuid = desc.AdapterLuid;
     }
 
+    DATRACE("GetDesc this=%p -> hr=0x%lx", this, hr);
     return hr;
   }
   HRESULT STDMETHODCALLTYPE GetDesc1(DXGI_ADAPTER_DESC1 *pDesc) final {
+    DATRACE("GetDesc1 this=%p desc=%p", this, pDesc);
     if (pDesc == nullptr)
       return E_INVALIDARG;
 
@@ -106,10 +117,12 @@ public:
       pDesc->Flags = desc.Flags & 0b11;
     }
 
+    DATRACE("GetDesc1 this=%p -> hr=0x%lx", this, hr);
     return hr;
   }
 
   HRESULT STDMETHODCALLTYPE GetDesc2(DXGI_ADAPTER_DESC2 *pDesc) final {
+    DATRACE("GetDesc2 this=%p desc=%p", this, pDesc);
     if (pDesc == nullptr)
       return E_INVALIDARG;
 
@@ -131,10 +144,12 @@ public:
       pDesc->ComputePreemptionGranularity = desc.ComputePreemptionGranularity;
     }
 
+    DATRACE("GetDesc2 this=%p -> hr=0x%lx", this, hr);
     return hr;
   }
 
   HRESULT STDMETHODCALLTYPE GetDesc3(DXGI_ADAPTER_DESC3 *pDesc) final {
+    DATRACE("GetDesc3 this=%p desc=%p", this, pDesc);
     if (pDesc == nullptr)
       return E_INVALIDARG;
 
@@ -160,8 +175,10 @@ public:
 
     if (options_.customDeviceId >= 0) {
       pDesc->DeviceId = options_.customDeviceId;
+    } else if (g_extension_enabled == VendorExtension::Nvidia) {
+      pDesc->DeviceId = 0x2484; // GeForce RTX 3070
     } else {
-      pDesc->DeviceId = 0;
+      pDesc->DeviceId = 0x7340; // Radeon Pro 5300M
     }
 
     pDesc->SubSysId = 0;
@@ -192,16 +209,22 @@ public:
 
   HRESULT STDMETHODCALLTYPE EnumOutputs(UINT Output,
                                         IDXGIOutput **ppOutput) final {
+    DATRACE("EnumOutputs this=%p output=%u out=%p", this, Output, ppOutput);
     InitReturnPtr(ppOutput);
 
     if (ppOutput == nullptr)
       return E_INVALIDARG;
 
     HMONITOR monitor = wsi::enumMonitors(Output);
-    if (monitor == nullptr)
+    if (monitor == nullptr) {
+      DATRACE("EnumOutputs this=%p output=%u -> DXGI_ERROR_NOT_FOUND", this,
+              Output);
       return DXGI_ERROR_NOT_FOUND;
+    }
 
     *ppOutput = CreateOutput(this, monitor, options_);
+    DATRACE("EnumOutputs this=%p output=%u -> S_OK out=%p", this, Output,
+            *ppOutput);
     return S_OK;
   }
   HRESULT STDMETHODCALLTYPE
@@ -226,6 +249,8 @@ public:
       Logger::err(str::format(guid));
     }
 
+    DATRACE("CheckInterfaceSupport this=%p guid=%s -> hr=0x%lx", this,
+            str::format(guid).c_str(), hr);
     return hr;
   }
 
@@ -243,6 +268,8 @@ public:
   HRESULT STDMETHODCALLTYPE QueryVideoMemoryInfo(
       UINT NodeIndex, DXGI_MEMORY_SEGMENT_GROUP MemorySegmentGroup,
       DXGI_QUERY_VIDEO_MEMORY_INFO *pVideoMemoryInfo) override {
+    DATRACE("QueryVideoMemoryInfo this=%p node=%u group=%u info=%p", this,
+            NodeIndex, MemorySegmentGroup, pVideoMemoryInfo);
     if (NodeIndex > 0 || !pVideoMemoryInfo)
       return E_INVALIDARG;
 
@@ -256,12 +283,19 @@ public:
     pVideoMemoryInfo->AvailableForReservation = 0;
     pVideoMemoryInfo->CurrentReservation =
         mem_reserved_[uint32_t(MemorySegmentGroup)];
+    DATRACE("QueryVideoMemoryInfo this=%p -> budget=%llu usage=%llu reservation=%llu",
+            this, (unsigned long long)pVideoMemoryInfo->Budget,
+            (unsigned long long)pVideoMemoryInfo->CurrentUsage,
+            (unsigned long long)pVideoMemoryInfo->CurrentReservation);
     return S_OK;
   }
 
   HRESULT STDMETHODCALLTYPE SetVideoMemoryReservation(
       UINT NodeIndex, DXGI_MEMORY_SEGMENT_GROUP MemorySegmentGroup,
       UINT64 Reservation) override {
+    DATRACE("SetVideoMemoryReservation this=%p node=%u group=%u reservation=%llu",
+            this, NodeIndex, MemorySegmentGroup,
+            (unsigned long long)Reservation);
     if (NodeIndex > 0)
       return E_INVALIDARG;
 

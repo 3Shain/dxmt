@@ -12,15 +12,22 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef NDEBUG
-#define UNIX_CALL(code, params) WINE_UNIX_CALL(code, params)
-#else
+static void
+winemetal_log_unix_status(unsigned int code, NTSTATUS status) {
+  FILE *f = fopen("/tmp/winemetal_debug.log", "a");
+  if (f) {
+    fprintf(f, "unix_call_failed code=%u status=0x%08lx\n", code, (unsigned long)status);
+    fclose(f);
+  }
+}
+
 #define UNIX_CALL(code, params)                                                                                        \
   {                                                                                                                    \
     NTSTATUS status = WINE_UNIX_CALL(code, params);                                                                    \
-    assert(!status && "unix call failed");                                                                             \
+    if (status) {                                                                                                      \
+      winemetal_log_unix_status((code), status);                                                                       \
+    }                                                                                                                  \
   }
-#endif
 
 #define PtrToUInt64(v) ((uint64_t)(uintptr_t)(v))
 

@@ -6,6 +6,7 @@
 #include "d3d12_query_heap.hpp"
 #include "d3d12_resource.hpp"
 #include "d3d12_root_signature.hpp"
+#include "d3d12_trace.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
 #include "Metal.hpp"
@@ -13,7 +14,7 @@
 #include <cstring>
 #include <vector>
 
-#define QTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
+#define QTRACE(fmt, ...) DXMTD3D12Trace("Queue", fmt, ##__VA_ARGS__)
 
 static uint64_t g_enc_id = 0;
 #define ENC_CREATE(type, handle) do { uint64_t _eid = __atomic_add_fetch(&g_enc_id, 1, __ATOMIC_SEQ_CST); QTRACE("[ENC+%llu] CREATE %s handle=%llu", (unsigned long long)_eid, type, (unsigned long long)(handle)); } while(0)

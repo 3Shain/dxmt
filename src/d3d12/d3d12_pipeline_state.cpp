@@ -1,5 +1,6 @@
 #include "d3d12_pipeline_state.hpp"
 #include "d3d12_device.hpp"
+#include "d3d12_trace.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
 #include "Metal.hpp"
@@ -20,7 +21,7 @@
 #include <process.h>
 #include <windows.h>
 
-#define PSTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
+#define PSTRACE(fmt, ...) DXMTD3D12Trace("PSO", fmt, ##__VA_ARGS__)
 
 namespace dxmt {
 
@@ -119,6 +120,57 @@ void DumpDXILModuleSummary(const char *path, const dxmt::dxil::LLVMModule &modul
     fprintf(df, "  opcode=%d count=%zu\n", entry.first, entry.second);
 
   fclose(df);
+}
+
+void DumpDXILCompileReport(const char *path, const char *func_name, size_t hash,
+                           SIZE_T bytecode_size, const char *dxbc_path,
+                           const char *module_summary_path, const char *msl_path,
+                           const dxmt::dxil::LLVMModule &module,
+                           const dxmt::dxil::DxilParsedShader &shader_info,
+                           const dxmt::dxil::MSLShader &msl_result) {
+  if (!path)
+    return;
+
+  EnsureShaderCacheDir();
+  FILE *df = fopen(path, "w");
+  if (!df)
+    return;
+
+  fprintf(df, "hash=0x%016zx\n", hash);
+  fprintf(df, "function=%s\n", func_name ? func_name : "<unknown>");
+  fprintf(df, "kind=%s(%u)\n", DxilShaderKindName(shader_info.kind),
+          (uint32_t)shader_info.kind);
+  fprintf(df, "shader_model=%u.%u\n", shader_info.shader_model.major,
+          shader_info.shader_model.minor);
+  fprintf(df, "entry=%s\n", shader_info.entry_point.c_str());
+  fprintf(df, "bytecode_size=%zu\n", bytecode_size);
+  fprintf(df, "bitcode_size=%u\n", shader_info.bitcode.size);
+  fprintf(df, "types=%zu constants=%zu functions=%zu\n", module.types.size(),
+          module.constants.size(), module.functions.size());
+  fprintf(df, "msl_size=%zu\n", msl_result.source.size());
+  fprintf(df, "threadgroup_size=%u,%u,%u\n", msl_result.tg_size[0],
+          msl_result.tg_size[1], msl_result.tg_size[2]);
+  fprintf(df, "unsupported_intrinsics=%u\n",
+          msl_result.unsupported_intrinsics);
+  fprintf(df, "unsupported_opcodes=%u\n", msl_result.unsupported_opcodes);
+  fprintf(df, "dxbc=%s\n", dxbc_path ? dxbc_path : "");
+  fprintf(df, "module=%s\n", module_summary_path ? module_summary_path : "");
+  fprintf(df, "msl=%s\n", msl_path ? msl_path : "");
+  fprintf(df, "\ndiagnostics:\n");
+  for (const auto &diagnostic : msl_result.diagnostics)
+    fprintf(df, "  %s\n", diagnostic.c_str());
+
+  fclose(df);
+
+  FILE *index = fopen("Z:\\tmp\\dxmt_shader_cache\\dxil_report_index.tsv", "a");
+  if (index) {
+    fprintf(index, "0x%016zx\t%s\t%s\t%u.%u\t%u\t%u\t%s\n", hash,
+            DxilShaderKindName(shader_info.kind), func_name ? func_name : "",
+            shader_info.shader_model.major, shader_info.shader_model.minor,
+            msl_result.unsupported_intrinsics, msl_result.unsupported_opcodes,
+            path);
+    fclose(index);
+  }
 }
 
 constexpr WMTColorWriteMask kColorWriteMaskMap[16] = {
@@ -332,13 +384,15 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
           char cache_path[256];
           snprintf(cache_path, sizeof(cache_path), "/tmp/dxmt_shader_cache/%016zx", hash);
           char dxbc_path[256], metallib_path[256], reflection_path[256],
-              module_summary_path[256],
+              module_summary_path[256], dxil_report_path[256],
               metallib_error_path[256];
           snprintf(dxbc_path, sizeof(dxbc_path), "%s.dxbc", cache_path);
           snprintf(metallib_path, sizeof(metallib_path), "%s.metallib", cache_path);
           snprintf(reflection_path, sizeof(reflection_path), "%s.json", cache_path);
           snprintf(module_summary_path, sizeof(module_summary_path),
                    "%s.module.txt", cache_path);
+          snprintf(dxil_report_path, sizeof(dxil_report_path),
+                   "%s.dxil_report.txt", cache_path);
           snprintf(metallib_error_path, sizeof(metallib_error_path),
                    "%s.metallib.err.txt", cache_path);
           EnsureShaderCacheDir();
@@ -396,6 +450,10 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
                      "%s.msl.err.txt", cache_path);
             DumpShaderText(msl_path, msl_result->source.c_str());
             PSTRACE("  MSL source written to %s", msl_path);
+            DumpDXILCompileReport(dxil_report_path, func_name, hash, size,
+                                  dxbc_path, module_summary_path, msl_path,
+                                  *module, shader_info, *msl_result);
+            PSTRACE("  DXIL compile report written to %s", dxil_report_path);
 
             WMT::Reference<WMT::Error> compile_err;
             auto library = wmt_device.newLibraryWithSource(

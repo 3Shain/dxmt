@@ -1,6 +1,7 @@
 #define INITGUID
 #include "d3d12_dxgi_device.hpp"
 #include "d3d12_device.hpp"
+#include "d3d12_trace.hpp"
 #include "com/com_pointer.hpp"
 #include "dxgi_interfaces.h"
 #include "dxmt_device.hpp"
@@ -1442,39 +1443,58 @@ extern "C" HRESULT WINAPI
 D3D12CreateDevice(IUnknown *pAdapter, D3D_FEATURE_LEVEL MinimumFeatureLevel,
                   REFIID riid, void **ppDevice) {
   {
-    FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
-    if (f) {
-      fprintf(f, "=== D3D12CreateDevice CALLED FL=%d adapter=%p riid=%s ===\n",
-              MinimumFeatureLevel, pAdapter, str::format(riid).c_str());
-      fclose(f);
-    }
+    DXMTD3D12Trace("Entry",
+                   "D3D12CreateDevice CALLED FL=%d adapter=%p riid=%s",
+                   MinimumFeatureLevel, pAdapter, str::format(riid).c_str());
   }
-  if (!ppDevice)
-    return E_POINTER;
-  *ppDevice = nullptr;
+  const bool support_probe = ppDevice == nullptr;
+  if (ppDevice)
+    *ppDevice = nullptr;
 
   Com<IMTLDXGIAdapter> dxgi_adapter;
 
   if (pAdapter) {
-    if (FAILED(pAdapter->QueryInterface(IID_PPV_ARGS(&dxgi_adapter)))) {
+    HRESULT adapter_hr = pAdapter->QueryInterface(IID_PPV_ARGS(&dxgi_adapter));
+    DXMTD3D12Trace("Entry",
+                   "D3D12CreateDevice adapter QI IMTLDXGIAdapter hr=0x%lx",
+                   adapter_hr);
+    if (FAILED(adapter_hr)) {
       ERR("D3D12CreateDevice: adapter is not a DXMT adapter");
       return E_INVALIDARG;
     }
   } else {
     Com<IDXGIFactory1> factory;
-    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
+    HRESULT factory_hr = CreateDXGIFactory1(IID_PPV_ARGS(&factory));
+    DXMTD3D12Trace("Entry", "D3D12CreateDevice CreateDXGIFactory1 hr=0x%lx",
+                   factory_hr);
+    if (FAILED(factory_hr)) {
       ERR("D3D12CreateDevice: failed to create DXGI factory");
       return E_FAIL;
     }
     Com<IDXGIAdapter> adapter;
-    if (FAILED(factory->EnumAdapters(0, &adapter))) {
+    HRESULT enum_hr = factory->EnumAdapters(0, &adapter);
+    DXMTD3D12Trace("Entry",
+                   "D3D12CreateDevice default EnumAdapters hr=0x%lx adapter=%p",
+                   enum_hr, adapter.ptr());
+    if (FAILED(enum_hr)) {
       ERR("D3D12CreateDevice: no adapters available");
       return E_FAIL;
     }
-    if (FAILED(adapter->QueryInterface(IID_PPV_ARGS(&dxgi_adapter)))) {
+    HRESULT adapter_hr = adapter->QueryInterface(IID_PPV_ARGS(&dxgi_adapter));
+    DXMTD3D12Trace("Entry",
+                   "D3D12CreateDevice default adapter QI IMTLDXGIAdapter hr=0x%lx",
+                   adapter_hr);
+    if (FAILED(adapter_hr)) {
       ERR("D3D12CreateDevice: default adapter is not DXMT");
       return E_FAIL;
     }
+  }
+
+  if (support_probe) {
+    DXMTD3D12Trace("Entry",
+                   "D3D12CreateDevice SUPPORT PROBE SUCCESS FL=%d",
+                   MinimumFeatureLevel);
+    return S_FALSE;
   }
 
   try {
@@ -1491,12 +1511,8 @@ D3D12CreateDevice(IUnknown *pAdapter, D3D_FEATURE_LEVEL MinimumFeatureLevel,
                                 MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
     }
     {
-      FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
-      if (f) {
-        fprintf(f, "Device allocated at %p size=%zu\n", device_mem,
-                sizeof(MTLD3D12DXGIDevice));
-        fclose(f);
-      }
+      DXMTD3D12Trace("Entry", "Device allocated at %p size=%zu", device_mem,
+                     sizeof(MTLD3D12DXGIDevice));
     }
     auto dxgi_device = new (device_mem) MTLD3D12DXGIDevice(
         CreateDXMTDevice({.device = dxgi_adapter->GetMTLDevice()}),
@@ -1505,12 +1521,8 @@ D3D12CreateDevice(IUnknown *pAdapter, D3D_FEATURE_LEVEL MinimumFeatureLevel,
     HRESULT hr = dxgi_device->QueryInterface(riid, ppDevice);
     if (FAILED(hr)) {
       {
-        FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
-        if (f) {
-          fprintf(f, "D3D12CreateDevice QI FAILED hr=0x%lx FL=%d\n", hr,
-                  MinimumFeatureLevel);
-          fclose(f);
-        }
+        DXMTD3D12Trace("Entry", "D3D12CreateDevice QI FAILED hr=0x%lx FL=%d",
+                       hr, MinimumFeatureLevel);
       }
       dxgi_device->Release();
       return hr;
@@ -1519,22 +1531,15 @@ D3D12CreateDevice(IUnknown *pAdapter, D3D_FEATURE_LEVEL MinimumFeatureLevel,
     Logger::info(str::format("D3D12CreateDevice: created device with FL ",
                              MinimumFeatureLevel));
     {
-      FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
-      if (f) {
-        fprintf(f, "D3D12CreateDevice SUCCESS FL=%d\n", MinimumFeatureLevel);
-        fclose(f);
-      }
+      DXMTD3D12Trace("Entry", "D3D12CreateDevice SUCCESS FL=%d",
+                     MinimumFeatureLevel);
     }
     return S_OK;
   } catch (const std::exception &e) {
     Logger::err(str::format("D3D12CreateDevice: exception: ", e.what()));
     {
-      FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
-      if (f) {
-        fprintf(f, "D3D12CreateDevice EXCEPTION: %s FL=%d\n", e.what(),
-                MinimumFeatureLevel);
-        fclose(f);
-      }
+      DXMTD3D12Trace("Entry", "D3D12CreateDevice EXCEPTION: %s FL=%d",
+                     e.what(), MinimumFeatureLevel);
     }
     return E_FAIL;
   }
@@ -1650,13 +1655,14 @@ extern "C" HRESULT WINAPI D3D12CreateVersionedRootSignatureDeserializer(
 }
 
 extern "C" HRESULT WINAPI D3D12GetDebugInterface(REFIID riid, void **ppDebug) {
+  TraceAgility("D3D12GetDebugInterface riid=%s out=%p -> E_NOINTERFACE",
+               str::format(riid).c_str(), ppDebug);
+  if (ppDebug)
+    *ppDebug = nullptr;
   return E_NOINTERFACE;
 }
 
-extern "C" UINT WINAPI D3D12SDKVersion() {
-  TraceAgility("D3D12SDKVersion() -> %u", kD3D12AgilitySDKVersion);
-  return kD3D12AgilitySDKVersion;
-}
+extern "C" UINT D3D12SDKVersion = kD3D12AgilitySDKVersion;
 
 extern "C" HRESULT WINAPI D3D12EnableExperimentalFeatures(
     UINT feature_count, const IID *iids, void *configurations,
@@ -1674,6 +1680,8 @@ extern "C" HRESULT WINAPI D3D12EnableExperimentalFeatures(
 
 extern "C" HRESULT WINAPI D3D12GetInterface(REFCLSID clsid, REFIID riid,
                                             void **ppv) {
+  TraceAgility("D3D12GetInterface ENTER clsid=%s riid=%s out=%p",
+               str::format(clsid).c_str(), str::format(riid).c_str(), ppv);
   if (!ppv)
     return E_POINTER;
   *ppv = nullptr;

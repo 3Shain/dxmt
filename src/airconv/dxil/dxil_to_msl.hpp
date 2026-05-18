@@ -20,6 +20,7 @@ struct MSLShader {
   uint32_t num_samplers = 0;
   uint32_t unsupported_intrinsics = 0;
   uint32_t unsupported_opcodes = 0;
+  std::vector<std::string> diagnostics;
 };
 
 struct ResourceBinding {
@@ -43,6 +44,7 @@ private:
     std::vector<std::string> value_table;
     std::unordered_map<std::string, std::string> local_values;
     std::vector<ResourceBinding> resource_bindings;
+    std::vector<std::string> diagnostics;
     uint32_t next_binding = 0;
     uint32_t unsupported_intrinsics = 0;
     uint32_t unsupported_opcodes = 0;
@@ -62,6 +64,7 @@ private:
   static void emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, uint32_t &value_counter);
   static std::string translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic_id,
                                            const std::vector<uint32_t> &args);
+  static void recordDiagnostic(EmitContext &ctx, const char *fmt, ...);
 };
 
 }

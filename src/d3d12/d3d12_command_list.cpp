@@ -559,7 +559,10 @@ void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ClearRenderTargetView(
   CmdClearRTV cmd = {};
   cmd.header = {CmdType::ClearRenderTargetView, sizeof(cmd)};
   cmd.rtv = rtv;
-  memcpy(cmd.color, color, 16);
+  if (color)
+    memcpy(cmd.color, color, 16);
+  else
+    TRACE("ClearRenderTargetView called with null color pointer");
   Emit(cmd);
 }
 

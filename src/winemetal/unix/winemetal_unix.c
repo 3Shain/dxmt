@@ -9,6 +9,7 @@
 #include "objc/objc-runtime.h"
 #include <bootstrap.h>
 #include <mach/mach_port.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #define WINEMETAL_API
@@ -28,6 +29,168 @@ winemetal_debug_enabled(void) {
 static FILE *
 winemetal_debug_log(void) {
   return winemetal_debug_enabled() ? fopen("/tmp/winemetal_debug.log", "a") : NULL;
+}
+
+static FILE *
+winemetal_critical_log(void) {
+  return fopen("/tmp/winemetal_debug.log", "a");
+}
+
+static const char *
+winemetal_render_command_name(uint16_t type) {
+  switch ((enum WMTRenderCommandType)type) {
+  case WMTRenderCommandNop:
+    return "Nop";
+  case WMTRenderCommandUseResource:
+    return "UseResource";
+  case WMTRenderCommandSetVertexBuffer:
+    return "SetVertexBuffer";
+  case WMTRenderCommandSetVertexBufferOffset:
+    return "SetVertexBufferOffset";
+  case WMTRenderCommandSetFragmentBuffer:
+    return "SetFragmentBuffer";
+  case WMTRenderCommandSetFragmentBufferOffset:
+    return "SetFragmentBufferOffset";
+  case WMTRenderCommandSetMeshBuffer:
+    return "SetMeshBuffer";
+  case WMTRenderCommandSetMeshBufferOffset:
+    return "SetMeshBufferOffset";
+  case WMTRenderCommandSetObjectBuffer:
+    return "SetObjectBuffer";
+  case WMTRenderCommandSetObjectBufferOffset:
+    return "SetObjectBufferOffset";
+  case WMTRenderCommandSetFragmentTexture:
+    return "SetFragmentTexture";
+  case WMTRenderCommandSetFragmentSamplerState:
+    return "SetFragmentSamplerState";
+  case WMTRenderCommandSetFragmentBytes:
+    return "SetFragmentBytes";
+  case WMTRenderCommandSetRasterizerState:
+    return "SetRasterizerState";
+  case WMTRenderCommandSetViewports:
+    return "SetViewports";
+  case WMTRenderCommandSetScissorRects:
+    return "SetScissorRects";
+  case WMTRenderCommandSetPSO:
+    return "SetPSO";
+  case WMTRenderCommandSetDSSO:
+    return "SetDSSO";
+  case WMTRenderCommandSetBlendFactorAndStencilRef:
+    return "SetBlendFactorAndStencilRef";
+  case WMTRenderCommandSetVisibilityMode:
+    return "SetVisibilityMode";
+  case WMTRenderCommandDraw:
+    return "Draw";
+  case WMTRenderCommandDrawIndexed:
+    return "DrawIndexed";
+  case WMTRenderCommandDrawIndirect:
+    return "DrawIndirect";
+  case WMTRenderCommandDrawIndexedIndirect:
+    return "DrawIndexedIndirect";
+  case WMTRenderCommandDrawMeshThreadgroups:
+    return "DrawMeshThreadgroups";
+  case WMTRenderCommandDrawMeshThreadgroupsIndirect:
+    return "DrawMeshThreadgroupsIndirect";
+  case WMTRenderCommandMemoryBarrier:
+    return "MemoryBarrier";
+  case WMTRenderCommandDXMTGeometryDraw:
+    return "DXMTGeometryDraw";
+  case WMTRenderCommandDXMTGeometryDrawIndexed:
+    return "DXMTGeometryDrawIndexed";
+  case WMTRenderCommandDXMTGeometryDrawIndirect:
+    return "DXMTGeometryDrawIndirect";
+  case WMTRenderCommandDXMTGeometryDrawIndexedIndirect:
+    return "DXMTGeometryDrawIndexedIndirect";
+  case WMTRenderCommandWaitForFence:
+    return "WaitForFence";
+  case WMTRenderCommandUpdateFence:
+    return "UpdateFence";
+  case WMTRenderCommandSetViewport:
+    return "SetViewport";
+  case WMTRenderCommandSetScissorRect:
+    return "SetScissorRect";
+  case WMTRenderCommandDXMTTessellationMeshDraw:
+    return "DXMTTessellationMeshDraw";
+  case WMTRenderCommandDXMTTessellationMeshDrawIndexed:
+    return "DXMTTessellationMeshDrawIndexed";
+  case WMTRenderCommandDXMTTessellationMeshDrawIndirect:
+    return "DXMTTessellationMeshDrawIndirect";
+  case WMTRenderCommandDXMTTessellationMeshDrawIndexedIndirect:
+    return "DXMTTessellationMeshDrawIndexedIndirect";
+  case WMTRenderCommandDispatchThreadsPerTile:
+    return "DispatchThreadsPerTile";
+  default:
+    return "Unknown";
+  }
+}
+
+static void
+winemetal_log_render_command(FILE *dl, size_t index, id<MTLRenderCommandEncoder> encoder, const struct wmtcmd_base *cmd) {
+  if (!dl || !cmd) {
+    return;
+  }
+
+  fprintf(
+      dl, "render_cmd[%zu] encoder=%p cmd=%p type=%u(%s) next=%p", index, encoder, cmd, cmd->type,
+      winemetal_render_command_name(cmd->type), cmd->next.ptr
+  );
+
+  switch ((enum WMTRenderCommandType)cmd->type) {
+  case WMTRenderCommandSetPSO: {
+    const struct wmtcmd_render_setpso *body = (const struct wmtcmd_render_setpso *)cmd;
+    fprintf(dl, " pso=%p", (void *)body->pso);
+    break;
+  }
+  case WMTRenderCommandSetDSSO: {
+    const struct wmtcmd_render_setdsso *body = (const struct wmtcmd_render_setdsso *)cmd;
+    fprintf(dl, " dsso=%p stencil_ref=%u", (void *)body->dsso, body->stencil_ref);
+    break;
+  }
+  case WMTRenderCommandSetVertexBuffer:
+  case WMTRenderCommandSetFragmentBuffer:
+  case WMTRenderCommandSetMeshBuffer:
+  case WMTRenderCommandSetObjectBuffer: {
+    const struct wmtcmd_render_setbuffer *body = (const struct wmtcmd_render_setbuffer *)cmd;
+    fprintf(dl, " buffer=%p offset=%llu index=%u", (void *)body->buffer, (unsigned long long)body->offset, body->index);
+    break;
+  }
+  case WMTRenderCommandSetVertexBufferOffset:
+  case WMTRenderCommandSetFragmentBufferOffset:
+  case WMTRenderCommandSetMeshBufferOffset:
+  case WMTRenderCommandSetObjectBufferOffset: {
+    const struct wmtcmd_render_setbufferoffset *body = (const struct wmtcmd_render_setbufferoffset *)cmd;
+    fprintf(dl, " offset=%llu index=%u", (unsigned long long)body->offset, body->index);
+    break;
+  }
+  case WMTRenderCommandSetFragmentTexture: {
+    const struct wmtcmd_render_settexture *body = (const struct wmtcmd_render_settexture *)cmd;
+    fprintf(dl, " texture=%p index=%u", (void *)body->texture, body->index);
+    break;
+  }
+  case WMTRenderCommandDraw: {
+    const struct wmtcmd_render_draw *body = (const struct wmtcmd_render_draw *)cmd;
+    fprintf(
+        dl, " primitive=%u vertex_start=%llu vertex_count=%llu instances=%u base_instance=%u", body->primitive_type,
+        (unsigned long long)body->vertex_start, (unsigned long long)body->vertex_count, body->instance_count,
+        body->base_instance
+    );
+    break;
+  }
+  case WMTRenderCommandDrawIndexed: {
+    const struct wmtcmd_render_draw_indexed *body = (const struct wmtcmd_render_draw_indexed *)cmd;
+    fprintf(
+        dl,
+        " primitive=%u index_type=%u index_count=%llu index_buffer=%p index_offset=%llu instances=%u base_vertex=%d base_instance=%u",
+        body->primitive_type, body->index_type, (unsigned long long)body->index_count, (void *)body->index_buffer,
+        (unsigned long long)body->index_buffer_offset, body->instance_count, body->base_vertex, body->base_instance
+    );
+    break;
+  }
+  default:
+    break;
+  }
+
+  fprintf(dl, "\n");
 }
 
 void
@@ -963,11 +1126,33 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
   struct unixcall_generic_obj_cmd_noret *params = obj;
   const struct wmtcmd_base *next = params->cmd_head.ptr;
   id<MTLRenderCommandEncoder> encoder = (id<MTLRenderCommandEncoder>)params->encoder;
+  FILE *dl = winemetal_debug_log();
+  size_t command_index = 0;
+
+  if (dl) {
+    fprintf(dl, "render_encode_begin encoder=%p cmd_head=%p\n", encoder, next);
+  }
+
   while (next) {
+    winemetal_log_render_command(dl, command_index, encoder, next);
+
+    @try {
     switch ((enum WMTRenderCommandType)next->type) {
     default:
-      assert(!next->type && "unhandled render command type");
-      break;
+      {
+        FILE *el = winemetal_critical_log();
+        if (el) {
+          fprintf(
+              el, "render_cmd_unknown index=%zu encoder=%p cmd=%p type=%u next=%p\n", command_index, encoder, next,
+              next->type, next->next.ptr
+          );
+          fclose(el);
+        }
+        if (dl) {
+          fclose(dl);
+        }
+        return STATUS_UNSUCCESSFUL;
+      }
     case WMTRenderCommandNop:
       break;
     case WMTRenderCommandUseResource: {
@@ -1264,7 +1449,30 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
       break;
     }
     }
+    } @catch (NSException *exception) {
+      FILE *el = winemetal_critical_log();
+      if (el) {
+        const char *name = [[exception name] UTF8String];
+        const char *reason = [[exception reason] UTF8String];
+        fprintf(
+            el,
+            "render_cmd_exception index=%zu encoder=%p cmd=%p type=%u(%s) exception=%s reason=%s next=%p\n",
+            command_index, encoder, next, next->type, winemetal_render_command_name(next->type),
+            name ? name : "(null)", reason ? reason : "(null)", next->next.ptr
+        );
+        fclose(el);
+      }
+      if (dl) {
+        fclose(dl);
+      }
+      return STATUS_UNSUCCESSFUL;
+    }
     next = next->next.ptr;
+    command_index++;
+  }
+  if (dl) {
+    fprintf(dl, "render_encode_end encoder=%p commands=%zu\n", encoder, command_index);
+    fclose(dl);
   }
   return STATUS_SUCCESS;
 }

@@ -46,6 +46,17 @@ namespace dxmt {
       { "dxgi.customVendorId",     "1002" },
       { "dxgi.customDeviceId",     "7340" },
     }} },
+    { R"(\\Ghostrunner-Win64-Shipping\.exe$)", {{
+      { "dxgi.customDeviceDesc",   "AMD Radeon RX 6800 XT" },
+      { "dxgi.customVendorId",     "1002" },
+      { "dxgi.customDeviceId",     "73BF" },
+      { "dxgi.mirrorAdapter0ForAdapter1", "True" },
+    }} },
+    { R"(\\SonsOfTheForest\.exe$)", {{
+      { "dxgi.customDeviceDesc",   "AMD Radeon RX 6800 XT" },
+      { "dxgi.customVendorId",     "1002" },
+      { "dxgi.customDeviceId",     "73BF" },
+    }} },
     { R"(\\SONIC_X_SHADOW_GENERATIONS\.exe$)", {{
       { "d3d11.ignoreMapFlagNoWait",   "True" },
     }} },

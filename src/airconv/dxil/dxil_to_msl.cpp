@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cinttypes>
 #include <cstdlib>
+#include <cstdarg>
 #include <algorithm>
 
 #define DXTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxil_trace.log", "a"); if (_tf) { fprintf(_tf, fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
@@ -316,6 +317,16 @@ static bool isKnownDXIntrinsic(uint32_t intrinsic_id) {
   }
 }
 
+void DXILToMSL::recordDiagnostic(EmitContext &ctx, const char *fmt, ...) {
+  char buffer[512];
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(buffer, sizeof(buffer), fmt, args);
+  va_end(args);
+  ctx.diagnostics.emplace_back(buffer);
+  DXTRACE("%s", buffer);
+}
+
 std::string DXILToMSL::getTypeName(const LLVMType &t, const LLVMModule &mod) {
   switch (t.kind) {
   case LLVMType::Void: return "void";
@@ -541,8 +552,8 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     uint32_t value = 0;
     if (parseUnsignedLiteral(text, value))
       return value;
-    DXTRACE("DXIL intrinsic %u: %s is not a literal: %s",
-            intrinsic_id, label, text.empty() ? "<missing>" : text.c_str());
+    recordDiagnostic(ctx, "DXIL intrinsic %u: %s is not a literal: %s",
+                     intrinsic_id, label, text.empty() ? "<missing>" : text.c_str());
     return fallback;
   };
 
@@ -737,7 +748,7 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     auto value_z = valueArg(value_base + 2, "0.0");
     auto value_w = valueArg(value_base + 3, "0.0");
     if (intrinsic_id == DXOP_TextureStoreSample) {
-      DXTRACE("DXIL TextureStoreSample lowered without explicit sample index");
+      recordDiagnostic(ctx, "DXIL TextureStoreSample lowered without explicit sample index");
     }
     return handle + ".write(float4(" + value_x + ", " + value_y + ", " +
            value_z + ", " + value_w + "), uint2(" + coord_x + ", " +
@@ -755,11 +766,11 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     auto coord_y = valueArg(3, "0.0");
     auto coord = "float2(" + coord_x + ", " + coord_y + ")";
     if (intrinsic_id == DXOP_TextureSampleGrad) {
-      DXTRACE("DXIL SampleGrad lowered without explicit gradients");
+      recordDiagnostic(ctx, "DXIL SampleGrad lowered without explicit gradients");
     } else if (intrinsic_id == DXOP_TextureSampleLevel) {
-      DXTRACE("DXIL SampleLevel lowered without explicit LOD");
+      recordDiagnostic(ctx, "DXIL SampleLevel lowered without explicit LOD");
     } else if (intrinsic_id == DXOP_TextureSampleBias) {
-      DXTRACE("DXIL SampleBias lowered without explicit bias");
+      recordDiagnostic(ctx, "DXIL SampleBias lowered without explicit bias");
     }
     return handle + ".sample(" + sampler + ", " + coord + ")";
   }
@@ -774,9 +785,9 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     auto coord_y = valueArg(3, "0.0");
     uint32_t channel = args.size() > 8 ? literalArg(8, 0, "gather channel") : 0;
     if (intrinsic_id == DXOP_TextureGatherCmp) {
-      DXTRACE("DXIL TextureGatherCmp lowered without explicit compare");
+      recordDiagnostic(ctx, "DXIL TextureGatherCmp lowered without explicit compare");
     } else if (intrinsic_id == DXOP_TextureGatherRaw) {
-      DXTRACE("DXIL TextureGatherRaw lowered through typed gather");
+      recordDiagnostic(ctx, "DXIL TextureGatherRaw lowered through typed gather");
     }
     return handle + ".gather(" + sampler + ", float2(" + coord_x + ", " +
            coord_y + "), component::" + componentName(channel) + ")";
@@ -797,7 +808,7 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
   }
 
   case DXOP_BufferUpdateCounter: {
-    DXTRACE("DXIL BufferUpdateCounter lowered to non-mutating counter fallback");
+    recordDiagnostic(ctx, "DXIL BufferUpdateCounter lowered to non-mutating counter fallback");
     return "0";
   }
 
@@ -847,7 +858,7 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     if (args.size() < 2) return "0";
     auto handle = resolveBindingName(valueArg(0, "uav0"), "buf");
     auto offset = valueArg(1, "0");
-    DXTRACE("DXIL AtomicCompareExchange lowered to atomic load fallback");
+    recordDiagnostic(ctx, "DXIL AtomicCompareExchange lowered to atomic load fallback");
     return "atomic_load_explicit(reinterpret_cast<device atomic_uint*>(" +
            handle + " + (" + offset + ")), memory_order_relaxed)";
   }
@@ -901,7 +912,7 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     case DXILOP_Round_z: return "trunc(" + x + ")";
     default:
       ctx.unsupported_intrinsics++;
-      DXTRACE("DXIL unknown unary opcode: %u", op);
+      recordDiagnostic(ctx, "DXIL unknown unary opcode: %u", op);
       return x;
     }
   }
@@ -920,7 +931,7 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     case DXILOP_UMin: return "min((uint)(" + a + "), (uint)(" + b + "))";
     default:
       ctx.unsupported_intrinsics++;
-      DXTRACE("DXIL unknown binary opcode: %u", op);
+      recordDiagnostic(ctx, "DXIL unknown binary opcode: %u", op);
       return a;
     }
   }
@@ -938,7 +949,7 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     case DXILOP_UMad: return "((" + a + ") * (" + b + ") + (" + c + "))";
     default:
       ctx.unsupported_intrinsics++;
-      DXTRACE("DXIL unknown tertiary opcode: %u", op);
+      recordDiagnostic(ctx, "DXIL unknown tertiary opcode: %u", op);
       return a;
     }
   }
@@ -986,8 +997,8 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     if (ctx.shader.kind == DxilShaderKind::Vertex) {
       return vertexInputField("vin", input_id) + componentSuffix(component);
     }
-    DXTRACE("DXIL LoadInput fallback: shader_kind=%u input_id=%u component=%u",
-            (uint32_t)ctx.shader.kind, input_id, component);
+    recordDiagnostic(ctx, "DXIL LoadInput fallback: shader_kind=%u input_id=%u component=%u",
+                     (uint32_t)ctx.shader.kind, input_id, component);
     return "0.0";
   }
 
@@ -1002,18 +1013,19 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     }
     if (ctx.shader.kind == DxilShaderKind::Pixel) {
       if (output_id > 0) {
-        DXTRACE("DXIL StoreOutput MRT fallback: output_id=%u component=%u", output_id, component);
+        recordDiagnostic(ctx, "DXIL StoreOutput MRT fallback: output_id=%u component=%u",
+                         output_id, component);
       }
       return std::string("result") + componentSuffix(component) + " = " + val;
     }
-    DXTRACE("DXIL StoreOutput fallback: shader_kind=%u output_id=%u component=%u",
-            (uint32_t)ctx.shader.kind, output_id, component);
+    recordDiagnostic(ctx, "DXIL StoreOutput fallback: shader_kind=%u output_id=%u component=%u",
+                     (uint32_t)ctx.shader.kind, output_id, component);
     return "";
   }
 
   default:
     ctx.unsupported_intrinsics++;
-    DXTRACE("DXIL unknown intrinsic: %u", intrinsic_id);
+    recordDiagnostic(ctx, "DXIL unknown intrinsic: %u", intrinsic_id);
     break;
   }
 
@@ -1066,7 +1078,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
     if (named_dxop && !has_intrinsic_literal) {
       ctx.unsupported_intrinsics++;
       std::string id_str = call_args.empty() ? "<missing>" : getValue(call_args[0]);
-      DXTRACE("DXIL intrinsic id is not a literal: %s", id_str.c_str());
+      recordDiagnostic(ctx, "DXIL intrinsic id is not a literal: %s", id_str.c_str());
       os << "  // dx.op call without literal intrinsic id\n";
       ensureValueTable(value_counter);
       ctx.value_table[value_counter] = result;
@@ -1402,7 +1414,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
         os << "  auto " << result << " = " << stored->second
            << "; // load local " << ptr << "\n";
       } else {
-        DXTRACE("DXIL generic load fallback: ptr=%s", ptr.c_str());
+        recordDiagnostic(ctx, "DXIL generic load fallback: ptr=%s", ptr.c_str());
         os << "  auto " << result << " = 0; // load from " << ptr << "\n";
       }
     }
@@ -1586,7 +1598,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
         os << "); // shufflevector\n";
       }
     } else {
-      DXTRACE("DXIL shufflevector fallback: mask=%s", mask.c_str());
+      recordDiagnostic(ctx, "DXIL shufflevector fallback: mask=%s", mask.c_str());
       os << "  auto " << result << " = " << lhs << "; // shufflevector fallback\n";
     }
     ctx.value_table[value_counter] = result;
@@ -1624,8 +1636,8 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   default:
     ctx.unsupported_opcodes++;
-    DXTRACE("DXIL unhandled opcode: %d type=%u operands=%zu", (int)inst.opcode,
-            inst.type_id, inst.operands.size());
+    recordDiagnostic(ctx, "DXIL unhandled opcode: %d type=%u operands=%zu", (int)inst.opcode,
+                     inst.type_id, inst.operands.size());
     os << "  // unhandled opcode " << (int)inst.opcode << "\n";
     ensureValueTable(value_counter);
     ctx.value_table[value_counter] = result;
@@ -1641,7 +1653,7 @@ std::optional<MSLShader> DXILToMSL::convert(const LLVMModule &module,
           module.functions.size(), module.types.size());
 
   std::ostringstream os;
-  EmitContext ctx{os, module, shader, {}, {}, {}, 0, 0, 0, false, false,
+  EmitContext ctx{os, module, shader, {}, {}, {}, {}, 0, 0, 0, false, false,
                   false, false};
 
   if (module.functions.empty()) {
@@ -1707,6 +1719,7 @@ std::optional<MSLShader> DXILToMSL::convert(const LLVMModule &module,
   result.tg_size[2] = 1;
   result.unsupported_intrinsics = ctx.unsupported_intrinsics;
   result.unsupported_opcodes = ctx.unsupported_opcodes;
+  result.diagnostics = ctx.diagnostics;
 
   DXTRACE("DXILToMSL: generated %zu bytes of MSL unsupported_intrinsics=%u unsupported_opcodes=%u",
           result.source.size(), ctx.unsupported_intrinsics, ctx.unsupported_opcodes);
