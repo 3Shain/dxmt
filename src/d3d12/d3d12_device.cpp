@@ -501,14 +501,14 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
       return E_INVALIDARG;
     opts->DoublePrecisionFloatShaderOps = FALSE;
     opts->OutputMergerLogicOp = TRUE;
-	    opts->MinPrecisionSupport = D3D12_SHADER_MIN_PRECISION_SUPPORT_10_BIT |
-	                                D3D12_SHADER_MIN_PRECISION_SUPPORT_16_BIT;
-	    opts->TiledResourcesTier = D3D12_TILED_RESOURCES_TIER_2;
-	    opts->ResourceBindingTier = D3D12_RESOURCE_BINDING_TIER_3;
+    opts->MinPrecisionSupport = D3D12_SHADER_MIN_PRECISION_SUPPORT_NONE;
+    opts->TiledResourcesTier = D3D12_TILED_RESOURCES_TIER_NOT_SUPPORTED;
+    opts->ResourceBindingTier = D3D12_RESOURCE_BINDING_TIER_2;
     opts->PSSpecifiedStencilRefSupported = TRUE;
-	    opts->TypedUAVLoadAdditionalFormats = TRUE;
-	    opts->ROVsSupported = TRUE;
-	    opts->ConservativeRasterizationTier = D3D12_CONSERVATIVE_RASTERIZATION_TIER_3;
+    opts->TypedUAVLoadAdditionalFormats = FALSE;
+    opts->ROVsSupported = FALSE;
+    opts->ConservativeRasterizationTier =
+        D3D12_CONSERVATIVE_RASTERIZATION_TIER_NOT_SUPPORTED;
     opts->MaxGPUVirtualAddressBitsPerResource = 40;
     opts->StandardSwizzle64KBSupported = FALSE;
     opts->CrossNodeSharingTier = D3D12_CROSS_NODE_SHARING_TIER_NOT_SUPPORTED;
@@ -729,7 +729,8 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     auto *sm = (D3D12_FEATURE_DATA_SHADER_MODEL *)feature_data;
     if (feature_data_size < sizeof(*sm))
       return E_INVALIDARG;
-	    sm->HighestShaderModel = D3D_SHADER_MODEL_6_5;
+    if (sm->HighestShaderModel > D3D_SHADER_MODEL_6_0)
+      sm->HighestShaderModel = D3D_SHADER_MODEL_6_0;
     TRACE("  SHADER_MODEL: HighestSM=%u", (unsigned)sm->HighestShaderModel);
     return S_OK;
   }
@@ -737,12 +738,12 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     auto *o = (D3D12_FEATURE_DATA_D3D12_OPTIONS1 *)feature_data;
     if (feature_data_size < sizeof(*o))
       return E_INVALIDARG;
-	    o->WaveOps = TRUE;
-	    o->WaveLaneCountMin = 32;
-	    o->WaveLaneCountMax = 32;
-	    o->TotalLaneCount = 1024;
-	    o->ExpandedComputeResourceStates = FALSE;
-	    o->Int64ShaderOps = TRUE;
+    o->WaveOps = FALSE;
+    o->WaveLaneCountMin = 0;
+    o->WaveLaneCountMax = 0;
+    o->TotalLaneCount = 0;
+    o->ExpandedComputeResourceStates = FALSE;
+    o->Int64ShaderOps = FALSE;
     return S_OK;
   }
   case D3D12_FEATURE_ROOT_SIGNATURE: {
@@ -767,8 +768,9 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     auto *o = (D3D12_FEATURE_DATA_D3D12_OPTIONS2 *)feature_data;
     if (feature_data_size < sizeof(*o))
       return E_INVALIDARG;
-	    o->DepthBoundsTestSupported = TRUE;
-	    o->ProgrammableSamplePositionsTier = D3D12_PROGRAMMABLE_SAMPLE_POSITIONS_TIER_1;
+    o->DepthBoundsTestSupported = FALSE;
+    o->ProgrammableSamplePositionsTier =
+        D3D12_PROGRAMMABLE_SAMPLE_POSITIONS_TIER_NOT_SUPPORTED;
     return S_OK;
   }
   case D3D12_FEATURE_SHADER_CACHE: {
@@ -783,9 +785,8 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     if (feature_data_size < sizeof(*o))
       return E_INVALIDARG;
     o->CopyQueueTimestampQueriesSupported = FALSE;
-	    o->CastingFullyTypedFormatSupported = TRUE;
-	    o->WriteBufferImmediateSupportFlags = D3D12_COMMAND_LIST_SUPPORT_FLAG_DIRECT |
-	                                         D3D12_COMMAND_LIST_SUPPORT_FLAG_COMPUTE;
+    o->CastingFullyTypedFormatSupported = FALSE;
+    o->WriteBufferImmediateSupportFlags = D3D12_COMMAND_LIST_SUPPORT_FLAG_NONE;
     o->ViewInstancingTier = D3D12_VIEW_INSTANCING_TIER_NOT_SUPPORTED;
     o->BarycentricsSupported = FALSE;
     TRACE("  OPTIONS3: CopyQueueTS=%d CastFullyTyped=%d WriteBufImm=0x%x ViewInstTier=%u Bary=%d",
