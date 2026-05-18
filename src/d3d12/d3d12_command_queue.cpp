@@ -2607,6 +2607,74 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         enc.endEncoding();
         break;
       }
+      case CmdType::ClearUnorderedAccessView: {
+        auto *cmd = reinterpret_cast<const CmdClearUAV *>(header);
+        st.CloseRenderEncoder();
+        auto *desc = reinterpret_cast<const D3D12Descriptor *>(cmd->cpu_handle.ptr);
+        auto *res = cmd->resource
+                        ? static_cast<MTLD3D12Resource *>(cmd->resource)
+                        : (desc && desc->resource
+                               ? static_cast<MTLD3D12Resource *>(desc->resource)
+                               : nullptr);
+        bool zero_clear = cmd->values[0] == 0 && cmd->values[1] == 0 &&
+                          cmd->values[2] == 0 && cmd->values[3] == 0;
+        QTRACE("ClearUnorderedAccessView%s cpu=0x%llx gpu=0x%llx res=%p desc=%p zero=%d",
+               cmd->is_float ? "Float" : "Uint",
+               (unsigned long long)cmd->cpu_handle.ptr,
+               (unsigned long long)cmd->gpu_handle.ptr,
+               (void*)res, (void*)desc, zero_clear);
+        if (!res || !res->GetMTLBuffer().handle) {
+          QTRACE("ClearUnorderedAccessView SKIPPED non-buffer or missing resource");
+          break;
+        }
+
+        uint64_t clear_offset = desc ? UAVBufferByteOffset(desc) : 0;
+        uint64_t clear_length = desc ? UAVBufferByteLength(desc, res)
+                                     : res->GetBufferByteLength();
+        clear_length = std::min(clear_length,
+                                res->GetBufferByteLength() > clear_offset
+                                    ? res->GetBufferByteLength() - clear_offset
+                                    : 0);
+        if (!clear_length) {
+          QTRACE("ClearUnorderedAccessView SKIPPED empty range off=%llu len=%llu",
+                 (unsigned long long)clear_offset,
+                 (unsigned long long)clear_length);
+          break;
+        }
+
+        if (zero_clear) {
+          auto blit = cmdbuf.blitCommandEncoder();
+          ENC_CREATE("blit_clearuav", blit.handle);
+          struct wmtcmd_blit_fillbuffer fill = {};
+          fill.type = WMTBlitCommandFillBuffer;
+          fill.next.set(nullptr);
+          fill.buffer = res->GetMTLBuffer().handle;
+          fill.offset = clear_offset;
+          fill.length = clear_length;
+          fill.value = 0;
+          blit.encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&fill));
+          ENC_END(blit.handle);
+          blit.endEncoding();
+          break;
+        }
+
+        void *mapped = nullptr;
+        HRESULT map_hr = res->Map(0, nullptr, &mapped);
+        if (FAILED(map_hr) || !mapped) {
+          QTRACE("ClearUnorderedAccessView SKIPPED nonzero clear not CPU-visible hr=0x%08x",
+                 (unsigned)map_hr);
+          break;
+        }
+        uint8_t *dst = static_cast<uint8_t *>(mapped) + clear_offset;
+        const uint8_t *pattern = reinterpret_cast<const uint8_t *>(cmd->values);
+        for (uint64_t off = 0; off < clear_length; off++)
+          dst[off] = pattern[off & 15];
+        res->Unmap(0, nullptr);
+        QTRACE("ClearUnorderedAccessView CPU pattern clear off=%llu len=%llu",
+               (unsigned long long)clear_offset,
+               (unsigned long long)clear_length);
+        break;
+      }
       case CmdType::RSSetViewports: {
         auto *cmd = reinterpret_cast<const CmdRSSetViewports *>(header);
         auto *vps = reinterpret_cast<const D3D12_VIEWPORT *>(

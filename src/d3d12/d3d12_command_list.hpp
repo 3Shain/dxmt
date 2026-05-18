@@ -44,6 +44,7 @@ enum class CmdType : uint32_t {
   OMSetStencilRef,
   ClearRenderTargetView,
   ClearDepthStencilView,
+  ClearUnorderedAccessView,
   ResourceBarrier,
   SetDescriptorHeaps,
   ResolveSubresource,
@@ -214,6 +215,15 @@ struct CmdClearDSV {
   D3D12_CLEAR_FLAGS flags;
   float depth;
   uint8_t stencil;
+};
+
+struct CmdClearUAV {
+  CmdHeader header;
+  D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle;
+  D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle;
+  ID3D12Resource *resource;
+  uint32_t values[4];
+  uint8_t is_float;
 };
 
 struct CmdResourceBarrier {

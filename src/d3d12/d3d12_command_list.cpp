@@ -565,13 +565,32 @@ void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ClearRenderTargetView(
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ClearUnorderedAccessViewUint(
     D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle,
     D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle, ID3D12Resource *resource,
-    const UINT values[4], UINT rect_count, const D3D12_RECT *rects) {}
+    const UINT values[4], UINT rect_count, const D3D12_RECT *rects) {
+  CmdClearUAV cmd = {};
+  cmd.header = {CmdType::ClearUnorderedAccessView, sizeof(cmd)};
+  cmd.gpu_handle = gpu_handle;
+  cmd.cpu_handle = cpu_handle;
+  cmd.resource = resource;
+  if (values)
+    memcpy(cmd.values, values, sizeof(cmd.values));
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE
 MTLD3D12GraphicsCommandList::ClearUnorderedAccessViewFloat(
     D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle,
     D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle, ID3D12Resource *resource,
-    const float values[4], UINT rect_count, const D3D12_RECT *rects) {}
+    const float values[4], UINT rect_count, const D3D12_RECT *rects) {
+  CmdClearUAV cmd = {};
+  cmd.header = {CmdType::ClearUnorderedAccessView, sizeof(cmd)};
+  cmd.gpu_handle = gpu_handle;
+  cmd.cpu_handle = cpu_handle;
+  cmd.resource = resource;
+  cmd.is_float = 1;
+  if (values)
+    memcpy(cmd.values, values, sizeof(cmd.values));
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::DiscardResource(
     ID3D12Resource *resource, const D3D12_DISCARD_REGION *region) {}
