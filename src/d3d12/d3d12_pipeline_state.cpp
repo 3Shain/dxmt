@@ -986,6 +986,20 @@ bool MTLD3D12PipelineState::Compile() {
     uint32_t max_slot = 0;
     bool slot_per_vertex[WMT_MAX_VERTEX_BUFFER_LAYOUTS] = {};
     uint32_t attribute_count = 0;
+    uint32_t next_attribute = 0;
+    const microsoft::D3D11_SIGNATURE_PARAMETER *input_sig_params = nullptr;
+    uint32_t input_sig_count = 0;
+    microsoft::CSignatureParser input_sig_parser;
+    bool has_input_signature =
+        !m_vs.empty() &&
+        SUCCEEDED(DXBCGetInputSignature(m_vs.data(), &input_sig_parser));
+    if (has_input_signature) {
+      input_sig_count = input_sig_parser.GetParameters(&input_sig_params);
+      PSTRACE("D3D12 PSO input-layout: shader input signature params=%u",
+              input_sig_count);
+    } else {
+      PSTRACE("D3D12 PSO input-layout: shader input signature unavailable; using layout order");
+    }
 
     PSTRACE("D3D12 PSO input-layout: elements=%u metal_attr_cap=%u metal_slot_cap=%u",
             m_input_layout.NumElements, WMT_MAX_VERTEX_ATTRIBUTES,
@@ -1015,6 +1029,32 @@ bool MTLD3D12PipelineState::Compile() {
         continue;
       }
 
+      uint32_t attr_index = next_attribute;
+      if (has_input_signature && input_sig_params) {
+        auto *sig = std::find_if(
+            input_sig_params, input_sig_params + input_sig_count,
+            [&](const microsoft::D3D11_SIGNATURE_PARAMETER &input_sig) {
+              return input_sig.SystemValue == microsoft::D3D10_SB_NAME_UNDEFINED &&
+                     el.SemanticName && input_sig.SemanticName &&
+                     el.SemanticIndex == input_sig.SemanticIndex &&
+                     strcasecmp(el.SemanticName, input_sig.SemanticName) == 0;
+            });
+        if (sig != input_sig_params + input_sig_count) {
+          attr_index = sig->Register;
+        } else {
+          PSTRACE("D3D12 PSO input-layout desc[%u]: semantic %s%u not found in input signature; using attr order %u",
+                  i, el.SemanticName ? el.SemanticName : "?",
+                  el.SemanticIndex, attr_index);
+        }
+      }
+
+      if (attr_index >= WMT_MAX_VERTEX_ATTRIBUTES) {
+        PSTRACE("D3D12 PSO input-layout skip[%u]: mapped attribute %u outside cap %u",
+                i, attr_index, WMT_MAX_VERTEX_ATTRIBUTES);
+        continue;
+      }
+      next_attribute = std::max(next_attribute, attr_index + 1);
+
       uint32_t aligned_offset =
           el.AlignedByteOffset == D3D12_APPEND_ALIGNED_ELEMENT
               ? AlignD3D12InputOffset(append_offset[el.InputSlot],
@@ -1028,13 +1068,14 @@ bool MTLD3D12PipelineState::Compile() {
         max_slot = el.InputSlot + 1;
       slot_per_vertex[el.InputSlot] = (el.InputSlotClass == D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA);
 
-      auto &attr = vtx_desc.attributes[attribute_count++];
+      auto &attr = vtx_desc.attributes[attr_index];
       attr.format = metal_format.AttributeFormat;
       attr.offset = aligned_offset;
       attr.buffer_index = el.InputSlot;
+      attribute_count = std::max(attribute_count, attr_index + 1);
 
       PSTRACE("D3D12 PSO input-layout attr[%u]<-desc[%u]: semantic=%s%u fmt=%u mtl_fmt=%u slot=%u offset=%u stride_end=%u class=%u step=%u",
-              attribute_count - 1, i, el.SemanticName ? el.SemanticName : "?",
+              attr_index, i, el.SemanticName ? el.SemanticName : "?",
               el.SemanticIndex, (unsigned)el.Format,
               (unsigned)metal_format.AttributeFormat, el.InputSlot,
               aligned_offset, end, (unsigned)el.InputSlotClass,
