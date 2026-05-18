@@ -606,6 +606,115 @@ private:
   std::unordered_map<std::wstring, ID3D12PipelineState *> m_entries;
 };
 
+class MTLD3D12StateObject : public ID3D12StateObject,
+                            public ID3D12StateObjectProperties {
+public:
+  MTLD3D12StateObject(MTLD3D12Device *device,
+                      const D3D12_STATE_OBJECT_DESC *desc,
+                      ID3D12StateObject *base = nullptr)
+      : m_device(device) {
+    m_device->AddRef();
+    if (base) {
+      base->AddRef();
+      m_base = base;
+    }
+    if (desc) {
+      m_type = desc->Type;
+      m_subobject_types.reserve(desc->NumSubobjects);
+      for (UINT i = 0; i < desc->NumSubobjects; i++) {
+        m_subobject_types.push_back(desc->pSubobjects[i].Type);
+      }
+    }
+    for (size_t i = 0; i < sizeof(m_shader_identifier); i++)
+      m_shader_identifier[i] = static_cast<uint8_t>(0xA5u ^ (i * 17u));
+    TRACE("StateObject create type=%u subobjects=%zu base=%p",
+          (unsigned)m_type, m_subobject_types.size(), base);
+  }
+
+  virtual ~MTLD3D12StateObject() {
+    if (m_base)
+      m_base->Release();
+    m_device->Release();
+  }
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppv) override {
+    if (!ppv)
+      return E_POINTER;
+    *ppv = nullptr;
+    if (riid == IID_IUnknown || riid == IID_ID3D12Object ||
+        riid == IID_ID3D12DeviceChild || riid == IID_ID3D12Pageable ||
+        riid == IID_ID3D12StateObject) {
+      *ppv = static_cast<ID3D12StateObject *>(this);
+    } else if (riid == IID_ID3D12StateObjectProperties) {
+      *ppv = static_cast<ID3D12StateObjectProperties *>(this);
+    } else {
+      return E_NOINTERFACE;
+    }
+    AddRef();
+    return S_OK;
+  }
+
+  ULONG STDMETHODCALLTYPE AddRef() override {
+    return ++m_ref_count;
+  }
+
+  ULONG STDMETHODCALLTYPE Release() override {
+    ULONG count = --m_ref_count;
+    if (!count)
+      delete this;
+    return count;
+  }
+
+  HRESULT STDMETHODCALLTYPE GetPrivateData(REFGUID, UINT *, void *) override {
+    return E_NOTIMPL;
+  }
+  HRESULT STDMETHODCALLTYPE SetPrivateData(REFGUID, UINT, const void *) override {
+    return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE SetPrivateDataInterface(REFGUID,
+                                                    const IUnknown *) override {
+    return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE SetName(LPCWSTR) override { return S_OK; }
+
+  HRESULT STDMETHODCALLTYPE GetDevice(REFIID riid, void **device) override {
+    return m_device->QueryInterface(riid, device);
+  }
+
+  void *STDMETHODCALLTYPE GetShaderIdentifier(LPCWSTR export_name) override {
+    TRACE("StateObjectProperties::GetShaderIdentifier export=%ls",
+          export_name ? export_name : L"(null)");
+    return m_shader_identifier;
+  }
+
+  UINT64 STDMETHODCALLTYPE GetShaderStackSize(LPCWSTR export_name) override {
+    TRACE("StateObjectProperties::GetShaderStackSize export=%ls",
+          export_name ? export_name : L"(null)");
+    return 0;
+  }
+
+  UINT64 STDMETHODCALLTYPE GetPipelineStackSize() override {
+    TRACE("StateObjectProperties::GetPipelineStackSize -> %llu",
+          (unsigned long long)m_pipeline_stack_size);
+    return m_pipeline_stack_size;
+  }
+
+  void STDMETHODCALLTYPE SetPipelineStackSize(UINT64 stack_size) override {
+    TRACE("StateObjectProperties::SetPipelineStackSize %llu",
+          (unsigned long long)stack_size);
+    m_pipeline_stack_size = stack_size;
+  }
+
+private:
+  MTLD3D12Device *m_device = nullptr;
+  ID3D12StateObject *m_base = nullptr;
+  std::atomic<ULONG> m_ref_count{1};
+  D3D12_STATE_OBJECT_TYPE m_type = D3D12_STATE_OBJECT_TYPE_COLLECTION;
+  std::vector<D3D12_STATE_SUBOBJECT_TYPE> m_subobject_types;
+  uint8_t m_shader_identifier[32] = {};
+  UINT64 m_pipeline_stack_size = 0;
+};
+
 class MTLD3D12ShaderCacheSession
     : public ComObject<ID3D12ShaderCacheSession> {
 public:
@@ -2764,8 +2873,26 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateMetaCommand(
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateStateObject(
     const D3D12_STATE_OBJECT_DESC *desc, REFIID riid,
     void **state_object) {
-  TRACE("ID3D12Device5::CreateStateObject -> E_NOTIMPL");
-  return E_NOTIMPL;
+  TRACE("ID3D12Device5::CreateStateObject type=%u subobjects=%u",
+        desc ? (unsigned)desc->Type : 0xFFFFFFFFu,
+        desc ? desc->NumSubobjects : 0);
+  if (!state_object)
+    return E_POINTER;
+  *state_object = nullptr;
+  if (!desc || (desc->NumSubobjects && !desc->pSubobjects))
+    return E_INVALIDARG;
+
+  for (UINT i = 0; i < desc->NumSubobjects; i++) {
+    TRACE("  state subobject[%u] type=%u desc=%p", i,
+          (unsigned)desc->pSubobjects[i].Type, desc->pSubobjects[i].pDesc);
+  }
+
+  auto object = new MTLD3D12StateObject(this, desc);
+  HRESULT hr = object->QueryInterface(riid, state_object);
+  object->Release();
+  TRACE("ID3D12Device5::CreateStateObject EXIT hr=0x%lx object=%p", hr,
+        state_object ? *state_object : nullptr);
+  return hr;
 }
 
 void STDMETHODCALLTYPE MTLD3D12Device::GetRaytracingAccelerationStructurePrebuildInfo(
@@ -2798,8 +2925,27 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::AddToStateObject(
     const D3D12_STATE_OBJECT_DESC *addition,
     ID3D12StateObject *state_object_to_grow_from,
     REFIID riid, void **new_state_object) {
-  TRACE("ID3D12Device7::AddToStateObject -> E_NOTIMPL");
-  return E_NOTIMPL;
+  TRACE("ID3D12Device7::AddToStateObject type=%u subobjects=%u base=%p",
+        addition ? (unsigned)addition->Type : 0xFFFFFFFFu,
+        addition ? addition->NumSubobjects : 0,
+        state_object_to_grow_from);
+  if (!new_state_object)
+    return E_POINTER;
+  *new_state_object = nullptr;
+  if (!addition || (addition->NumSubobjects && !addition->pSubobjects))
+    return E_INVALIDARG;
+
+  for (UINT i = 0; i < addition->NumSubobjects; i++) {
+    TRACE("  add state subobject[%u] type=%u desc=%p", i,
+          (unsigned)addition->pSubobjects[i].Type, addition->pSubobjects[i].pDesc);
+  }
+
+  auto object = new MTLD3D12StateObject(this, addition, state_object_to_grow_from);
+  HRESULT hr = object->QueryInterface(riid, new_state_object);
+  object->Release();
+  TRACE("ID3D12Device7::AddToStateObject EXIT hr=0x%lx object=%p", hr,
+        new_state_object ? *new_state_object : nullptr);
+  return hr;
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateProtectedResourceSession1(
