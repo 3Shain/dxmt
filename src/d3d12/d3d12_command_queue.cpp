@@ -50,6 +50,29 @@ static bool ShaderVisibilityMatches(uint32_t param_visibility,
   return param_visibility == D3D12_SHADER_VISIBILITY_ALL;
 }
 
+static bool FindRootDescriptorParameter(
+    MTLD3D12RootSignature *root_signature, D3D12_ROOT_PARAMETER_TYPE type,
+    const MTL_SM50_SHADER_ARGUMENT &arg,
+    D3D12_SHADER_VISIBILITY shader_visibility, uint32_t *root_index) {
+  if (!root_signature || !root_index)
+    return false;
+
+  const auto &params = root_signature->GetParameters();
+  for (uint32_t pass = 0; pass < 2; pass++) {
+    for (uint32_t p = 0; p < params.size() && p < 16; p++) {
+      if (params[p].type == type &&
+          params[p].register_index == arg.SM50BindingSlot &&
+          params[p].register_space == arg.SM50RegisterSpace &&
+          ShaderVisibilityMatches(params[p].shader_visibility,
+                                  shader_visibility, pass == 0)) {
+        *root_index = p;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 static uint32_t FormatByteSize(DXGI_FORMAT format) {
   switch (format) {
   case DXGI_FORMAT_R32G32B32A32_FLOAT:
@@ -232,24 +255,31 @@ struct ReplayState {
 
   static constexpr uint32_t kRootConstantBytes = 256;
   D3D12_GPU_VIRTUAL_ADDRESS root_cbvs[16] = {};
+  D3D12_GPU_VIRTUAL_ADDRESS root_srvs[16] = {};
+  D3D12_GPU_VIRTUAL_ADDRESS root_uavs[16] = {};
   D3D12_GPU_DESCRIPTOR_HANDLE root_tables[16] = {};
   uint8_t root_constants_buf[16 * kRootConstantBytes] = {};
   uint32_t root_constant_offsets[16] = {};
   uint32_t root_constant_sizes[16] = {};
   bool root_constant_set[16] = {};
   bool root_cbv_set[16] = {};
+  bool root_srv_set[16] = {};
+  bool root_uav_set[16] = {};
   bool root_table_set[16] = {};
 
   MTLD3D12RootSignature *compute_root_sig = nullptr;
   D3D12_GPU_VIRTUAL_ADDRESS comp_cbvs[16] = {};
+  D3D12_GPU_VIRTUAL_ADDRESS comp_srvs[16] = {};
+  D3D12_GPU_VIRTUAL_ADDRESS comp_uavs[16] = {};
   D3D12_GPU_DESCRIPTOR_HANDLE comp_tables[16] = {};
   uint8_t comp_constants_buf[16 * kRootConstantBytes] = {};
   uint32_t comp_constant_offsets[16] = {};
   uint32_t comp_constant_sizes[16] = {};
   bool comp_constant_set[16] = {};
   bool comp_cbv_set[16] = {};
+  bool comp_srv_set[16] = {};
+  bool comp_uav_set[16] = {};
   bool comp_table_set[16] = {};
-  bool comp_uav_root[16] = {};
 
   static constexpr uint32_t kArgBufSlot = 30;
   static constexpr uint32_t kArgBufMaxQwords = 128;
@@ -270,6 +300,38 @@ struct ReplayState {
   WMT::Reference<WMT::Buffer> root_constants_mtl_buf;
   VertexBufferEntry vertex_table_data[kVertexBufferSlotCount] = {};
   WMT::Reference<WMT::Buffer> vertex_table_buf;
+
+  bool BindRootBufferArgument(MTLD3D12Device *device, uint64_t *data,
+                              const MTL_SM50_SHADER_ARGUMENT &arg,
+                              D3D12_GPU_VIRTUAL_ADDRESS address,
+                              WMTResourceUsage usage,
+                              WMTRenderStages render_stages,
+                              const char *label) {
+    if (!(arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) || !address)
+      return false;
+
+    auto *res = device->LookupResourceByGPUAddress(address);
+    if (!res || !res->GetMTLBuffer().handle)
+      return false;
+
+    uint64_t offset = address - res->GetGPUVirtualAddress();
+    uint64_t length = res->GetBufferByteLength();
+    if (offset < length)
+      length -= offset;
+    else
+      length = 0;
+
+    data[arg.StructurePtrOffset] = address;
+    data[arg.StructurePtrOffset + 1] = length;
+    if (render_enc_open) {
+      render_enc.useResource(res->GetMTLBuffer(), usage, render_stages);
+    }
+    QTRACE("%s: RootBuffer slot=%u space=%u addr=0x%llx len=%llu offset=%u",
+           label, arg.SM50BindingSlot, arg.SM50RegisterSpace,
+           (unsigned long long)address, (unsigned long long)length,
+           arg.StructurePtrOffset);
+    return true;
+  }
 
   void BuildArgumentBuffer(MTLD3D12Device *device) {
     if (!pso || pso->GetPSArguments().empty()) {
@@ -311,6 +373,34 @@ struct ReplayState {
         }
       }
       if (root_idx == ~0u || !root_table_set[root_idx] || desc_heap_count == 0) {
+        uint32_t root_desc_idx = ~0u;
+        if (arg.Type == SM50BindingType::SRV &&
+            FindRootDescriptorParameter(dxmt_sig, D3D12_ROOT_PARAMETER_TYPE_SRV,
+                                        arg, D3D12_SHADER_VISIBILITY_PIXEL,
+                                        &root_desc_idx) &&
+            root_srv_set[root_desc_idx] &&
+            BindRootBufferArgument(device, arg_buf_data, arg,
+                                   root_srvs[root_desc_idx],
+                                   WMTResourceUsageRead,
+                                   (WMTRenderStages)(WMTRenderStageVertex |
+                                                     WMTRenderStageFragment),
+                                   "BuildArgBuf")) {
+          continue;
+        }
+        if (arg.Type == SM50BindingType::UAV &&
+            FindRootDescriptorParameter(dxmt_sig, D3D12_ROOT_PARAMETER_TYPE_UAV,
+                                        arg, D3D12_SHADER_VISIBILITY_PIXEL,
+                                        &root_desc_idx) &&
+            root_uav_set[root_desc_idx] &&
+            BindRootBufferArgument(device, arg_buf_data, arg,
+                                   root_uavs[root_desc_idx],
+                                   (WMTResourceUsage)(WMTResourceUsageRead |
+                                                      WMTResourceUsageWrite),
+                                   (WMTRenderStages)(WMTRenderStageVertex |
+                                                     WMTRenderStageFragment),
+                                   "BuildArgBuf")) {
+          continue;
+        }
         if (arg.Type == SM50BindingType::Sampler && dxmt_sig) {
           if (auto *sampler = dxmt_sig->FindStaticSampler(
                   arg.SM50BindingSlot, arg.SM50RegisterSpace,
@@ -666,6 +756,31 @@ struct ReplayState {
         }
       }
       if (root_idx == ~0u || !root_table_set[root_idx] || desc_heap_count == 0) {
+        uint32_t root_desc_idx = ~0u;
+        if (arg.Type == SM50BindingType::SRV &&
+            FindRootDescriptorParameter(dxmt_sig, D3D12_ROOT_PARAMETER_TYPE_SRV,
+                                        arg, D3D12_SHADER_VISIBILITY_VERTEX,
+                                        &root_desc_idx) &&
+            root_srv_set[root_desc_idx] &&
+            BindRootBufferArgument(device, vs_arg_buf_data, arg,
+                                   root_srvs[root_desc_idx],
+                                   WMTResourceUsageRead, WMTRenderStageVertex,
+                                   "BuildVertexArgBuf")) {
+          continue;
+        }
+        if (arg.Type == SM50BindingType::UAV &&
+            FindRootDescriptorParameter(dxmt_sig, D3D12_ROOT_PARAMETER_TYPE_UAV,
+                                        arg, D3D12_SHADER_VISIBILITY_VERTEX,
+                                        &root_desc_idx) &&
+            root_uav_set[root_desc_idx] &&
+            BindRootBufferArgument(device, vs_arg_buf_data, arg,
+                                   root_uavs[root_desc_idx],
+                                   (WMTResourceUsage)(WMTResourceUsageRead |
+                                                      WMTResourceUsageWrite),
+                                   WMTRenderStageVertex,
+                                   "BuildVertexArgBuf")) {
+          continue;
+        }
         if (arg.Type == SM50BindingType::Sampler && dxmt_sig) {
           if (auto *sampler = dxmt_sig->FindStaticSampler(
                   arg.SM50BindingSlot, arg.SM50RegisterSpace,
@@ -911,6 +1026,31 @@ struct ReplayState {
       if (root_idx == ~0u || root_idx >= 16 ||
           !(comp_table_set[root_idx] || root_table_set[root_idx]) ||
           desc_heap_count == 0) {
+        uint32_t root_desc_idx = ~0u;
+        if (arg.Type == SM50BindingType::SRV &&
+            FindRootDescriptorParameter(dxmt_sig, D3D12_ROOT_PARAMETER_TYPE_SRV,
+                                        arg, D3D12_SHADER_VISIBILITY_ALL,
+                                        &root_desc_idx) &&
+            comp_srv_set[root_desc_idx] &&
+            BindRootBufferArgument(device, comp_arg_buf_data, arg,
+                                   comp_srvs[root_desc_idx],
+                                   WMTResourceUsageRead, WMTRenderStageVertex,
+                                   "BuildComputeArgBuf")) {
+          continue;
+        }
+        if (arg.Type == SM50BindingType::UAV &&
+            FindRootDescriptorParameter(dxmt_sig, D3D12_ROOT_PARAMETER_TYPE_UAV,
+                                        arg, D3D12_SHADER_VISIBILITY_ALL,
+                                        &root_desc_idx) &&
+            comp_uav_set[root_desc_idx] &&
+            BindRootBufferArgument(device, comp_arg_buf_data, arg,
+                                   comp_uavs[root_desc_idx],
+                                   (WMTResourceUsage)(WMTResourceUsageRead |
+                                                      WMTResourceUsageWrite),
+                                   WMTRenderStageVertex,
+                                   "BuildComputeArgBuf")) {
+          continue;
+        }
         if (arg.Type == SM50BindingType::Sampler && dxmt_sig) {
           if (auto *sampler = dxmt_sig->FindStaticSampler(
                   arg.SM50BindingSlot, arg.SM50RegisterSpace,
@@ -1667,14 +1807,6 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
                 sbuf.offset = cbv_addr - res->GetGPUVirtualAddress();
                 sbuf.index = i;
                 append_cmd(&sbuf, sizeof(sbuf));
-                if (st.comp_uav_root[i]) {
-                  struct wmtcmd_compute_useresource use = {};
-                  use.type = WMTComputeCommandUseResource;
-                  use.resource = res->GetMTLBuffer().handle;
-                  use.usage = (WMTResourceUsage)(WMTResourceUsageRead | WMTResourceUsageWrite);
-                  append_cmd(&use, sizeof(use));
-                  QTRACE("  UAV UseResource root buf slot=%u handle=%llu", i, (unsigned long long)res->GetMTLBuffer().handle);
-                }
               }
             }
             if (tbl_set && st.desc_heap_count > 0) {
@@ -2255,16 +2387,16 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
       case CmdType::SetGraphicsRootShaderResourceView: {
         auto *cmd = reinterpret_cast<const CmdSetRootCBV *>(header);
         if (cmd->root_param_index < 16) {
-          st.root_cbvs[cmd->root_param_index] = cmd->address;
-          st.root_cbv_set[cmd->root_param_index] = true;
+          st.root_srvs[cmd->root_param_index] = cmd->address;
+          st.root_srv_set[cmd->root_param_index] = true;
         }
         break;
       }
       case CmdType::SetGraphicsRootUnorderedAccessView: {
         auto *cmd = reinterpret_cast<const CmdSetRootCBV *>(header);
         if (cmd->root_param_index < 16) {
-          st.root_cbvs[cmd->root_param_index] = cmd->address;
-          st.root_cbv_set[cmd->root_param_index] = true;
+          st.root_uavs[cmd->root_param_index] = cmd->address;
+          st.root_uav_set[cmd->root_param_index] = true;
         }
         break;
       }
@@ -2309,25 +2441,22 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         if (cmd->root_param_index < 16) {
           st.comp_cbvs[cmd->root_param_index] = cmd->address;
           st.comp_cbv_set[cmd->root_param_index] = true;
-          st.comp_uav_root[cmd->root_param_index] = false;
         }
         break;
       }
       case CmdType::SetComputeRootShaderResourceView: {
         auto *cmd = reinterpret_cast<const CmdSetRootCBV *>(header);
         if (cmd->root_param_index < 16) {
-          st.comp_cbvs[cmd->root_param_index] = cmd->address;
-          st.comp_cbv_set[cmd->root_param_index] = true;
-          st.comp_uav_root[cmd->root_param_index] = false;
+          st.comp_srvs[cmd->root_param_index] = cmd->address;
+          st.comp_srv_set[cmd->root_param_index] = true;
         }
         break;
       }
       case CmdType::SetComputeRootUnorderedAccessView: {
         auto *cmd = reinterpret_cast<const CmdSetRootCBV *>(header);
         if (cmd->root_param_index < 16) {
-          st.comp_cbvs[cmd->root_param_index] = cmd->address;
-          st.comp_cbv_set[cmd->root_param_index] = true;
-          st.comp_uav_root[cmd->root_param_index] = true;
+          st.comp_uavs[cmd->root_param_index] = cmd->address;
+          st.comp_uav_set[cmd->root_param_index] = true;
         }
         break;
       }
