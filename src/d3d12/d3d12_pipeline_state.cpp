@@ -459,6 +459,17 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
   common.metal_version = SM50_SHADER_METAL_310;
   common.flags = {};
 
+  if (type == ShaderType::Compute) {
+    uint32_t tgx = reflection.ThreadgroupSize[0] ? reflection.ThreadgroupSize[0] : 1;
+    uint32_t tgy = reflection.ThreadgroupSize[1] ? reflection.ThreadgroupSize[1] : 1;
+    uint32_t tgz = reflection.ThreadgroupSize[2] ? reflection.ThreadgroupSize[2] : 1;
+    m_threadgroup_size.width = tgx;
+    m_threadgroup_size.height = tgy;
+    m_threadgroup_size.depth = tgz;
+    PSTRACE("CompileShader: %s SM50 threadgroup_size=%ux%ux%u",
+            func_name, tgx, tgy, tgz);
+  }
+
   std::vector<SM50_IA_INPUT_ELEMENT> ia_elements;
   SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout = {};
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *compile_args =
