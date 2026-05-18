@@ -69,6 +69,30 @@ static std::string escapeName(const std::string &s) {
   return r;
 }
 
+static const char *componentSuffix(uint32_t component) {
+  switch (component & 3) {
+  case 0: return ".x";
+  case 1: return ".y";
+  case 2: return ".z";
+  default: return ".w";
+  }
+}
+
+static std::string varyingField(const char *base, uint32_t signature_id) {
+  switch (signature_id) {
+  case 0: return std::string(base) + ".position";
+  case 1: return std::string(base) + ".v0";
+  case 2: return std::string(base) + ".v1";
+  case 3: return std::string(base) + ".v2";
+  case 4: return std::string(base) + ".v3";
+  case 5: return std::string(base) + ".v4";
+  case 6: return std::string(base) + ".v5";
+  case 7: return std::string(base) + ".v6";
+  case 8: return std::string(base) + ".v7";
+  default: return std::string(base) + ".v0";
+  }
+}
+
 std::string DXILToMSL::getTypeName(const LLVMType &t, const LLVMModule &mod) {
   switch (t.kind) {
   case LLVMType::Void: return "void";
@@ -388,36 +412,35 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
   }
 
   case DXOP_LoadInput: {
-    if (args.size() < 4) return "float4(0)";
-    uint32_t input_id = args[1];
+    if (args.size() < 3) return "0.0";
+    uint32_t input_id = args[0];
+    uint32_t component = args[2];
     if (ctx.shader.kind == DxilShaderKind::Pixel) {
-      switch (input_id) {
-      case 0: return "in.position";
-      case 1: return "in.v0";
-      case 2: return "in.v1";
-      case 3: return "in.v2";
-      case 4: return "in.v3";
-      default: return "in.v0";
-      }
+      return varyingField("in", input_id) + componentSuffix(component);
     }
-    return "float4(0)";
+    DXTRACE("DXIL LoadInput fallback: shader_kind=%u input_id=%u component=%u",
+            (uint32_t)ctx.shader.kind, input_id, component);
+    return "0.0";
   }
 
   case DXOP_StoreOutput: {
     if (args.size() < 4) return "";
-    uint32_t output_id = args[1];
+    uint32_t output_id = args[0];
+    uint32_t component = args[2];
     auto val = args[3] < ctx.value_table.size() ? ctx.value_table[args[3]] : "float4(0)";
 
     if (ctx.shader.kind == DxilShaderKind::Vertex) {
-      switch (output_id) {
-      case 0: return "out.position = " + val;
-      case 1: return "out.v0 = " + val;
-      case 2: return "out.v1 = " + val;
-      case 3: return "out.v2 = " + val;
-      default: return "out.v0 = " + val;
-      }
+      return varyingField("out", output_id) + componentSuffix(component) + " = " + val;
     }
-    return "result = " + val;
+    if (ctx.shader.kind == DxilShaderKind::Pixel) {
+      if (output_id > 0) {
+        DXTRACE("DXIL StoreOutput MRT fallback: output_id=%u component=%u", output_id, component);
+      }
+      return std::string("result") + componentSuffix(component) + " = " + val;
+    }
+    DXTRACE("DXIL StoreOutput fallback: shader_kind=%u output_id=%u component=%u",
+            (uint32_t)ctx.shader.kind, output_id, component);
+    return "";
   }
 
   default:
