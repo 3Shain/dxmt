@@ -197,6 +197,14 @@ static std::vector<std::string> parseAggregateLiteral(const std::string &text) {
   return values;
 }
 
+static bool isZeroLiteral(const std::string &text) {
+  return text == "0" || text == "0.0" || text == "0.0f" || text == "false";
+}
+
+static std::string vectorComponent(const std::string &vector, uint32_t index) {
+  return "(" + vector + ")" + componentSuffix(index);
+}
+
 static const char *bindingPrefixForClass(uint32_t resource_class) {
   switch (resource_class) {
   case 0: return "srv";
@@ -1357,7 +1365,15 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
   case LLVMInstruction::Load: {
     ensureValueTable(value_counter);
     if (inst.operands.size() >= 1) {
-      os << "  auto " << result << " = 0; // load from " << getValue(inst.operands[0]) << "\n";
+      auto ptr = getValue(inst.operands[0]);
+      auto stored = ctx.local_values.find(ptr);
+      if (stored != ctx.local_values.end()) {
+        os << "  auto " << result << " = " << stored->second
+           << "; // load local " << ptr << "\n";
+      } else {
+        DXTRACE("DXIL generic load fallback: ptr=%s", ptr.c_str());
+        os << "  auto " << result << " = 0; // load from " << ptr << "\n";
+      }
     }
     ctx.value_table[value_counter] = result;
     value_counter++;
@@ -1366,8 +1382,10 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::Store: {
     if (inst.operands.size() >= 2) {
-      os << "  // generic store " << getValue(inst.operands[0]) << " <- "
-         << getValue(inst.operands[1]) << "\n";
+      auto ptr = getValue(inst.operands[0]);
+      auto value = getValue(inst.operands[1]);
+      ctx.local_values[ptr] = value;
+      os << "  // generic store " << ptr << " <- " << value << "\n";
     }
     break;
   }
@@ -1384,6 +1402,11 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
         offset = "(" + offset + " + " + getValue(inst.operands[i]) + ")";
       }
       os << "  auto* " << result << " = (" << base << " + (" << offset << "));\n";
+      if (isZeroLiteral(offset)) {
+        auto stored = ctx.local_values.find(base);
+        if (stored != ctx.local_values.end())
+          ctx.local_values[result] = stored->second;
+      }
       ctx.value_table[value_counter] = result;
     }
     value_counter++;
@@ -1394,6 +1417,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
     ensureValueTable(value_counter);
     os << "  thread char " << result << "_storage[256] = {};\n";
     os << "  thread char* " << result << " = " << result << "_storage;\n";
+    ctx.local_values[result] = "0";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -1491,7 +1515,49 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::ShuffleVector: {
     ensureValueTable(value_counter);
-    os << "  auto " << result << " = " << (inst.operands.size() >= 1 ? getValue(inst.operands[0]) : "float4(0)") << "; // shufflevector\n";
+    auto lhs = inst.operands.size() >= 1 ? getValue(inst.operands[0]) : "float4(0)";
+    auto rhs = inst.operands.size() >= 2 ? getValue(inst.operands[1]) : "float4(0)";
+    auto mask = inst.operands.size() >= 3 ? getValue(inst.operands[2]) : "";
+    auto mask_values = parseAggregateLiteral(mask);
+    if (mask_values.empty()) {
+      uint32_t single_index = 0;
+      if (parseUnsignedLiteral(mask, single_index))
+        mask_values.push_back(mask);
+    }
+
+    if (!mask_values.empty()) {
+      std::vector<std::string> components;
+      for (auto &mask_value : mask_values) {
+        uint32_t index = 0;
+        if (!parseUnsignedLiteral(mask_value, index) || index == 0xFFFFFFFFu) {
+          components.push_back("0.0f");
+        } else if (index < 4) {
+          components.push_back(vectorComponent(lhs, index));
+        } else {
+          components.push_back(vectorComponent(rhs, index - 4));
+        }
+      }
+
+      if (components.size() == 1) {
+        os << "  auto " << result << " = " << components[0]
+           << "; // shufflevector scalar\n";
+      } else {
+        std::string type_name = "float" + std::to_string(components.size());
+        if (inst.type_id < ctx.mod.types.size() &&
+            ctx.mod.types[inst.type_id].kind == LLVMType::Vector) {
+          type_name = getTypeName(ctx.mod.types[inst.type_id], ctx.mod);
+        }
+        os << "  auto " << result << " = " << type_name << "(";
+        for (size_t i = 0; i < components.size(); i++) {
+          if (i) os << ", ";
+          os << components[i];
+        }
+        os << "); // shufflevector\n";
+      }
+    } else {
+      DXTRACE("DXIL shufflevector fallback: mask=%s", mask.c_str());
+      os << "  auto " << result << " = " << lhs << "; // shufflevector fallback\n";
+    }
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -1544,7 +1610,8 @@ std::optional<MSLShader> DXILToMSL::convert(const LLVMModule &module,
           module.functions.size(), module.types.size());
 
   std::ostringstream os;
-  EmitContext ctx{os, module, shader, {}, {}, 0, false, false, false, false};
+  EmitContext ctx{os, module, shader, {}, {}, {}, 0, 0, 0, false, false,
+                  false, false};
 
   emitFunctionPrologue(ctx);
 

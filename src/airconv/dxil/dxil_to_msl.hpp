@@ -6,6 +6,7 @@
 #include <sstream>
 #include <optional>
 #include <vector>
+#include <unordered_map>
 
 namespace dxmt::dxil {
 
@@ -38,6 +39,7 @@ private:
     const LLVMModule &mod;
     const DxilParsedShader &shader;
     std::vector<std::string> value_table;
+    std::unordered_map<std::string, std::string> local_values;
     std::vector<ResourceBinding> resource_bindings;
     uint32_t next_binding = 0;
     uint32_t unsupported_intrinsics = 0;
