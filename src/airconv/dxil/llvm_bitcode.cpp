@@ -63,9 +63,9 @@ public:
   }
 
   void align32() {
-    while (m_offset % 4 != 0 && m_offset < m_size)
-      m_offset++;
-    m_bits_left = 0;
+    uint32_t bit_pos = tell();
+    uint32_t aligned = (bit_pos + 31) & ~31u;
+    seek(aligned);
   }
 
   uint32_t tell() const { return m_offset * 8 - m_bits_left; }
@@ -211,7 +211,12 @@ static uint32_t decodeRelativeValue(uint64_t encoded, uint32_t next_value) {
 }
 
 struct Abbrev {
-  std::vector<std::pair<uint32_t, uint64_t>> ops;
+  struct Op {
+    bool literal = false;
+    uint32_t encoding = 0;
+    uint64_t value = 0;
+  };
+  std::vector<Op> ops;
 };
 
 struct BlockInfo {
@@ -235,10 +240,27 @@ struct PendingFunction {
 static uint32_t getFunctionParamCount(const LLVMModule &module, uint32_t type_id) {
   if (type_id >= module.types.size())
     return 0;
+  if (module.types[type_id].kind == LLVMType::Pointer &&
+      !module.types[type_id].type_refs.empty()) {
+    type_id = module.types[type_id].type_refs[0];
+    if (type_id >= module.types.size())
+      return 0;
+  }
   auto &type = module.types[type_id];
   if (type.kind != LLVMType::Function || type.type_refs.empty())
     return 0;
   return (uint32_t)type.type_refs.size() - 1;
+}
+
+static bool isFunctionTypeRef(const LLVMModule &module, uint32_t type_id) {
+  if (type_id >= module.types.size())
+    return false;
+  if (module.types[type_id].kind == LLVMType::Function)
+    return true;
+  return module.types[type_id].kind == LLVMType::Pointer &&
+         !module.types[type_id].type_refs.empty() &&
+         module.types[type_id].type_refs[0] < module.types.size() &&
+         module.types[module.types[type_id].type_refs[0]].kind == LLVMType::Function;
 }
 
 static const LLVMValue *findConstantById(const LLVMModule &module, uint32_t id) {
@@ -249,13 +271,52 @@ static const LLVMValue *findConstantById(const LLVMModule &module, uint32_t id) 
   return nullptr;
 }
 
-static std::optional<uint32_t> readBlockHeader(BitstreamReader &r) {
+struct SubBlockHeader {
+  uint32_t block_id = 0;
+  uint32_t new_abbrev_len = 0;
+  uint32_t end_bit = 0;
+};
+
+static SubBlockHeader readSubBlockHeader(BitstreamReader &r) {
+  SubBlockHeader header;
+  header.block_id = r.readVBR(8);
+  header.new_abbrev_len = r.readVBR(4);
   r.align32();
-  uint32_t block_id = r.readVBR(8);
-  uint32_t new_abbrev_len = r.readVBR(4);
   uint32_t block_len = r.read(32);
-  (void)block_len;
-  return new_abbrev_len;
+  header.end_bit = r.tell() + block_len * 32;
+  return header;
+}
+
+static void readAbbrevRecord(BitstreamReader &r, std::vector<Abbrev> &abbrevs) {
+  Abbrev abbrev;
+  uint32_t num_ops = r.readVBR(5);
+  for (uint32_t i = 0; i < num_ops; i++) {
+    Abbrev::Op op;
+    op.literal = r.read(1) != 0;
+    if (op.literal) {
+      op.value = r.readVBR64(8);
+    } else {
+      op.encoding = r.read(3);
+      if (op.encoding == 1 || op.encoding == 2)
+        op.value = r.readVBR64(5);
+    }
+    abbrev.ops.push_back(op);
+  }
+  abbrevs.push_back(abbrev);
+}
+
+static uint64_t readAbbrevField(BitstreamReader &r, const Abbrev::Op &op) {
+  switch (op.encoding) {
+  case 1: return r.read64((uint32_t)op.value);
+  case 2: return r.readVBR64((uint32_t)op.value);
+  case 4: {
+    static const char table[] =
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._";
+    return table[r.read(6) & 63];
+  }
+  default:
+    return 0;
+  }
 }
 
 static std::vector<uint64_t> readUnabbrevRecord(BitstreamReader &r) {
@@ -269,25 +330,68 @@ static std::vector<uint64_t> readUnabbrevRecord(BitstreamReader &r) {
   return ops;
 }
 
-static bool parseTypeBlock(ParseContext &ctx) {
-  auto abbrev_len = readBlockHeader(ctx.reader);
-  if (!abbrev_len) return false;
+static std::vector<uint64_t> readRecord(BitstreamReader &r, uint32_t code,
+                                        const std::vector<Abbrev> &abbrevs) {
+  if (code == kUnabbrevRecord)
+    return readUnabbrevRecord(r);
 
-  while (!ctx.reader.atEnd()) {
-    uint32_t code = ctx.reader.read(*abbrev_len);
+  if (code < 4 || code - 4 >= abbrevs.size())
+    return {};
+
+  const Abbrev &abbrev = abbrevs[code - 4];
+  std::vector<uint64_t> ops;
+  for (size_t i = 0; i < abbrev.ops.size(); i++) {
+    auto &op = abbrev.ops[i];
+    if (op.literal) {
+      ops.push_back(op.value);
+      continue;
+    }
+
+    if (op.encoding == 3) {
+      if (i + 1 >= abbrev.ops.size())
+        break;
+      uint32_t count = r.readVBR(6);
+      auto &element = abbrev.ops[++i];
+      for (uint32_t j = 0; j < count; j++)
+        ops.push_back(readAbbrevField(r, element));
+      continue;
+    }
+
+    if (op.encoding == 5) {
+      uint32_t count = r.readVBR(6);
+      r.align32();
+      for (uint32_t j = 0; j < count; j++)
+        ops.push_back(r.read(8));
+      r.align32();
+      continue;
+    }
+
+    ops.push_back(readAbbrevField(r, op));
+  }
+  return ops;
+}
+
+static bool parseTypeBlock(ParseContext &ctx, uint32_t abbrev_len, uint32_t end_bit) {
+
+  while (!ctx.reader.atEnd() && ctx.reader.tell() < end_bit) {
+    uint32_t code = ctx.reader.read(abbrev_len);
     if (code == kEndBlock) {
       ctx.reader.align32();
       return true;
     }
-    if (code == kEnterSubBlock || code == kDefineAbbrev)
-      continue;
-
-    std::vector<uint64_t> ops;
-    if (code == kUnabbrevRecord) {
-      ops = readUnabbrevRecord(ctx.reader);
-    } else {
+    if (code == kEnterSubBlock) {
+      auto header = readSubBlockHeader(ctx.reader);
+      ctx.reader.seek(header.end_bit);
       continue;
     }
+    if (code == kDefineAbbrev) {
+      readAbbrevRecord(ctx.reader, ctx.cur_abbrevs);
+      continue;
+    }
+
+    auto ops = readRecord(ctx.reader, code, ctx.cur_abbrevs);
+    if (ops.empty())
+      continue;
 
     uint32_t rec_code = (uint32_t)ops[0];
     LLVMType t;
@@ -390,26 +494,28 @@ static bool parseTypeBlock(ParseContext &ctx) {
   return false;
 }
 
-static bool parseConstantsBlock(ParseContext &ctx, uint32_t &next_value_id) {
-  auto abbrev_len = readBlockHeader(ctx.reader);
-  if (!abbrev_len) return false;
-
+static bool parseConstantsBlock(ParseContext &ctx, uint32_t &next_value_id,
+                                uint32_t abbrev_len, uint32_t end_bit) {
   uint32_t cur_type = 0;
-  while (!ctx.reader.atEnd()) {
-    uint32_t code = ctx.reader.read(*abbrev_len);
+  while (!ctx.reader.atEnd() && ctx.reader.tell() < end_bit) {
+    uint32_t code = ctx.reader.read(abbrev_len);
     if (code == kEndBlock) {
       ctx.reader.align32();
       return true;
     }
-    if (code == kEnterSubBlock || code == kDefineAbbrev)
-      continue;
-
-    std::vector<uint64_t> ops;
-    if (code == kUnabbrevRecord) {
-      ops = readUnabbrevRecord(ctx.reader);
-    } else {
+    if (code == kEnterSubBlock) {
+      auto header = readSubBlockHeader(ctx.reader);
+      ctx.reader.seek(header.end_bit);
       continue;
     }
+    if (code == kDefineAbbrev) {
+      readAbbrevRecord(ctx.reader, ctx.cur_abbrevs);
+      continue;
+    }
+
+    auto ops = readRecord(ctx.reader, code, ctx.cur_abbrevs);
+    if (ops.empty())
+      continue;
 
     uint32_t rec_code = (uint32_t)ops[0];
     switch (rec_code) {
@@ -480,10 +586,8 @@ static bool parseConstantsBlock(ParseContext &ctx, uint32_t &next_value_id) {
   return false;
 }
 
-static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
-  auto abbrev_len = readBlockHeader(ctx.reader);
-  if (!abbrev_len) return false;
-
+static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn,
+                               uint32_t abbrev_len, uint32_t end_bit) {
   uint32_t cur_block = 0;
   uint32_t next_value = fn.instruction_start_value;
 
@@ -513,24 +617,34 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
       cur_block++;
   };
 
-  while (!ctx.reader.atEnd()) {
-    uint32_t code = ctx.reader.read(*abbrev_len);
+  while (!ctx.reader.atEnd() && ctx.reader.tell() < end_bit) {
+    uint32_t code = ctx.reader.read(abbrev_len);
     if (code == kEndBlock) {
       ctx.reader.align32();
       return true;
     }
     if (code == kEnterSubBlock) {
+      auto header = readSubBlockHeader(ctx.reader);
+      if (header.block_id == kBlockID_Constants) {
+        uint32_t function_next_value = next_value;
+        ParseContext const_ctx{ctx.reader, ctx.module, {}, {}};
+        parseConstantsBlock(const_ctx, function_next_value,
+                            header.new_abbrev_len, header.end_bit);
+        next_value = function_next_value;
+        fn.instruction_start_value = next_value;
+      } else {
+        ctx.reader.seek(header.end_bit);
+      }
       continue;
     }
-    if (code == kDefineAbbrev)
+    if (code == kDefineAbbrev) {
+      readAbbrevRecord(ctx.reader, ctx.cur_abbrevs);
       continue;
+    }
 
-    std::vector<uint64_t> ops;
-    if (code == kUnabbrevRecord) {
-      ops = readUnabbrevRecord(ctx.reader);
-    } else {
+    auto ops = readRecord(ctx.reader, code, ctx.cur_abbrevs);
+    if (ops.empty())
       continue;
-    }
 
     uint32_t rec_code = (uint32_t)ops[0];
 
@@ -841,44 +955,62 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
   // No wrapper header — seek past the 4-byte magic
   reader.seek(32);
 
-  ParseContext ctx{reader, module, {}, {}};
+  SubBlockHeader module_header;
+  bool found_module = false;
+  while (!reader.atEnd()) {
+    uint32_t bc_abbrev = reader.read(2);
+    DXTRACE("  bc_abbrev=%u at bit %u", bc_abbrev, reader.tell());
+    if (bc_abbrev == kEndBlock) {
+      reader.align32();
+      break;
+    }
+    if (bc_abbrev != kEnterSubBlock)
+      return std::nullopt;
 
-  uint32_t bc_abbrev = reader.read(2);
-  DXTRACE("  bc_abbrev=%u at bit %u", bc_abbrev, reader.tell());
-  if (bc_abbrev != kEnterSubBlock)
+    auto header = readSubBlockHeader(reader);
+    DXTRACE("  top block=%u abbrev_len=%u", header.block_id,
+            header.new_abbrev_len);
+    if (header.block_id == kBlockID_Module) {
+      module_header = header;
+      found_module = true;
+      break;
+    }
+    reader.seek(header.end_bit);
+  }
+
+  if (!found_module || !module_header.new_abbrev_len)
     return std::nullopt;
-
-  auto abbrev_len = readBlockHeader(reader);
-  DXTRACE("  abbrev_len=%u", abbrev_len.value_or(0));
-  if (!abbrev_len) return std::nullopt;
 
   std::vector<PendingFunction> pending_functions;
   size_t next_function_body = 0;
   uint32_t next_module_value_id = 0;
 
-  while (!reader.atEnd()) {
-    uint32_t code = reader.read(*abbrev_len);
+  ParseContext ctx{reader, module, {}, {}};
+
+  while (!reader.atEnd() && reader.tell() < module_header.end_bit) {
+    uint32_t code = reader.read(module_header.new_abbrev_len);
     if (code == kEndBlock) {
       reader.align32();
       break;
     }
-    if (code == kDefineAbbrev)
+    if (code == kDefineAbbrev) {
+      readAbbrevRecord(reader, ctx.cur_abbrevs);
       continue;
+    }
 
     if (code == kEnterSubBlock) {
-      uint32_t block_id = reader.readVBR(8);
-      uint32_t new_abbrev_len = reader.readVBR(4);
-      uint32_t block_len = reader.read(32);
+      auto header = readSubBlockHeader(reader);
 
-      switch (block_id) {
+      switch (header.block_id) {
       case kBlockID_Type: {
         ParseContext type_ctx{reader, module, {}, {}};
-        parseTypeBlock(type_ctx);
+        parseTypeBlock(type_ctx, header.new_abbrev_len, header.end_bit);
         break;
       }
       case kBlockID_Constants: {
         ParseContext const_ctx{reader, module, {}, {}};
-        parseConstantsBlock(const_ctx, next_module_value_id);
+        parseConstantsBlock(const_ctx, next_module_value_id,
+                            header.new_abbrev_len, header.end_bit);
         break;
       }
       case kBlockID_Function: {
@@ -891,40 +1023,71 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
           fn.instruction_start_value = next_module_value_id + fn.param_count;
           fn.is_declaration = false;
           ParseContext func_ctx{reader, module, {}, {}};
-          parseFunctionBlock(func_ctx, fn);
+          parseFunctionBlock(func_ctx, fn, header.new_abbrev_len, header.end_bit);
           module.functions.push_back(fn);
         } else {
-          reader.align32();
-          reader.seek(reader.tell() + block_len * 8);
+          reader.seek(header.end_bit);
         }
         break;
       }
       case kBlockID_ValueSymTab:
       case kBlockID_BlockInfo:
       default:
-        reader.align32();
-        reader.seek(reader.tell() + block_len * 8);
+        reader.seek(header.end_bit);
         break;
       }
       continue;
     }
 
-    if (code == kUnabbrevRecord) {
-      auto ops = readUnabbrevRecord(reader);
-      uint32_t rec_code = (uint32_t)ops[0];
+    auto ops = readRecord(reader, code, ctx.cur_abbrevs);
+    if (ops.empty())
+      continue;
 
-      if (rec_code == kModuleCode_Function) {
-        uint32_t fn_type = ops.size() > 1 ? (uint32_t)ops[1] : 0;
-        bool is_declaration = ops.size() > 3 ? ops[3] != 0 : true;
-        PendingFunction pending;
-        pending.value_id = next_module_value_id++;
-        pending.type_id = fn_type;
-        pending.param_count = getFunctionParamCount(module, fn_type);
-        if (!is_declaration)
-          pending_functions.push_back(pending);
-      } else if (rec_code == kModuleCode_GlobalVar) {
-        next_module_value_id++;
-      }
+    uint32_t rec_code = (uint32_t)ops[0];
+    if (rec_code == kModuleCode_Function) {
+      size_t record_base = 1;
+      if (ops.size() > 5 && isFunctionTypeRef(module, (uint32_t)ops[3]) &&
+          ops[5] <= 1)
+        record_base = 3;
+      uint32_t fn_type = ops.size() > record_base ? (uint32_t)ops[record_base] : 0;
+      bool is_declaration = ops.size() > record_base + 2
+                                ? ops[record_base + 2] != 0
+                                : true;
+      PendingFunction pending;
+      pending.value_id = next_module_value_id++;
+      pending.type_id = fn_type;
+      pending.param_count = getFunctionParamCount(module, fn_type);
+      if (!is_declaration)
+        pending_functions.push_back(pending);
+    } else if (rec_code == kModuleCode_GlobalVar) {
+      next_module_value_id++;
+    }
+  }
+
+  while (!reader.atEnd()) {
+    uint32_t code = reader.read(2);
+    if (code == kEndBlock) {
+      reader.align32();
+      continue;
+    }
+    if (code != kEnterSubBlock)
+      break;
+
+    auto header = readSubBlockHeader(reader);
+    if (header.block_id == kBlockID_Function &&
+        next_function_body < pending_functions.size()) {
+      auto pending = pending_functions[next_function_body++];
+      LLVMFunction fn;
+      fn.value_id = pending.value_id;
+      fn.type_id = pending.type_id;
+      fn.param_count = pending.param_count;
+      fn.instruction_start_value = next_module_value_id + fn.param_count;
+      fn.is_declaration = false;
+      ParseContext func_ctx{reader, module, {}, {}};
+      parseFunctionBlock(func_ctx, fn, header.new_abbrev_len, header.end_bit);
+      module.functions.push_back(fn);
+    } else {
+      reader.seek(header.end_bit);
     }
   }
 
