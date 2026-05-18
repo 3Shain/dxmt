@@ -736,6 +736,27 @@ bool MTLD3D12PipelineState::Compile() {
 
   WMT::Reference<WMT::Function> vs_func, ps_func;
 
+  if (!m_hs.empty() || !m_ds.empty()) {
+    return RecordCompileFailure(
+        "pso/unsupported_tessellation",
+        str::format("Graphics PSO uses HS bytes=", m_hs.size(),
+                    " DS bytes=", m_ds.size(),
+                    " but D3D12 tessellation is not implemented"));
+  }
+
+  if (!m_gs.empty()) {
+    return RecordCompileFailure(
+        "pso/unsupported_geometry_shader",
+        str::format("Graphics PSO uses GS bytes=", m_gs.size(),
+                    " but D3D12 geometry shaders are not implemented"));
+  }
+
+  if (m_has_stream_output) {
+    return RecordCompileFailure(
+        "pso/unsupported_stream_output",
+        "Graphics PSO uses stream output, which is not implemented");
+  }
+
   if (!m_vs.empty()) {
     if (!CompileShader(m_vs.data(), m_vs.size(), ShaderType::Vertex,
                        "vs_main", vs_func, &m_vs_shader, &m_vs_reflection))
@@ -1064,6 +1085,10 @@ void MTLD3D12PipelineState::SetGraphicsDesc(
   m_blend_desc = desc.BlendState;
   m_rasterizer_desc = desc.RasterizerState;
   m_depth_stencil_desc = desc.DepthStencilState;
+  m_has_stream_output = desc.StreamOutput.NumEntries > 0 ||
+                        desc.StreamOutput.NumStrides > 0 ||
+                        desc.StreamOutput.pSODeclaration ||
+                        desc.StreamOutput.pBufferStrides;
   m_input_elements.clear();
   m_input_semantic_names.clear();
   m_input_layout = {};
