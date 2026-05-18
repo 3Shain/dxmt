@@ -1674,6 +1674,8 @@ std::optional<MSLShader> DXILToMSL::convert(const LLVMModule &module,
   result.tg_size[0] = 1;
   result.tg_size[1] = 1;
   result.tg_size[2] = 1;
+  result.unsupported_intrinsics = ctx.unsupported_intrinsics;
+  result.unsupported_opcodes = ctx.unsupported_opcodes;
 
   DXTRACE("DXILToMSL: generated %zu bytes of MSL unsupported_intrinsics=%u unsupported_opcodes=%u",
           result.source.size(), ctx.unsupported_intrinsics, ctx.unsupported_opcodes);

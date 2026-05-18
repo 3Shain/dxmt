@@ -18,6 +18,8 @@ struct MSLShader {
   uint32_t num_srvs = 0;
   uint32_t num_cbuffers = 0;
   uint32_t num_samplers = 0;
+  uint32_t unsupported_intrinsics = 0;
+  uint32_t unsupported_opcodes = 0;
 };
 
 struct ResourceBinding {

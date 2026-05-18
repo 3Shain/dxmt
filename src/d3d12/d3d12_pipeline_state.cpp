@@ -385,7 +385,9 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
                                                       "; dxbc ", dxbc_path));
             }
 
-            PSTRACE("  MSL generated: %zu bytes, entry=%s", msl_result->source.size(), msl_result->entry_point.c_str());
+            PSTRACE("  MSL generated: %zu bytes, entry=%s unsupported_intrinsics=%u unsupported_opcodes=%u",
+                    msl_result->source.size(), msl_result->entry_point.c_str(),
+                    msl_result->unsupported_intrinsics, msl_result->unsupported_opcodes);
 
             char msl_path[256];
             char msl_error_path[256];
