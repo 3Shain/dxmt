@@ -22,6 +22,7 @@ struct LLVMType {
   } kind;
   uint32_t bit_width = 0;
   std::vector<LLVMType> subtypes;
+  std::vector<uint32_t> type_refs;
 };
 
 struct LLVMValue {

@@ -138,6 +138,9 @@ static constexpr uint32_t kFuncCode_InstShuffleVec = 8;
 static constexpr uint32_t kFuncCode_InstSwitch = 12;
 static constexpr uint32_t kFuncCode_InstInvoke = 13;
 
+static constexpr uint32_t kCallFlag_ExplicitType = 15;
+static constexpr uint32_t kCallFlag_FastMathFlags = 17;
+
 static constexpr uint32_t kConstantsCode_SetType = 1;
 static constexpr uint32_t kConstantsCode_Null = 2;
 static constexpr uint32_t kConstantsCode_Undefined = 3;
@@ -286,34 +289,45 @@ static bool parseTypeBlock(ParseContext &ctx) {
     }
     case kTypeCode_Pointer: {
       t.kind = LLVMType::Pointer;
-      if (ops.size() > 1)
-        t.subtypes.push_back({LLVMType::Void, 0, {}});
+      if (ops.size() > 1) {
+        t.subtypes.push_back({LLVMType::Void, 0, {}, {}});
+        t.type_refs.push_back((uint32_t)ops[1]);
+      }
       ctx.module.types.push_back(t);
       break;
     }
     case kTypeCode_Struct: {
       t.kind = LLVMType::Struct;
-      for (size_t i = 1; i < ops.size(); i++)
-        t.subtypes.push_back({LLVMType::Void, 0, {}});
+      for (size_t i = 1; i < ops.size(); i++) {
+        t.subtypes.push_back({LLVMType::Void, 0, {}, {}});
+        t.type_refs.push_back((uint32_t)ops[i]);
+      }
       ctx.module.types.push_back(t);
       break;
     }
     case kTypeCode_Array: {
       t.kind = LLVMType::Array;
       t.bit_width = ops.size() > 1 ? (uint32_t)ops[1] : 0;
+      if (ops.size() > 2)
+        t.type_refs.push_back((uint32_t)ops[2]);
       ctx.module.types.push_back(t);
       break;
     }
     case kTypeCode_Vector: {
       t.kind = LLVMType::Vector;
       t.bit_width = ops.size() > 1 ? (uint32_t)ops[1] : 0;
+      if (ops.size() > 2)
+        t.type_refs.push_back((uint32_t)ops[2]);
       ctx.module.types.push_back(t);
       break;
     }
     case kTypeCode_Function: {
       t.kind = LLVMType::Function;
-      if (ops.size() > 1)
-        t.subtypes.push_back({LLVMType::Void, 0, {}});
+      t.bit_width = ops.size() > 1 ? (uint32_t)ops[1] : 0;
+      for (size_t i = 2; i < ops.size(); i++) {
+        t.subtypes.push_back({LLVMType::Void, 0, {}, {}});
+        t.type_refs.push_back((uint32_t)ops[i]);
+      }
       ctx.module.types.push_back(t);
       break;
     }
@@ -425,6 +439,19 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
     return decodeRelativeValue(encoded, next_value);
   };
 
+  auto valueTypePair = [&](const std::vector<uint64_t> &record, size_t &slot, uint32_t &type_id) {
+    uint32_t value_id = slot < record.size() ? value(record[slot++]) : 0;
+    type_id = 0;
+
+    if (value_id >= next_value && slot < record.size()) {
+      type_id = (uint32_t)record[slot++];
+    } else if (value_id < ctx.module.constants.size()) {
+      type_id = ctx.module.constants[value_id].type_id;
+    }
+
+    return value_id;
+  };
+
   auto noteResult = [&]() {
     next_value++;
   };
@@ -488,9 +515,64 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
       if (cur_block < fn.blocks.size()) {
         LLVMInstruction inst;
         inst.opcode = LLVMInstruction::Call;
-        if (ops.size() > 1) inst.type_id = (uint32_t)ops[1];
-        for (size_t i = 2; i < ops.size(); i++)
-          inst.operands.push_back(value(ops[i]));
+        size_t slot = 1;
+        uint32_t attributes = slot < ops.size() ? (uint32_t)ops[slot++] : 0;
+        uint32_t cc_info = slot < ops.size() ? (uint32_t)ops[slot++] : 0;
+        (void)attributes;
+
+        if (((cc_info >> kCallFlag_FastMathFlags) & 1) && slot < ops.size())
+          slot++;
+
+        uint32_t function_type_id = 0;
+        if (((cc_info >> kCallFlag_ExplicitType) & 1) && slot < ops.size())
+          function_type_id = (uint32_t)ops[slot++];
+
+        uint32_t callee_type_id = 0;
+        uint32_t callee = valueTypePair(ops, slot, callee_type_id);
+
+        uint32_t return_type_id = 0;
+        size_t fixed_arg_count = 0;
+        bool has_function_type = function_type_id < ctx.module.types.size() &&
+          ctx.module.types[function_type_id].kind == LLVMType::Function &&
+          !ctx.module.types[function_type_id].type_refs.empty();
+        if (has_function_type) {
+          auto &fn_type = ctx.module.types[function_type_id];
+          return_type_id = fn_type.type_refs[0];
+          fixed_arg_count = fn_type.type_refs.size() - 1;
+        } else if (callee_type_id < ctx.module.types.size() &&
+                   ctx.module.types[callee_type_id].kind == LLVMType::Pointer &&
+                   !ctx.module.types[callee_type_id].type_refs.empty()) {
+          uint32_t pointee_type_id = ctx.module.types[callee_type_id].type_refs[0];
+          if (pointee_type_id < ctx.module.types.size() &&
+              ctx.module.types[pointee_type_id].kind == LLVMType::Function &&
+              !ctx.module.types[pointee_type_id].type_refs.empty()) {
+            function_type_id = pointee_type_id;
+            auto &fn_type = ctx.module.types[function_type_id];
+            return_type_id = fn_type.type_refs[0];
+            fixed_arg_count = fn_type.type_refs.size() - 1;
+            has_function_type = true;
+          }
+        }
+
+        inst.type_id = return_type_id;
+        inst.operands.push_back(callee);
+        inst.operands.push_back(function_type_id);
+
+        if (has_function_type) {
+          for (size_t i = 0; i < fixed_arg_count && slot < ops.size(); i++, slot++)
+            inst.operands.push_back(value(ops[slot]));
+          while (slot < ops.size()) {
+            uint32_t arg_type_id = 0;
+            inst.operands.push_back(valueTypePair(ops, slot, arg_type_id));
+          }
+        } else {
+          while (slot < ops.size())
+            inst.operands.push_back(value(ops[slot++]));
+        }
+
+        DXTRACE("DXIL call: cc=0x%x fnty=%u ret=%u callee=%u args=%zu",
+                cc_info, function_type_id, inst.type_id, callee,
+                inst.operands.size() > 2 ? inst.operands.size() - 2 : 0);
         fn.blocks[cur_block].instructions.push_back(inst);
         if (inst.type_id != 0)
           noteResult();
