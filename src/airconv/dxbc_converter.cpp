@@ -1063,24 +1063,29 @@ AIRCONV_API int SM50Initialize(
   CShaderToken *ShaderCode = (CShaderToken *)(BYTE *)codeBlob;
   // 1. Collect information about the shader.
   D3D10ShaderBinary::CShaderCodeParser CodeParser(ShaderCode);
+  auto shader_type = CodeParser.ShaderType();
+  bool is_compute_shader = shader_type == D3D11_SB_COMPUTE_SHADER;
+
   CSignatureParser inputParser;
-  if (DXBCGetInputSignature(pBytecode, &inputParser) != S_OK) {
+  HRESULT inputSigHr = DXBCGetInputSignature(pBytecode, &inputParser);
+  if (inputSigHr != S_OK && !is_compute_shader) {
     errorOut << "Invalid DXBC bytecode: input signature not found\0";
     *ppError = (sm50_error_t)errorObj;
     return 1;
   }
   CSignatureParser5 outputParser;
-  if (DXBCGetOutputSignature(pBytecode, &outputParser) != S_OK) {
+  HRESULT outputSigHr = DXBCGetOutputSignature(pBytecode, &outputParser);
+  if (outputSigHr != S_OK && !is_compute_shader) {
     errorOut << "Invalid DXBC bytecode: output signature not found\0";
     *ppError = (sm50_error_t)errorObj;
     return 1;
   }
 
   auto sm50_shader = new SM50ShaderInternal();
-  sm50_shader->shader_type = CodeParser.ShaderType();
+  sm50_shader->shader_type = shader_type;
   auto shader_info = &(sm50_shader->shader_info);
 
-  {
+  if (outputSigHr == S_OK && outputParser.RastSignature()) {
     const D3D11_SIGNATURE_PARAMETER *parameters;
     outputParser.RastSignature()->GetParameters(&parameters);
     for (unsigned i = 0; i < outputParser.RastSignature()->GetNumParameters(); i++) {
