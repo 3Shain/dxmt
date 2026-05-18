@@ -136,6 +136,52 @@ struct D3D12DepthStencilDesc1 {
   BOOL DepthBoundsTestEnable;
 };
 
+struct D3D12DepthStencilOpDesc1 {
+  D3D12_STENCIL_OP StencilFailOp;
+  D3D12_STENCIL_OP StencilDepthFailOp;
+  D3D12_STENCIL_OP StencilPassOp;
+  D3D12_COMPARISON_FUNC StencilFunc;
+  UINT8 StencilReadMask;
+  UINT8 StencilWriteMask;
+};
+
+struct D3D12DepthStencilDesc2 {
+  BOOL DepthEnable;
+  D3D12_DEPTH_WRITE_MASK DepthWriteMask;
+  D3D12_COMPARISON_FUNC DepthFunc;
+  BOOL StencilEnable;
+  D3D12DepthStencilOpDesc1 FrontFace;
+  D3D12DepthStencilOpDesc1 BackFace;
+  BOOL DepthBoundsTestEnable;
+};
+
+struct D3D12RasterizerDesc1 {
+  D3D12_FILL_MODE FillMode;
+  D3D12_CULL_MODE CullMode;
+  BOOL FrontCounterClockwise;
+  FLOAT DepthBias;
+  FLOAT DepthBiasClamp;
+  FLOAT SlopeScaledDepthBias;
+  BOOL DepthClipEnable;
+  BOOL MultisampleEnable;
+  BOOL AntialiasedLineEnable;
+  UINT ForcedSampleCount;
+  D3D12_CONSERVATIVE_RASTERIZATION_MODE ConservativeRaster;
+};
+
+struct D3D12RasterizerDesc2 {
+  D3D12_FILL_MODE FillMode;
+  D3D12_CULL_MODE CullMode;
+  BOOL FrontCounterClockwise;
+  FLOAT DepthBias;
+  FLOAT DepthBiasClamp;
+  FLOAT SlopeScaledDepthBias;
+  BOOL DepthClipEnable;
+  UINT LineRasterizationMode;
+  UINT ForcedSampleCount;
+  D3D12_CONSERVATIVE_RASTERIZATION_MODE ConservativeRaster;
+};
+
 struct D3D12ViewInstanceLocation {
   UINT ViewportArrayIndex;
   UINT RenderTargetArrayIndex;
@@ -158,6 +204,64 @@ convert_depth_stencil_desc1(const D3D12DepthStencilDesc1 &desc1) {
   desc.StencilWriteMask = desc1.StencilWriteMask;
   desc.FrontFace = desc1.FrontFace;
   desc.BackFace = desc1.BackFace;
+  return desc;
+}
+
+static D3D12_DEPTH_STENCILOP_DESC
+convert_depth_stencil_op_desc1(const D3D12DepthStencilOpDesc1 &desc1) {
+  D3D12_DEPTH_STENCILOP_DESC desc = {};
+  desc.StencilFailOp = desc1.StencilFailOp;
+  desc.StencilDepthFailOp = desc1.StencilDepthFailOp;
+  desc.StencilPassOp = desc1.StencilPassOp;
+  desc.StencilFunc = desc1.StencilFunc;
+  return desc;
+}
+
+static D3D12_DEPTH_STENCIL_DESC
+convert_depth_stencil_desc2(const D3D12DepthStencilDesc2 &desc2) {
+  D3D12_DEPTH_STENCIL_DESC desc = {};
+  desc.DepthEnable = desc2.DepthEnable;
+  desc.DepthWriteMask = desc2.DepthWriteMask;
+  desc.DepthFunc = desc2.DepthFunc;
+  desc.StencilEnable = desc2.StencilEnable;
+  desc.StencilReadMask = desc2.FrontFace.StencilReadMask;
+  desc.StencilWriteMask = desc2.FrontFace.StencilWriteMask;
+  desc.FrontFace = convert_depth_stencil_op_desc1(desc2.FrontFace);
+  desc.BackFace = convert_depth_stencil_op_desc1(desc2.BackFace);
+  return desc;
+}
+
+static D3D12_RASTERIZER_DESC
+convert_rasterizer_desc1(const D3D12RasterizerDesc1 &desc1) {
+  D3D12_RASTERIZER_DESC desc = {};
+  desc.FillMode = desc1.FillMode;
+  desc.CullMode = desc1.CullMode;
+  desc.FrontCounterClockwise = desc1.FrontCounterClockwise;
+  desc.DepthBias = (INT)desc1.DepthBias;
+  desc.DepthBiasClamp = desc1.DepthBiasClamp;
+  desc.SlopeScaledDepthBias = desc1.SlopeScaledDepthBias;
+  desc.DepthClipEnable = desc1.DepthClipEnable;
+  desc.MultisampleEnable = desc1.MultisampleEnable;
+  desc.AntialiasedLineEnable = desc1.AntialiasedLineEnable;
+  desc.ForcedSampleCount = desc1.ForcedSampleCount;
+  desc.ConservativeRaster = desc1.ConservativeRaster;
+  return desc;
+}
+
+static D3D12_RASTERIZER_DESC
+convert_rasterizer_desc2(const D3D12RasterizerDesc2 &desc2) {
+  D3D12_RASTERIZER_DESC desc = {};
+  desc.FillMode = desc2.FillMode;
+  desc.CullMode = desc2.CullMode;
+  desc.FrontCounterClockwise = desc2.FrontCounterClockwise;
+  desc.DepthBias = (INT)desc2.DepthBias;
+  desc.DepthBiasClamp = desc2.DepthBiasClamp;
+  desc.SlopeScaledDepthBias = desc2.SlopeScaledDepthBias;
+  desc.DepthClipEnable = desc2.DepthClipEnable;
+  desc.MultisampleEnable = FALSE;
+  desc.AntialiasedLineEnable = desc2.LineRasterizationMode == 1;
+  desc.ForcedSampleCount = desc2.ForcedSampleCount;
+  desc.ConservativeRaster = desc2.ConservativeRaster;
   return desc;
 }
 
@@ -1515,6 +1619,14 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreatePipelineState(
   D3D12_COMPUTE_PIPELINE_STATE_DESC compute_desc = {};
   bool has_cs = false;
   bool is_compute = true;
+  ID3D12RootSignature *created_stream_root_signature = nullptr;
+  struct CreatedRootSignatureGuard {
+    ID3D12RootSignature *&root_signature;
+    ~CreatedRootSignatureGuard() {
+      if (root_signature)
+        root_signature->Release();
+    }
+  } root_signature_guard{created_stream_root_signature};
 
   graphics_desc.SampleMask = UINT_MAX;
   graphics_desc.SampleDesc.Count = 1;
@@ -1715,6 +1827,63 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreatePipelineState(
             view_instancing.ViewInstanceCount, view_instancing.Flags);
       is_compute = false;
       advanced = advance_pipeline_stream<D3D12ViewInstancingDesc>(&stream, end);
+      break;
+    }
+    case 26: { // DEPTH_STENCIL2
+      D3D12DepthStencilDesc2 depth_stencil = {};
+      if (!read_pipeline_stream_subobject(subobject, end, &depth_stencil))
+        return E_INVALIDARG;
+      graphics_desc.DepthStencilState =
+          convert_depth_stencil_desc2(depth_stencil);
+      TRACE("CreatePipelineState: depth-stencil2 depth=%d stencil=%d depth_bounds=%d",
+            depth_stencil.DepthEnable, depth_stencil.StencilEnable,
+            depth_stencil.DepthBoundsTestEnable);
+      is_compute = false;
+      advanced = advance_pipeline_stream<D3D12DepthStencilDesc2>(&stream, end);
+      break;
+    }
+    case 27: { // RASTERIZER1
+      D3D12RasterizerDesc1 rasterizer = {};
+      if (!read_pipeline_stream_subobject(subobject, end, &rasterizer))
+        return E_INVALIDARG;
+      graphics_desc.RasterizerState = convert_rasterizer_desc1(rasterizer);
+      TRACE("CreatePipelineState: rasterizer1 fill=%u cull=%u depth_bias=%g forced_samples=%u conservative=%u",
+            rasterizer.FillMode, rasterizer.CullMode, rasterizer.DepthBias,
+            rasterizer.ForcedSampleCount, rasterizer.ConservativeRaster);
+      is_compute = false;
+      advanced = advance_pipeline_stream<D3D12RasterizerDesc1>(&stream, end);
+      break;
+    }
+    case 28: { // RASTERIZER2
+      D3D12RasterizerDesc2 rasterizer = {};
+      if (!read_pipeline_stream_subobject(subobject, end, &rasterizer))
+        return E_INVALIDARG;
+      graphics_desc.RasterizerState = convert_rasterizer_desc2(rasterizer);
+      TRACE("CreatePipelineState: rasterizer2 fill=%u cull=%u depth_bias=%g line_mode=%u forced_samples=%u conservative=%u",
+            rasterizer.FillMode, rasterizer.CullMode, rasterizer.DepthBias,
+            rasterizer.LineRasterizationMode, rasterizer.ForcedSampleCount,
+            rasterizer.ConservativeRaster);
+      is_compute = false;
+      advanced = advance_pipeline_stream<D3D12RasterizerDesc2>(&stream, end);
+      break;
+    }
+    case 29: { // SERIALIZED_ROOT_SIGNATURE
+      D3D12_SHADER_BYTECODE root_signature = {};
+      if (!read_pipeline_stream_subobject(subobject, end, &root_signature))
+        return E_INVALIDARG;
+      if (root_signature.pShaderBytecode && root_signature.BytecodeLength) {
+        if (created_stream_root_signature)
+          created_stream_root_signature->Release();
+        created_stream_root_signature = new MTLD3D12RootSignature(
+            this, root_signature.pShaderBytecode, root_signature.BytecodeLength);
+        graphics_desc.pRootSignature = created_stream_root_signature;
+        compute_desc.pRootSignature = created_stream_root_signature;
+        TRACE("CreatePipelineState: serialized root signature bytes=%zu -> %p",
+              root_signature.BytecodeLength, created_stream_root_signature);
+      } else {
+        TRACE("CreatePipelineState: serialized root signature empty");
+      }
+      advanced = advance_pipeline_stream<D3D12_SHADER_BYTECODE>(&stream, end);
       break;
     }
     case 24: // AS
