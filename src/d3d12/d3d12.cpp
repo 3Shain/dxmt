@@ -12,6 +12,7 @@
 #include <exception>
 #include <vector>
 #include <cstring>
+#include <map>
 
 namespace {
 
@@ -32,6 +33,21 @@ constexpr GUID kIID_ID3D12SDKConfiguration1 = {
     0xad25,
     0x48b9,
     {0x9a, 0x57, 0xd9, 0xc3, 0x7e, 0x00, 0x9d, 0x9f}};
+constexpr GUID kCLSID_D3D12StateObjectFactory = {
+    0x54e1c9f3,
+    0x1303,
+    0x4112,
+    {0xbf, 0x8e, 0x7b, 0xf2, 0xbb, 0x60, 0x6a, 0x73}};
+constexpr GUID kIID_ID3D12StateObjectDatabase = {
+    0xc56060b7,
+    0xb5fc,
+    0x4135,
+    {0x98, 0xe0, 0xa1, 0xe9, 0x99, 0x7e, 0xac, 0xe0}};
+constexpr GUID kIID_ID3D12StateObjectDatabaseFactory = {
+    0xf5b066f0,
+    0x648a,
+    0x4611,
+    {0xbd, 0x41, 0x27, 0xfd, 0x09, 0x48, 0xb9, 0xeb}};
 
 struct ID3D12SDKConfiguration : public IUnknown {
   virtual HRESULT STDMETHODCALLTYPE SetSDKVersion(UINT SDKVersion,
@@ -44,6 +60,63 @@ struct ID3D12SDKConfiguration1 : public ID3D12SDKConfiguration {
                                                         REFIID riid,
                                                         void **ppvFactory) = 0;
   virtual void STDMETHODCALLTYPE FreeUnusedSDKs() = 0;
+};
+
+union D3D12VersionNumberCompat {
+  UINT64 Version;
+  UINT16 VersionParts[4];
+};
+
+struct D3D12ApplicationDescCompat {
+  LPCWSTR pExeFilename;
+  LPCWSTR pName;
+  D3D12VersionNumberCompat Version;
+  LPCWSTR pEngineName;
+  D3D12VersionNumberCompat EngineVersion;
+};
+
+typedef void(STDMETHODCALLTYPE *D3D12ApplicationDescFuncCompat)(
+    const D3D12ApplicationDescCompat *application_desc, void *context);
+typedef void(STDMETHODCALLTYPE *D3D12PipelineStateFuncCompat)(
+    const void *key, UINT key_size, UINT version,
+    const D3D12_PIPELINE_STATE_STREAM_DESC *desc, void *context);
+typedef void(STDMETHODCALLTYPE *D3D12StateObjectFuncCompat)(
+    const void *key, UINT key_size, UINT version,
+    const D3D12_STATE_OBJECT_DESC *desc, const void *parent_key,
+    UINT parent_key_size, void *context);
+
+enum D3D12StateObjectDatabaseFlagsCompat : UINT {
+  D3D12StateObjectDatabaseFlagNone = 0,
+  D3D12StateObjectDatabaseFlagReadOnly = 1,
+};
+
+struct ID3D12StateObjectDatabaseCompat : public IUnknown {
+  virtual HRESULT STDMETHODCALLTYPE SetApplicationDesc(
+      const D3D12ApplicationDescCompat *application_desc) = 0;
+  virtual HRESULT STDMETHODCALLTYPE GetApplicationDesc(
+      D3D12ApplicationDescFuncCompat callback, void *context) = 0;
+  virtual HRESULT STDMETHODCALLTYPE StorePipelineStateDesc(
+      const void *key, UINT key_size, UINT version,
+      const D3D12_PIPELINE_STATE_STREAM_DESC *desc) = 0;
+  virtual HRESULT STDMETHODCALLTYPE FindPipelineStateDesc(
+      const void *key, UINT key_size, D3D12PipelineStateFuncCompat callback,
+      void *context) = 0;
+  virtual HRESULT STDMETHODCALLTYPE StoreStateObjectDesc(
+      const void *key, UINT key_size, UINT version,
+      const D3D12_STATE_OBJECT_DESC *desc, const void *parent_key,
+      UINT parent_key_size) = 0;
+  virtual HRESULT STDMETHODCALLTYPE FindStateObjectDesc(
+      const void *key, UINT key_size, D3D12StateObjectFuncCompat callback,
+      void *context) = 0;
+  virtual HRESULT STDMETHODCALLTYPE FindObjectVersion(const void *key,
+                                                      UINT key_size,
+                                                      UINT *version) = 0;
+};
+
+struct ID3D12StateObjectDatabaseFactoryCompat : public IUnknown {
+  virtual HRESULT STDMETHODCALLTYPE CreateStateObjectDatabaseFromFile(
+      LPCWSTR database_file, D3D12StateObjectDatabaseFlagsCompat flags,
+      REFIID riid, void **state_object_database) = 0;
 };
 
 static void TraceAgility(const char *fmt, ...) {
@@ -109,6 +182,168 @@ public:
 
   void STDMETHODCALLTYPE FreeUnusedSDKs() override {
     TraceAgility("ID3D12SDKConfiguration1::FreeUnusedSDKs");
+  }
+
+private:
+  std::atomic<ULONG> m_ref = {1};
+};
+
+class MTLD3D12StateObjectDatabase final
+    : public ID3D12StateObjectDatabaseCompat {
+public:
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppv) override {
+    if (!ppv)
+      return E_POINTER;
+    *ppv = nullptr;
+    if (riid == IID_IUnknown || riid == kIID_ID3D12StateObjectDatabase) {
+      *ppv = this;
+      AddRef();
+      return S_OK;
+    }
+    return E_NOINTERFACE;
+  }
+
+  ULONG STDMETHODCALLTYPE AddRef() override { return ++m_ref; }
+
+  ULONG STDMETHODCALLTYPE Release() override {
+    ULONG ref = --m_ref;
+    if (!ref)
+      delete this;
+    return ref;
+  }
+
+  HRESULT STDMETHODCALLTYPE SetApplicationDesc(
+      const D3D12ApplicationDescCompat *application_desc) override {
+    if (!application_desc)
+      return E_INVALIDARG;
+    m_application_desc = *application_desc;
+    m_has_application_desc = true;
+    TraceAgility("StateObjectDatabase::SetApplicationDesc name=%ls engine=%ls",
+                 m_application_desc.pName ? m_application_desc.pName : L"(null)",
+                 m_application_desc.pEngineName
+                     ? m_application_desc.pEngineName
+                     : L"(null)");
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE GetApplicationDesc(
+      D3D12ApplicationDescFuncCompat callback, void *context) override {
+    if (!callback)
+      return E_POINTER;
+    if (!m_has_application_desc)
+      return HRESULT_FROM_WIN32(ERROR_NOT_FOUND);
+    callback(&m_application_desc, context);
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE StorePipelineStateDesc(
+      const void *key, UINT key_size, UINT version,
+      const D3D12_PIPELINE_STATE_STREAM_DESC *desc) override {
+    if (!key || !key_size || !desc)
+      return E_INVALIDARG;
+    m_pipeline_versions[MakeKey(key, key_size)] = version;
+    TraceAgility("StateObjectDatabase::StorePipelineStateDesc key_size=%u version=%u bytes=%zu",
+                 key_size, version, desc->SizeInBytes);
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE FindPipelineStateDesc(
+      const void *key, UINT key_size, D3D12PipelineStateFuncCompat, void *) override {
+    TraceAgility("StateObjectDatabase::FindPipelineStateDesc key_size=%u -> not materialized",
+                 key_size);
+    if (!key || !key_size)
+      return E_INVALIDARG;
+    return HRESULT_FROM_WIN32(ERROR_NOT_FOUND);
+  }
+
+  HRESULT STDMETHODCALLTYPE StoreStateObjectDesc(
+      const void *key, UINT key_size, UINT version,
+      const D3D12_STATE_OBJECT_DESC *desc, const void *, UINT) override {
+    if (!key || !key_size || !desc)
+      return E_INVALIDARG;
+    m_state_object_versions[MakeKey(key, key_size)] = version;
+    TraceAgility("StateObjectDatabase::StoreStateObjectDesc key_size=%u version=%u subobjects=%u",
+                 key_size, version, desc->NumSubobjects);
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE FindStateObjectDesc(
+      const void *key, UINT key_size, D3D12StateObjectFuncCompat, void *) override {
+    TraceAgility("StateObjectDatabase::FindStateObjectDesc key_size=%u -> not materialized",
+                 key_size);
+    if (!key || !key_size)
+      return E_INVALIDARG;
+    return HRESULT_FROM_WIN32(ERROR_NOT_FOUND);
+  }
+
+  HRESULT STDMETHODCALLTYPE FindObjectVersion(const void *key, UINT key_size,
+                                              UINT *version) override {
+    if (!key || !key_size || !version)
+      return E_INVALIDARG;
+    auto key_bytes = MakeKey(key, key_size);
+    auto pipeline = m_pipeline_versions.find(key_bytes);
+    if (pipeline != m_pipeline_versions.end()) {
+      *version = pipeline->second;
+      return S_OK;
+    }
+    auto state_object = m_state_object_versions.find(key_bytes);
+    if (state_object != m_state_object_versions.end()) {
+      *version = state_object->second;
+      return S_OK;
+    }
+    return HRESULT_FROM_WIN32(ERROR_NOT_FOUND);
+  }
+
+private:
+  static std::vector<uint8_t> MakeKey(const void *key, UINT key_size) {
+    auto *bytes = static_cast<const uint8_t *>(key);
+    return std::vector<uint8_t>(bytes, bytes + key_size);
+  }
+
+  std::atomic<ULONG> m_ref = {1};
+  bool m_has_application_desc = false;
+  D3D12ApplicationDescCompat m_application_desc = {};
+  std::map<std::vector<uint8_t>, UINT> m_pipeline_versions;
+  std::map<std::vector<uint8_t>, UINT> m_state_object_versions;
+};
+
+class MTLD3D12StateObjectDatabaseFactory final
+    : public ID3D12StateObjectDatabaseFactoryCompat {
+public:
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppv) override {
+    if (!ppv)
+      return E_POINTER;
+    *ppv = nullptr;
+    if (riid == IID_IUnknown || riid == kIID_ID3D12StateObjectDatabaseFactory) {
+      *ppv = this;
+      AddRef();
+      return S_OK;
+    }
+    return E_NOINTERFACE;
+  }
+
+  ULONG STDMETHODCALLTYPE AddRef() override { return ++m_ref; }
+
+  ULONG STDMETHODCALLTYPE Release() override {
+    ULONG ref = --m_ref;
+    if (!ref)
+      delete this;
+    return ref;
+  }
+
+  HRESULT STDMETHODCALLTYPE CreateStateObjectDatabaseFromFile(
+      LPCWSTR database_file, D3D12StateObjectDatabaseFlagsCompat flags,
+      REFIID riid, void **state_object_database) override {
+    if (!state_object_database)
+      return E_POINTER;
+    *state_object_database = nullptr;
+    TraceAgility("StateObjectDatabaseFactory::CreateStateObjectDatabaseFromFile file=%ls flags=0x%x riid=%s",
+                 database_file ? database_file : L"(null)", flags,
+                 dxmt::str::format(riid).c_str());
+    auto *database = new MTLD3D12StateObjectDatabase();
+    HRESULT hr = database->QueryInterface(riid, state_object_database);
+    database->Release();
+    return hr;
   }
 
 private:
@@ -1051,6 +1286,15 @@ extern "C" HRESULT WINAPI D3D12GetInterface(REFCLSID clsid, REFIID riid,
     HRESULT hr = configuration->QueryInterface(riid, ppv);
     configuration->Release();
     TraceAgility("D3D12GetInterface SDKConfiguration riid=%s -> 0x%lx out=%p",
+                 str::format(riid).c_str(), hr, ppv ? *ppv : nullptr);
+    return hr;
+  }
+  if (clsid == kCLSID_D3D12StateObjectFactory ||
+      clsid == kIID_ID3D12StateObjectDatabaseFactory) {
+    auto *factory = new MTLD3D12StateObjectDatabaseFactory();
+    HRESULT hr = factory->QueryInterface(riid, ppv);
+    factory->Release();
+    TraceAgility("D3D12GetInterface StateObjectFactory riid=%s -> 0x%lx out=%p",
                  str::format(riid).c_str(), hr, ppv ? *ppv : nullptr);
     return hr;
   }
