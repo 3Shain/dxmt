@@ -1401,7 +1401,12 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::PHI: {
     ensureValueTable(value_counter);
-    os << "  auto " << result << " = 0; // phi\n";
+    if (!inst.operands.empty()) {
+      os << "  auto " << result << " = " << getValue(inst.operands[0])
+         << "; // phi first incoming\n";
+    } else {
+      os << "  auto " << result << " = 0; // empty phi\n";
+    }
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -1427,7 +1432,13 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
     if (inst.operands.size() >= 2) {
       auto agg = getValue(inst.operands[0]);
       auto idx = inst.operands[1];
-      os << "  auto " << result << " = (" << agg << "); // extractvalue idx=" << idx << "\n";
+      if (idx < 4) {
+        os << "  auto " << result << " = (" << agg << ")"
+           << componentSuffix(idx) << "; // extractvalue\n";
+      } else {
+        os << "  auto " << result << " = (" << agg
+           << "); // extractvalue idx=" << idx << "\n";
+      }
       ctx.value_table[value_counter] = result;
     }
     value_counter++;
@@ -1436,7 +1447,13 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::InsertValue: {
     ensureValueTable(value_counter);
-    os << "  auto " << result << " = " << (inst.operands.size() >= 1 ? getValue(inst.operands[0]) : "0") << "; // insertvalue\n";
+    os << "  auto " << result << " = "
+       << (inst.operands.size() >= 1 ? getValue(inst.operands[0]) : "float4(0)")
+       << "; // insertvalue\n";
+    if (inst.operands.size() >= 3 && inst.operands[2] < 4) {
+      os << "  " << result << componentSuffix(inst.operands[2])
+         << " = " << getValue(inst.operands[1]) << ";\n";
+    }
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
