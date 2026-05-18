@@ -1634,10 +1634,14 @@ static void ReplayComputeDispatch(ReplayState &st, MTLD3D12Device *device,
            (unsigned long long)st.comp_arg_buf.handle);
   }
 
+  auto *compute_sig = st.compute_root_sig
+      ? st.compute_root_sig
+      : static_cast<MTLD3D12RootSignature *>(st.pso->GetRootSignature());
+
   bool is_uav_slot[16] = {};
-  if (st.compute_root_sig) {
-    auto &params = st.compute_root_sig->GetParameters();
-    QTRACE("ECL UAV scan: root_sig=%p num_params=%u", (void*)st.compute_root_sig, (uint32_t)params.size());
+  if (compute_sig) {
+    auto &params = compute_sig->GetParameters();
+    QTRACE("ECL UAV scan: root_sig=%p num_params=%u", (void*)compute_sig, (uint32_t)params.size());
     for (uint32_t p = 0; p < params.size() && p < 16; p++) {
       QTRACE("  param[%u] type=%u range_type=%u vis=%u", p, params[p].type, params[p].range_type, params[p].shader_visibility);
       if (params[p].type == D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE &&
@@ -1648,7 +1652,23 @@ static void ReplayComputeDispatch(ReplayState &st, MTLD3D12Device *device,
       }
     }
   } else {
-    QTRACE("ECL UAV scan: no compute_root_sig set!");
+    QTRACE("ECL UAV scan: no compute root signature available");
+  }
+
+  if (compute_sig) {
+    for (uint32_t s = 0; s < 4; s++) {
+      if (auto *sampler = compute_sig->FindStaticSampler(
+              s, 0, D3D12_SHADER_VISIBILITY_ALL)) {
+        if (!sampler->sampler.handle)
+          continue;
+        struct wmtcmd_compute_setsamplerstate ssamp = {};
+        ssamp.type = WMTComputeCommandSetSamplerState;
+        ssamp.sampler = sampler->sampler.handle;
+        ssamp.index = s;
+        append_cmd(&ssamp, sizeof(ssamp));
+        QTRACE("%s: static sampler s%u", trace_prefix, s);
+      }
+    }
   }
 
   for (uint32_t i = 0; i < 16; i++) {
@@ -1676,8 +1696,8 @@ static void ReplayComputeDispatch(ReplayState &st, MTLD3D12Device *device,
       append_cmd(&sb, sizeof(sb));
     }
     auto compute_root_register = [&](D3D12_ROOT_PARAMETER_TYPE type) {
-      if (st.compute_root_sig && i < st.compute_root_sig->GetParameters().size()) {
-        const auto &param = st.compute_root_sig->GetParameters()[i];
+      if (compute_sig && i < compute_sig->GetParameters().size()) {
+        const auto &param = compute_sig->GetParameters()[i];
         if (param.type == type)
           return param.register_index;
       }
@@ -1729,8 +1749,14 @@ static void ReplayComputeDispatch(ReplayState &st, MTLD3D12Device *device,
       if (!desc)
         return;
       if (range_type == D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER) {
-        // Current WMT compute command stream has no sampler command; fixed
-        // DXIL compute shaders generally use buffer/texture UAV/SRV resources.
+        if (shader_register < 4 && desc->metal_sampler.handle) {
+          struct wmtcmd_compute_setsamplerstate ssamp = {};
+          ssamp.type = WMTComputeCommandSetSamplerState;
+          ssamp.sampler = desc->metal_sampler.handle;
+          ssamp.index = shader_register;
+          append_cmd(&ssamp, sizeof(ssamp));
+          QTRACE("%s: table sampler s%u", trace_prefix, shader_register);
+        }
         return;
       }
       if (!desc->resource || shader_register >= 8)
@@ -1776,8 +1802,8 @@ static void ReplayComputeDispatch(ReplayState &st, MTLD3D12Device *device,
       for (uint32_t h = 0; h < st.desc_heap_count; h++) {
         auto *heap = static_cast<MTLD3D12DescriptorHeap *>(st.desc_heaps[h]);
         if (heap) {
-          if (st.compute_root_sig && i < st.compute_root_sig->GetParameters().size()) {
-            const auto &param = st.compute_root_sig->GetParameters()[i];
+          if (compute_sig && i < compute_sig->GetParameters().size()) {
+            const auto &param = compute_sig->GetParameters()[i];
             if (param.type == D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE &&
                 !param.ranges.empty()) {
               for (const auto &range : param.ranges) {

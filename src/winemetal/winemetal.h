@@ -1039,6 +1039,7 @@ enum WMTComputeCommandType : uint16_t {
   WMTComputeCommandUseResource,
   WMTComputeCommandSetBytes,
   WMTComputeCommandSetTexture,
+  WMTComputeCommandSetSamplerState,
   WMTComputeCommandDispatchThreads,
   WMTComputeCommandWaitForFence,
   WMTComputeCommandUpdateFence,
@@ -1119,6 +1120,14 @@ struct wmtcmd_compute_settexture {
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
   obj_handle_t texture;
+  uint8_t index;
+};
+
+struct wmtcmd_compute_setsamplerstate {
+  enum WMTComputeCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t sampler;
   uint8_t index;
 };
 

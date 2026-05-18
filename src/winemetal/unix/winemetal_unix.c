@@ -931,6 +931,11 @@ _MTLComputeCommandEncoder_encodeCommands(void *obj) {
       [encoder setTexture:(id<MTLTexture>)body->texture atIndex:body->index];
       break;
     }
+    case WMTComputeCommandSetSamplerState: {
+      struct wmtcmd_compute_setsamplerstate *body = (struct wmtcmd_compute_setsamplerstate *)next;
+      [encoder setSamplerState:(id<MTLSamplerState>)body->sampler atIndex:body->index];
+      break;
+    }
     case WMTComputeCommandUpdateFence: {
       struct wmtcmd_compute_fence_op *body = (struct wmtcmd_compute_fence_op *)next;
       [encoder updateFence:(id<MTLFence>)body->fence];

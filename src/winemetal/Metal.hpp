@@ -578,6 +578,17 @@ public:
   }
 
   void
+  setSamplerState(SamplerState sampler, uint8_t index) {
+    struct wmtcmd_compute_setsamplerstate cmd;
+    cmd.type = WMTComputeCommandSetSamplerState;
+    cmd.reserved[0] = cmd.reserved[1] = cmd.reserved[2] = 0;
+    cmd.next.set(nullptr);
+    cmd.sampler = sampler.handle;
+    cmd.index = index;
+    MTLComputeCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  void
   waitForFence(Fence fence) {
     struct wmtcmd_compute_fence_op cmd;
     cmd.type = WMTComputeCommandWaitForFence;
