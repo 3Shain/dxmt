@@ -112,6 +112,15 @@ static const char *componentSuffix(uint32_t component) {
   }
 }
 
+static const char *componentName(uint32_t component) {
+  switch (component & 3) {
+  case 0: return "x";
+  case 1: return "y";
+  case 2: return "z";
+  default: return "w";
+  }
+}
+
 static std::string varyingField(const char *base, uint32_t signature_id) {
   switch (signature_id) {
   case 0: return std::string(base) + ".position";
@@ -480,6 +489,12 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     return "(int)gtid.x";
   }
 
+  case DXOP_FlattenedThreadIDInGroup: {
+    ctx.uses_group_thread_id = true;
+    ctx.uses_group_size = true;
+    return "(int)(gtid.x + gtid.y * gsz.x + gtid.z * gsz.x * gsz.y)";
+  }
+
   case DXOP_CBufferLoadLegacy: {
     if (args.size() < 2) return "float4(0)";
     auto handle = resolveBindingName(valueArg(0, "cbuf0"), "buf");
@@ -494,6 +509,34 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     return "(reinterpret_cast<device float4&>(" + handle + "[(" + index + ")*16]))";
   }
 
+  case DXOP_RawBufferLoad: {
+    if (args.size() < 3) return "uint4(0)";
+    auto handle = resolveBindingName(valueArg(0, "srv0"), "buf");
+    auto index = valueArg(1, "0");
+    auto elem_offset = valueArg(2, "0");
+    auto byte_offset = "((" + index + ")*4 + (" + elem_offset + "))";
+    return "(reinterpret_cast<device uint4&>(" + handle + "[" + byte_offset + "]))";
+  }
+
+  case DXOP_BufferStore:
+  case DXOP_RawBufferStore: {
+    if (args.size() < 4) return "";
+    auto handle = resolveBindingName(valueArg(0, "uav0"), "buf");
+    auto index = valueArg(1, "0");
+    auto elem_offset = valueArg(2, "0");
+    std::string base_offset = "((" + index + ")*4 + (" + elem_offset + "))";
+    std::ostringstream store;
+    uint32_t value_count = std::min<uint32_t>(4, (uint32_t)args.size() - 3);
+    for (uint32_t i = 0; i < value_count; i++) {
+      if (i)
+        store << ";\n  ";
+      store << "reinterpret_cast<device uint&>(" << handle << "[(" << base_offset
+            << ") + " << (i * 4) << "]) = (uint)(" << valueArg(3 + i, "0")
+            << ")";
+    }
+    return store.str();
+  }
+
   case DXOP_TextureLoad: {
     if (args.size() < 3) return "float4(0)";
     auto handle = resolveBindingName(valueArg(0, "srv0"), "tex");
@@ -501,6 +544,20 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     auto coord_y = valueArg(3, "0");
     auto coord = "uint2(" + coord_x + ", " + coord_y + ")";
     return handle + ".read(" + coord + ")";
+  }
+
+  case DXOP_TextureStore: {
+    if (args.size() < 6) return "";
+    auto handle = resolveBindingName(valueArg(0, "uav0"), "tex");
+    auto coord_x = valueArg(1, "0");
+    auto coord_y = valueArg(2, "0");
+    auto value_x = valueArg(4, "0.0");
+    auto value_y = valueArg(5, "0.0");
+    auto value_z = valueArg(6, "0.0");
+    auto value_w = valueArg(7, "0.0");
+    return handle + ".write(float4(" + value_x + ", " + value_y + ", " +
+           value_z + ", " + value_w + "), uint2(" + coord_x + ", " +
+           coord_y + "))";
   }
 
   case DXOP_TextureSample: {
@@ -512,6 +569,83 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     auto coord = "float2(" + coord_x + ", " + coord_y + ")";
     return handle + ".sample(" + sampler + ", " + coord + ")";
   }
+
+  case DXOP_TextureGather: {
+    if (args.size() < 4) return "float4(0)";
+    auto handle = resolveBindingName(valueArg(0, "srv0"), "tex");
+    auto sampler = resolveBindingName(valueArg(1, "samp0"), "samp");
+    auto coord_x = valueArg(2, "0.0");
+    auto coord_y = valueArg(3, "0.0");
+    uint32_t channel = args.size() > 8 ? literalArg(8, 0, "gather channel") : 0;
+    return handle + ".gather(" + sampler + ", float2(" + coord_x + ", " +
+           coord_y + "), component::" + componentName(channel) + ")";
+  }
+
+  case DXOP_TextureSampleCmp: {
+    if (args.size() < 5) return "0.0";
+    auto handle = resolveBindingName(valueArg(0, "srv0"), "tex");
+    auto sampler = resolveBindingName(valueArg(1, "samp0"), "samp");
+    auto coord_x = valueArg(2, "0.0");
+    auto coord_y = valueArg(3, "0.0");
+    auto compare = valueArg(4, "0.0");
+    auto sample = handle + ".sample(" + sampler + ", float2(" + coord_x +
+                  ", " + coord_y + ")).r";
+    return "((" + sample + ") < (" + compare + ") ? 1.0 : 0.0)";
+  }
+
+  case DXOP_DerivCoarseX:
+  case DXOP_DerivFineX: {
+    if (args.empty()) return "0.0";
+    return "dfdx(" + valueArg(0, "0.0") + ")";
+  }
+
+  case DXOP_DerivCoarseY:
+  case DXOP_DerivFineY: {
+    if (args.empty()) return "0.0";
+    return "dfdy(" + valueArg(0, "0.0") + ")";
+  }
+
+  case DXOP_CalcLOD: {
+    if (args.size() < 4) return "0.0";
+    auto handle = resolveBindingName(valueArg(0, "srv0"), "tex");
+    auto sampler = resolveBindingName(valueArg(1, "samp0"), "samp");
+    auto coord_x = valueArg(2, "0.0");
+    auto coord_y = valueArg(3, "0.0");
+    return handle + ".calculate_unclamped_lod(" + sampler + ", float2(" +
+           coord_x + ", " + coord_y + "))";
+  }
+
+  case DXOP_AtomicBinOp: {
+    if (args.size() < 4) return "0";
+    auto handle = resolveBindingName(valueArg(1, "uav0"), "buf");
+    auto offset = valueArg(2, "0");
+    auto value = valueArg(3, "0");
+    return "atomic_fetch_add_explicit(reinterpret_cast<device atomic_uint*>(" +
+           handle + " + (" + offset + ")), (uint)(" + value +
+           "), memory_order_relaxed)";
+  }
+
+  case DXOP_AtomicCompareExchange: {
+    if (args.size() < 2) return "0";
+    auto handle = resolveBindingName(valueArg(0, "uav0"), "buf");
+    auto offset = valueArg(1, "0");
+    DXTRACE("DXIL AtomicCompareExchange lowered to atomic load fallback");
+    return "atomic_load_explicit(reinterpret_cast<device atomic_uint*>(" +
+           handle + " + (" + offset + ")), memory_order_relaxed)";
+  }
+
+  case DXOP_Texture2DMSGetSamplePosition:
+  case DXOPRenderTargetGetSamplePosition: {
+    if (!args.empty()) {
+      uint32_t component = literalArg(args.size() - 1, 0, "sample position component");
+      return component == 0 ? "0.5" : "0.5";
+    }
+    return "0.5";
+  }
+
+  case DXOP_NumPrimitives:
+  case DXOP_NumOutputVertices:
+    return "0";
 
   case DXOP_Barrier: {
     return "threadgroup_barrier(mem_flags::mem_threadgroup)";
