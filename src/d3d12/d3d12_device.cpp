@@ -11,6 +11,7 @@
 #include "d3d12_resource.hpp"
 
 #define TRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
+#define PLTRACE(fmt, ...) TRACE(fmt, ##__VA_ARGS__)
 #include "d3d12_root_signature.hpp"
 #include "com/com_object.hpp"
 #include "log/log.hpp"
@@ -18,6 +19,7 @@
 #include "d3d12_resource.hpp"
 #include <thread>
 #include <vector>
+#include <string>
 #include <d3d12.h>
 #include <windows.h>
 
@@ -49,6 +51,8 @@ namespace dxmt {
 
 static const GUID IID_ID3D12Device11_ = {0x5405c344, 0xd457, 0x444e, {0xb4, 0xdd, 0x23, 0x66, 0xe4, 0x5a, 0xee, 0x39}};
 static const GUID IID_ID3D12Device12_ = {0x5af5c532, 0x4c91, 0x4cd0, {0xb5, 0x41, 0x15, 0xa4, 0x05, 0x39, 0x5f, 0xc5}};
+static const GUID IID_ID3D12PipelineLibrary_ = {0xc64226a8, 0x9201, 0x46af, {0xb4, 0xcc, 0x53, 0xfb, 0x9f, 0xf7, 0x41, 0x4f}};
+static const GUID IID_ID3D12PipelineLibrary1_ = {0x80eabf42, 0x2568, 0x4e5e, {0xbd, 0x82, 0xc3, 0x7f, 0x86, 0x96, 0x1d, 0xc3}};
 
 Logger Logger::s_instance("d3d12.log");
 
@@ -375,6 +379,166 @@ private:
   MTLD3D12Device *m_device;
   D3D12_COMMAND_SIGNATURE_DESC m_desc;
   std::vector<D3D12_INDIRECT_ARGUMENT_DESC> m_argument_descs;
+};
+
+struct ID3D12PipelineLibraryCompat : public ID3D12DeviceChild {
+  virtual HRESULT STDMETHODCALLTYPE StorePipeline(LPCWSTR name,
+                                                  ID3D12PipelineState *pipeline) = 0;
+  virtual HRESULT STDMETHODCALLTYPE LoadGraphicsPipeline(
+      LPCWSTR name, const D3D12_GRAPHICS_PIPELINE_STATE_DESC *desc,
+      REFIID riid, void **pipeline_state) = 0;
+  virtual HRESULT STDMETHODCALLTYPE LoadComputePipeline(
+      LPCWSTR name, const D3D12_COMPUTE_PIPELINE_STATE_DESC *desc,
+      REFIID riid, void **pipeline_state) = 0;
+  virtual SIZE_T STDMETHODCALLTYPE GetSerializedSize() = 0;
+  virtual HRESULT STDMETHODCALLTYPE Serialize(void *data, SIZE_T data_size) = 0;
+};
+
+struct ID3D12PipelineLibrary1Compat : public ID3D12PipelineLibraryCompat {
+  virtual HRESULT STDMETHODCALLTYPE LoadPipeline(
+      LPCWSTR name, const D3D12_PIPELINE_STATE_STREAM_DESC *desc,
+      REFIID riid, void **pipeline_state) = 0;
+};
+
+class MTLD3D12PipelineLibrary
+    : public ComObject<ID3D12PipelineLibrary1Compat> {
+public:
+  MTLD3D12PipelineLibrary(MTLD3D12Device *device, const void *blob,
+                          SIZE_T blob_size)
+      : m_device(device) {
+    m_device->AddRef();
+    PLTRACE("PipelineLibrary create blob=%p size=%zu", blob, blob_size);
+  }
+
+  ~MTLD3D12PipelineLibrary() {
+    for (auto &entry : m_entries) {
+      if (entry.second)
+        entry.second->Release();
+    }
+    m_device->Release();
+  }
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppv) override {
+    if (!ppv)
+      return E_POINTER;
+    *ppv = nullptr;
+    if (riid == IID_IUnknown || riid == IID_ID3D12Object ||
+        riid == IID_ID3D12DeviceChild || riid == IID_ID3D12PipelineLibrary_ ||
+        riid == IID_ID3D12PipelineLibrary1_) {
+      *ppv = ref(this);
+      return S_OK;
+    }
+    return E_NOINTERFACE;
+  }
+
+  HRESULT STDMETHODCALLTYPE GetPrivateData(REFGUID, UINT *, void *) override {
+    return E_NOTIMPL;
+  }
+  HRESULT STDMETHODCALLTYPE SetPrivateData(REFGUID, UINT, const void *) override {
+    return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE SetPrivateDataInterface(REFGUID,
+                                                    const IUnknown *) override {
+    return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE SetName(LPCWSTR) override { return S_OK; }
+
+  HRESULT STDMETHODCALLTYPE GetDevice(REFIID riid, void **device) override {
+    return m_device->QueryInterface(riid, device);
+  }
+
+  HRESULT STDMETHODCALLTYPE StorePipeline(LPCWSTR name,
+                                          ID3D12PipelineState *pipeline) override {
+    if (!pipeline)
+      return E_POINTER;
+    auto key = key_from_name(name);
+    auto iter = m_entries.find(key);
+    if (iter != m_entries.end() && iter->second)
+      iter->second->Release();
+    pipeline->AddRef();
+    m_entries[key] = pipeline;
+    PLTRACE("PipelineLibrary StorePipeline name=%ls pipeline=%p entries=%zu",
+            name ? name : L"(null)", pipeline, m_entries.size());
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE LoadGraphicsPipeline(
+      LPCWSTR name, const D3D12_GRAPHICS_PIPELINE_STATE_DESC *desc,
+      REFIID riid, void **pipeline_state) override {
+    if (!pipeline_state)
+      return E_POINTER;
+    *pipeline_state = nullptr;
+    if (auto *pipeline = lookup(name)) {
+      PLTRACE("PipelineLibrary LoadGraphicsPipeline cache hit name=%ls",
+              name ? name : L"(null)");
+      return pipeline->QueryInterface(riid, pipeline_state);
+    }
+    PLTRACE("PipelineLibrary LoadGraphicsPipeline miss name=%ls -> create",
+            name ? name : L"(null)");
+    return m_device->CreateGraphicsPipelineState(desc, riid, pipeline_state);
+  }
+
+  HRESULT STDMETHODCALLTYPE LoadComputePipeline(
+      LPCWSTR name, const D3D12_COMPUTE_PIPELINE_STATE_DESC *desc,
+      REFIID riid, void **pipeline_state) override {
+    if (!pipeline_state)
+      return E_POINTER;
+    *pipeline_state = nullptr;
+    if (auto *pipeline = lookup(name)) {
+      PLTRACE("PipelineLibrary LoadComputePipeline cache hit name=%ls",
+              name ? name : L"(null)");
+      return pipeline->QueryInterface(riid, pipeline_state);
+    }
+    PLTRACE("PipelineLibrary LoadComputePipeline miss name=%ls -> create",
+            name ? name : L"(null)");
+    return m_device->CreateComputePipelineState(desc, riid, pipeline_state);
+  }
+
+  SIZE_T STDMETHODCALLTYPE GetSerializedSize() override {
+    return sizeof(uint32_t) * 2;
+  }
+
+  HRESULT STDMETHODCALLTYPE Serialize(void *data, SIZE_T data_size) override {
+    if (!data)
+      return E_POINTER;
+    if (data_size < GetSerializedSize())
+      return E_INVALIDARG;
+    uint32_t *words = reinterpret_cast<uint32_t *>(data);
+    words[0] = 0x4c505844; // DXPL
+    words[1] = static_cast<uint32_t>(m_entries.size());
+    PLTRACE("PipelineLibrary Serialize entries=%zu bytes=%zu", m_entries.size(),
+            data_size);
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE LoadPipeline(
+      LPCWSTR name, const D3D12_PIPELINE_STATE_STREAM_DESC *desc, REFIID riid,
+      void **pipeline_state) override {
+    if (!pipeline_state)
+      return E_POINTER;
+    *pipeline_state = nullptr;
+    if (auto *pipeline = lookup(name)) {
+      PLTRACE("PipelineLibrary LoadPipeline cache hit name=%ls",
+              name ? name : L"(null)");
+      return pipeline->QueryInterface(riid, pipeline_state);
+    }
+    PLTRACE("PipelineLibrary LoadPipeline miss name=%ls -> create",
+            name ? name : L"(null)");
+    return m_device->CreatePipelineState(desc, riid, pipeline_state);
+  }
+
+private:
+  static std::wstring key_from_name(LPCWSTR name) {
+    return name ? std::wstring(name) : std::wstring();
+  }
+
+  ID3D12PipelineState *lookup(LPCWSTR name) {
+    auto iter = m_entries.find(key_from_name(name));
+    return iter == m_entries.end() ? nullptr : iter->second;
+  }
+
+  MTLD3D12Device *m_device;
+  std::unordered_map<std::wstring, ID3D12PipelineState *> m_entries;
 };
 
 const D3D12_COMMAND_SIGNATURE_DESC *
@@ -1785,9 +1949,18 @@ MTLD3D12Resource *MTLD3D12Device::LookupResourceByGPUAddress(D3D12_GPU_VIRTUAL_A
 
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreatePipelineLibrary(
     const void *blob, SIZE_T blob_size, REFIID riid, void **lib) {
-  TRACE("CreatePipelineLibrary -> DXGI_ERROR_UNSUPPORTED");
-  if (lib) *lib = nullptr;
-  return DXGI_ERROR_UNSUPPORTED;
+  TRACE("CreatePipelineLibrary blob=%p size=%zu riid=%s", blob, blob_size,
+        str::format(riid).c_str());
+  if (!lib)
+    return E_POINTER;
+  *lib = nullptr;
+
+  auto pipeline_library = new MTLD3D12PipelineLibrary(this, blob, blob_size);
+  HRESULT hr = pipeline_library->QueryInterface(riid, lib);
+  if (FAILED(hr))
+    delete pipeline_library;
+  TRACE("CreatePipelineLibrary -> 0x%lx lib=%p", hr, lib ? *lib : nullptr);
+  return hr;
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::SetEventOnMultipleFenceCompletion(
