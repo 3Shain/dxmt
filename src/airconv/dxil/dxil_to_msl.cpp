@@ -1618,11 +1618,28 @@ std::optional<MSLShader> DXILToMSL::convert(const LLVMModule &module,
     return std::nullopt;
   }
 
-  auto &fn = module.functions.back();
-  if (fn.blocks.empty()) {
-    DXTRACE("DXILToMSL: refusing to emit shader for entry function with no blocks");
+  const LLVMFunction *entry_fn = nullptr;
+  for (auto &fn : module.functions) {
+    if (!fn.blocks.empty() && !shader.entry_point.empty() &&
+        fn.name == shader.entry_point) {
+      entry_fn = &fn;
+      break;
+    }
+  }
+  if (!entry_fn) {
+    for (auto it = module.functions.rbegin(); it != module.functions.rend(); ++it) {
+      if (!it->blocks.empty()) {
+        entry_fn = &*it;
+        break;
+      }
+    }
+  }
+  if (!entry_fn) {
+    DXTRACE("DXILToMSL: refusing to emit shader because no parsed function has blocks");
     return std::nullopt;
   }
+
+  auto &fn = *entry_fn;
 
   emitFunctionPrologue(ctx);
 

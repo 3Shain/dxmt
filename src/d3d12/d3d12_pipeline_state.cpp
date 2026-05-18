@@ -107,8 +107,10 @@ void DumpDXILModuleSummary(const char *path, const dxmt::dxil::LLVMModule &modul
     size_t inst_count = 0;
     for (const auto &block : fn.blocks)
       inst_count += block.instructions.size();
-    fprintf(df, "  name=%s declaration=%d type=%u blocks=%zu instructions=%zu\n",
-            fn.name.c_str(), fn.is_declaration, fn.type_id, fn.blocks.size(),
+    fprintf(df,
+            "  name=%s declaration=%d value=%u type=%u params=%u inst_start=%u blocks=%zu instructions=%zu\n",
+            fn.name.c_str(), fn.is_declaration, fn.value_id, fn.type_id,
+            fn.param_count, fn.instruction_start_value, fn.blocks.size(),
             inst_count);
   }
 
