@@ -1000,12 +1000,17 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
 
   SubBlockHeader module_header;
   bool found_module = false;
+  std::vector<Abbrev> top_abbrevs;
   while (!reader.atEnd()) {
     uint32_t bc_abbrev = reader.read(2);
     DXTRACE("  bc_abbrev=%u at bit %u", bc_abbrev, reader.tell());
     if (bc_abbrev == kEndBlock) {
       reader.align32();
       break;
+    }
+    if (bc_abbrev == kDefineAbbrev) {
+      readAbbrevRecord(reader, top_abbrevs);
+      continue;
     }
     if (bc_abbrev != kEnterSubBlock)
       return std::nullopt;
@@ -1113,8 +1118,16 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
       reader.align32();
       continue;
     }
-    if (code != kEnterSubBlock)
-      break;
+    if (code == kDefineAbbrev) {
+      readAbbrevRecord(reader, top_abbrevs);
+      continue;
+    }
+    if (code != kEnterSubBlock) {
+      auto ops = readRecord(reader, code, top_abbrevs);
+      if (ops.empty())
+        break;
+      continue;
+    }
 
     auto header = readSubBlockHeader(reader);
     if (header.block_id == kBlockID_Function &&
