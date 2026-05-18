@@ -103,10 +103,14 @@ static constexpr uint32_t kTypeCode_Float = 3;
 static constexpr uint32_t kTypeCode_Double = 4;
 static constexpr uint32_t kTypeCode_Integer = 7;
 static constexpr uint32_t kTypeCode_Pointer = 8;
+static constexpr uint32_t kTypeCode_FunctionOld = 9;
 static constexpr uint32_t kTypeCode_Struct = 10;
 static constexpr uint32_t kTypeCode_Array = 11;
 static constexpr uint32_t kTypeCode_Vector = 12;
-static constexpr uint32_t kTypeCode_Function = 9;
+static constexpr uint32_t kTypeCode_StructAnon = 18;
+static constexpr uint32_t kTypeCode_StructNamed = 20;
+static constexpr uint32_t kTypeCode_Function = 21;
+static constexpr uint32_t kTypeCode_OpaquePointer = 25;
 
 static constexpr uint32_t kModuleCode_Function = 8;
 static constexpr uint32_t kModuleCode_GlobalVar = 7;
@@ -296,9 +300,24 @@ static bool parseTypeBlock(ParseContext &ctx) {
       ctx.module.types.push_back(t);
       break;
     }
+    case kTypeCode_OpaquePointer: {
+      t.kind = LLVMType::Pointer;
+      ctx.module.types.push_back(t);
+      break;
+    }
     case kTypeCode_Struct: {
       t.kind = LLVMType::Struct;
       for (size_t i = 1; i < ops.size(); i++) {
+        t.subtypes.push_back({LLVMType::Void, 0, {}, {}});
+        t.type_refs.push_back((uint32_t)ops[i]);
+      }
+      ctx.module.types.push_back(t);
+      break;
+    }
+    case kTypeCode_StructAnon:
+    case kTypeCode_StructNamed: {
+      t.kind = LLVMType::Struct;
+      for (size_t i = 2; i < ops.size(); i++) {
         t.subtypes.push_back({LLVMType::Void, 0, {}, {}});
         t.type_refs.push_back((uint32_t)ops[i]);
       }
@@ -325,6 +344,16 @@ static bool parseTypeBlock(ParseContext &ctx) {
       t.kind = LLVMType::Function;
       t.bit_width = ops.size() > 1 ? (uint32_t)ops[1] : 0;
       for (size_t i = 2; i < ops.size(); i++) {
+        t.subtypes.push_back({LLVMType::Void, 0, {}, {}});
+        t.type_refs.push_back((uint32_t)ops[i]);
+      }
+      ctx.module.types.push_back(t);
+      break;
+    }
+    case kTypeCode_FunctionOld: {
+      t.kind = LLVMType::Function;
+      t.bit_width = ops.size() > 1 ? (uint32_t)ops[1] : 0;
+      for (size_t i = 3; i < ops.size(); i++) {
         t.subtypes.push_back({LLVMType::Void, 0, {}, {}});
         t.type_refs.push_back((uint32_t)ops[i]);
       }
