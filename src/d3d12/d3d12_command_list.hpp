@@ -49,6 +49,9 @@ enum class CmdType : uint32_t {
   SetDescriptorHeaps,
   ResolveSubresource,
   WriteBufferImmediate,
+  BeginQuery,
+  EndQuery,
+  ResolveQueryData,
 };
 
 struct CmdHeader {
@@ -262,6 +265,23 @@ struct CmdWriteBufferImmediate {
   CmdHeader header;
   uint32_t count;
   CmdWriteBufferImmediateEntry entries[1];
+};
+
+struct CmdQuery {
+  CmdHeader header;
+  ID3D12QueryHeap *heap;
+  D3D12_QUERY_TYPE type;
+  uint32_t index;
+};
+
+struct CmdResolveQueryData {
+  CmdHeader header;
+  ID3D12QueryHeap *heap;
+  D3D12_QUERY_TYPE type;
+  uint32_t start_index;
+  uint32_t query_count;
+  ID3D12Resource *dst_buffer;
+  uint64_t dst_offset;
 };
 
 class MTLD3D12GraphicsCommandList : public ID3D12GraphicsCommandList6 {

@@ -3,6 +3,7 @@
 #include "d3d12_descriptor_heap.hpp"
 #include "d3d12_device.hpp"
 #include "d3d12_pipeline_state.hpp"
+#include "d3d12_query_heap.hpp"
 #include "d3d12_resource.hpp"
 #include "d3d12_root_signature.hpp"
 #include "log/log.hpp"
@@ -10,6 +11,7 @@
 #include "Metal.hpp"
 #include <algorithm>
 #include <cstring>
+#include <vector>
 
 #define QTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
 
@@ -40,6 +42,20 @@ static uint64_t SamplerLodBiasBits(const D3D12Descriptor *desc) {
   static_assert(sizeof(bits) == sizeof(lod_bias));
   memcpy(&bits, &lod_bias, sizeof(bits));
   return bits;
+}
+
+static size_t QueryResultStride(D3D12_QUERY_TYPE type) {
+  switch (type) {
+  case D3D12_QUERY_TYPE_PIPELINE_STATISTICS:
+    return sizeof(D3D12_QUERY_DATA_PIPELINE_STATISTICS);
+  case D3D12_QUERY_TYPE_SO_STATISTICS_STREAM0:
+  case D3D12_QUERY_TYPE_SO_STATISTICS_STREAM1:
+  case D3D12_QUERY_TYPE_SO_STATISTICS_STREAM2:
+  case D3D12_QUERY_TYPE_SO_STATISTICS_STREAM3:
+    return sizeof(D3D12_QUERY_DATA_SO_STATISTICS);
+  default:
+    return sizeof(uint64_t);
+  }
 }
 
 static bool ShaderVisibilityMatches(uint32_t param_visibility,
@@ -2832,6 +2848,93 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         QTRACE("ClearUnorderedAccessView CPU pattern clear off=%llu len=%llu",
                (unsigned long long)clear_offset,
                (unsigned long long)clear_length);
+        break;
+      }
+      case CmdType::BeginQuery: {
+        auto *cmd = reinterpret_cast<const CmdQuery *>(header);
+        auto *heap = static_cast<MTLD3D12QueryHeap *>(cmd->heap);
+        QTRACE("BeginQuery heap=%p type=%u index=%u", (void*)heap,
+               (unsigned)cmd->type, cmd->index);
+        if (heap && cmd->index < heap->GetCount())
+          heap->GetData()[cmd->index] = 0;
+        break;
+      }
+      case CmdType::EndQuery: {
+        auto *cmd = reinterpret_cast<const CmdQuery *>(header);
+        auto *heap = static_cast<MTLD3D12QueryHeap *>(cmd->heap);
+        QTRACE("EndQuery heap=%p type=%u index=%u", (void*)heap,
+               (unsigned)cmd->type, cmd->index);
+        if (heap && cmd->index < heap->GetCount()) {
+          uint64_t value = 1;
+          if (cmd->type == D3D12_QUERY_TYPE_TIMESTAMP)
+            value = m_barrier_seq + cmd->index + 1;
+          heap->GetData()[cmd->index] = value;
+        }
+        break;
+      }
+      case CmdType::ResolveQueryData: {
+        auto *cmd = reinterpret_cast<const CmdResolveQueryData *>(header);
+        auto *heap = static_cast<MTLD3D12QueryHeap *>(cmd->heap);
+        auto *dst = static_cast<MTLD3D12Resource *>(cmd->dst_buffer);
+        size_t stride = QueryResultStride(cmd->type);
+        size_t bytes = stride * cmd->query_count;
+        QTRACE("ResolveQueryData heap=%p type=%u start=%u count=%u dst=%p off=%llu stride=%zu bytes=%zu",
+               (void*)heap, (unsigned)cmd->type, cmd->start_index,
+               cmd->query_count, (void*)dst,
+               (unsigned long long)cmd->dst_offset, stride, bytes);
+        if (!heap || !dst || !bytes)
+          break;
+
+        std::vector<uint8_t> results(bytes, 0);
+        for (uint32_t i = 0; i < cmd->query_count; i++) {
+          uint64_t value = 0;
+          uint32_t heap_index = cmd->start_index + i;
+          if (heap_index < heap->GetCount())
+            value = heap->GetData()[heap_index];
+          if ((cmd->type == D3D12_QUERY_TYPE_OCCLUSION ||
+               cmd->type == D3D12_QUERY_TYPE_BINARY_OCCLUSION) &&
+              value == 0)
+            value = 1;
+          if (cmd->type == D3D12_QUERY_TYPE_TIMESTAMP && value == 0)
+            value = m_barrier_seq + heap_index + 1;
+          memcpy(results.data() + i * stride, &value,
+                 std::min(stride, sizeof(value)));
+        }
+
+        void *mapped = nullptr;
+        HRESULT map_hr = dst->Map(0, nullptr, &mapped);
+        if (SUCCEEDED(map_hr) && mapped &&
+            cmd->dst_offset + bytes <= dst->GetBufferByteLength()) {
+          memcpy(static_cast<uint8_t *>(mapped) + cmd->dst_offset,
+                 results.data(), bytes);
+          dst->Unmap(0, nullptr);
+          break;
+        }
+
+        WMTBufferInfo buf_info = {};
+        buf_info.length = bytes;
+        buf_info.options = WMTResourceStorageModeShared;
+        auto staging = m_device->GetDXMTDevice().device().newBuffer(buf_info);
+        if (!staging.handle || !dst->GetMTLBuffer().handle) {
+          QTRACE("ResolveQueryData SKIPPED staging=%llu dst_buf=%llu",
+                 (unsigned long long)staging.handle,
+                 (unsigned long long)dst->GetMTLBuffer().handle);
+          break;
+        }
+        staging.updateContents(0, results.data(), bytes);
+        auto blit = cmdbuf.blitCommandEncoder();
+        ENC_CREATE("blit_query", blit.handle);
+        struct wmtcmd_blit_copy_from_buffer_to_buffer copy = {};
+        copy.type = WMTBlitCommandCopyFromBufferToBuffer;
+        copy.next.set(nullptr);
+        copy.src = staging.handle;
+        copy.src_offset = 0;
+        copy.dst = dst->GetMTLBuffer().handle;
+        copy.dst_offset = cmd->dst_offset;
+        copy.copy_length = bytes;
+        blit.encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&copy));
+        ENC_END(blit.handle);
+        blit.endEncoding();
         break;
       }
       case CmdType::RSSetViewports: {

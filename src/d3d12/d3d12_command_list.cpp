@@ -597,15 +597,39 @@ void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::DiscardResource(
     ID3D12Resource *resource, const D3D12_DISCARD_REGION *region) {}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::BeginQuery(
-    ID3D12QueryHeap *heap, D3D12_QUERY_TYPE type, UINT index) {}
+    ID3D12QueryHeap *heap, D3D12_QUERY_TYPE type, UINT index) {
+  CmdQuery cmd = {};
+  cmd.header = {CmdType::BeginQuery, sizeof(cmd)};
+  cmd.heap = heap;
+  cmd.type = type;
+  cmd.index = index;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::EndQuery(
-    ID3D12QueryHeap *heap, D3D12_QUERY_TYPE type, UINT index) {}
+    ID3D12QueryHeap *heap, D3D12_QUERY_TYPE type, UINT index) {
+  CmdQuery cmd = {};
+  cmd.header = {CmdType::EndQuery, sizeof(cmd)};
+  cmd.heap = heap;
+  cmd.type = type;
+  cmd.index = index;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ResolveQueryData(
     ID3D12QueryHeap *heap, D3D12_QUERY_TYPE type, UINT start_index,
     UINT query_count, ID3D12Resource *dst_buffer,
-    UINT64 aligned_dst_buffer_offset) {}
+    UINT64 aligned_dst_buffer_offset) {
+  CmdResolveQueryData cmd = {};
+  cmd.header = {CmdType::ResolveQueryData, sizeof(cmd)};
+  cmd.heap = heap;
+  cmd.type = type;
+  cmd.start_index = start_index;
+  cmd.query_count = query_count;
+  cmd.dst_buffer = dst_buffer;
+  cmd.dst_offset = aligned_dst_buffer_offset;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetPredication(
     ID3D12Resource *buffer, UINT64 aligned_buffer_offset,
