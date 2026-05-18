@@ -1108,7 +1108,8 @@ AIRCONV_API int SM50Initialize(
     );
     sm50_shader->args_reflection_cbuffer.push_back({
       .Type = SM50BindingType::ConstantBuffer,
-      .SM50BindingSlot = range_id,
+      .SM50BindingSlot = cbv.range.lower_bound,
+      .SM50RegisterSpace = cbv.range.space,
       .Flags =
         MTL_SM50_SHADER_ARGUMENT_BUFFER | MTL_SM50_SHADER_ARGUMENT_READ_ACCESS,
       .StructurePtrOffset = cbv.arg_index,
@@ -1127,7 +1128,8 @@ AIRCONV_API int SM50Initialize(
     );
     sm50_shader->args_reflection.push_back({
       .Type = SM50BindingType::Sampler,
-      .SM50BindingSlot = range_id,
+      .SM50BindingSlot = sampler.range.lower_bound,
+      .SM50RegisterSpace = sampler.range.space,
       .Flags = (MTL_SM50_SHADER_ARGUMENT_FLAG)0,
       .StructurePtrOffset = sampler.arg_index,
     });
@@ -1181,7 +1183,8 @@ AIRCONV_API int SM50Initialize(
     }
     sm50_shader->args_reflection.push_back({
       .Type = SM50BindingType::SRV,
-      .SM50BindingSlot = range_id,
+      .SM50BindingSlot = srv.range.lower_bound,
+      .SM50RegisterSpace = srv.range.space,
       .Flags = flags,
       .StructurePtrOffset = srv.arg_index,
     });
@@ -1251,7 +1254,8 @@ AIRCONV_API int SM50Initialize(
     }
     sm50_shader->args_reflection.push_back({
       .Type = SM50BindingType::UAV,
-      .SM50BindingSlot = range_id,
+      .SM50BindingSlot = uav.range.lower_bound,
+      .SM50RegisterSpace = uav.range.space,
       .Flags = flags,
       .StructurePtrOffset = uav.arg_index,
     });

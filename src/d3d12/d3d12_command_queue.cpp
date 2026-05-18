@@ -306,8 +306,8 @@ struct ReplayState {
 
         if (table_arg) {
           dxmt_sig->FindDescriptorTableRangeForVisibility(
-              range_type, arg.SM50BindingSlot, D3D12_SHADER_VISIBILITY_PIXEL,
-              &root_idx, &descriptor_offset);
+              range_type, arg.SM50BindingSlot, arg.SM50RegisterSpace,
+              D3D12_SHADER_VISIBILITY_PIXEL, &root_idx, &descriptor_offset);
         }
       }
       if (root_idx == ~0u || !root_table_set[root_idx] || desc_heap_count == 0) {
@@ -443,6 +443,7 @@ struct ReplayState {
           for (uint32_t p = 0; p < params.size() && p < 16; p++) {
             if (params[p].type == D3D12_ROOT_PARAMETER_TYPE_CBV &&
                 params[p].register_index == arg.SM50BindingSlot &&
+                params[p].register_space == arg.SM50RegisterSpace &&
                 ShaderVisibilityMatches(params[p].shader_visibility,
                                         D3D12_SHADER_VISIBILITY_PIXEL,
                                         pass == 0)) {
@@ -460,7 +461,7 @@ struct ReplayState {
         uint32_t descriptor_offset = 0;
         if (dxmt_sig->FindDescriptorTableRangeForVisibility(
                 D3D12_DESCRIPTOR_RANGE_TYPE_CBV, arg.SM50BindingSlot,
-                D3D12_SHADER_VISIBILITY_PIXEL, &table_root_idx,
+                arg.SM50RegisterSpace, D3D12_SHADER_VISIBILITY_PIXEL, &table_root_idx,
                 &descriptor_offset) &&
             table_root_idx < 16 && root_table_set[table_root_idx]) {
           for (uint32_t h = 0; h < desc_heap_count; h++) {
@@ -538,6 +539,7 @@ struct ReplayState {
           for (uint32_t p = 0; p < params.size() && p < 16; p++) {
             if (params[p].type == D3D12_ROOT_PARAMETER_TYPE_CBV &&
                 params[p].register_index == arg.SM50BindingSlot &&
+                params[p].register_space == arg.SM50RegisterSpace &&
                 ShaderVisibilityMatches(params[p].shader_visibility,
                                         D3D12_SHADER_VISIBILITY_VERTEX,
                                         pass == 0)) {
@@ -555,7 +557,7 @@ struct ReplayState {
         uint32_t descriptor_offset = 0;
         if (dxmt_sig->FindDescriptorTableRangeForVisibility(
                 D3D12_DESCRIPTOR_RANGE_TYPE_CBV, arg.SM50BindingSlot,
-                D3D12_SHADER_VISIBILITY_VERTEX, &table_root_idx,
+                arg.SM50RegisterSpace, D3D12_SHADER_VISIBILITY_VERTEX, &table_root_idx,
                 &descriptor_offset) &&
             table_root_idx < 16 && root_table_set[table_root_idx]) {
           for (uint32_t h = 0; h < desc_heap_count; h++) {
@@ -642,8 +644,8 @@ struct ReplayState {
         }
         if (table_arg) {
           dxmt_sig->FindDescriptorTableRangeForVisibility(
-              range_type, arg.SM50BindingSlot, D3D12_SHADER_VISIBILITY_VERTEX,
-              &root_idx, &descriptor_offset);
+              range_type, arg.SM50BindingSlot, arg.SM50RegisterSpace,
+              D3D12_SHADER_VISIBILITY_VERTEX, &root_idx, &descriptor_offset);
         }
       }
       if (root_idx == ~0u || !root_table_set[root_idx] || desc_heap_count == 0) {
@@ -774,7 +776,8 @@ struct ReplayState {
         auto &params = dxmt_sig->GetParameters();
         for (uint32_t p = 0; p < params.size() && p < 16; p++) {
           if (params[p].type == D3D12_ROOT_PARAMETER_TYPE_CBV &&
-              params[p].register_index == arg.SM50BindingSlot) {
+              params[p].register_index == arg.SM50BindingSlot &&
+              params[p].register_space == arg.SM50RegisterSpace) {
             root_idx = p;
             break;
           }
@@ -790,6 +793,7 @@ struct ReplayState {
         uint32_t descriptor_offset = 0;
         if (dxmt_sig->FindDescriptorTableRange(D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
                                                arg.SM50BindingSlot,
+                                               arg.SM50RegisterSpace,
                                                &table_root_idx,
                                                &descriptor_offset) &&
             table_root_idx < 16) {
@@ -867,6 +871,7 @@ struct ReplayState {
       uint32_t descriptor_offset = 0;
       if (table_arg && dxmt_sig) {
         dxmt_sig->FindDescriptorTableRange(range_type, arg.SM50BindingSlot,
+                                           arg.SM50RegisterSpace,
                                            &root_idx, &descriptor_offset);
       }
       if (root_idx == ~0u || root_idx >= 16 ||

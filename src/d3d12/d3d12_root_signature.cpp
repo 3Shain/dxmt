@@ -369,8 +369,16 @@ void MTLD3D12RootSignature::Parse(const void *blob, SIZE_T blob_size) {
 bool MTLD3D12RootSignature::FindDescriptorTableRange(
     D3D12_DESCRIPTOR_RANGE_TYPE range_type, uint32_t shader_register,
     uint32_t *root_parameter_index, uint32_t *descriptor_offset) const {
+  return FindDescriptorTableRange(range_type, shader_register, 0,
+                                  root_parameter_index, descriptor_offset);
+}
+
+bool MTLD3D12RootSignature::FindDescriptorTableRange(
+    D3D12_DESCRIPTOR_RANGE_TYPE range_type, uint32_t shader_register,
+    uint32_t register_space, uint32_t *root_parameter_index,
+    uint32_t *descriptor_offset) const {
   return FindDescriptorTableRangeForVisibility(
-      range_type, shader_register, D3D12_SHADER_VISIBILITY_ALL,
+      range_type, shader_register, register_space, D3D12_SHADER_VISIBILITY_ALL,
       root_parameter_index, descriptor_offset);
 }
 
@@ -378,9 +386,17 @@ bool MTLD3D12RootSignature::FindDescriptorTableRangeForVisibility(
     D3D12_DESCRIPTOR_RANGE_TYPE range_type, uint32_t shader_register,
     D3D12_SHADER_VISIBILITY shader_visibility, uint32_t *root_parameter_index,
     uint32_t *descriptor_offset) const {
-  auto search = [&](bool prefer_space_zero) -> bool {
-    for (uint32_t visibility_pass = 0; visibility_pass < 2; visibility_pass++) {
-      for (uint32_t p = 0; p < m_parameters.size(); p++) {
+  return FindDescriptorTableRangeForVisibility(
+      range_type, shader_register, 0, shader_visibility, root_parameter_index,
+      descriptor_offset);
+}
+
+bool MTLD3D12RootSignature::FindDescriptorTableRangeForVisibility(
+    D3D12_DESCRIPTOR_RANGE_TYPE range_type, uint32_t shader_register,
+    uint32_t register_space, D3D12_SHADER_VISIBILITY shader_visibility,
+    uint32_t *root_parameter_index, uint32_t *descriptor_offset) const {
+  for (uint32_t visibility_pass = 0; visibility_pass < 2; visibility_pass++) {
+    for (uint32_t p = 0; p < m_parameters.size(); p++) {
       const auto &param = m_parameters[p];
       if (param.type != D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE)
         continue;
@@ -394,7 +410,7 @@ bool MTLD3D12RootSignature::FindDescriptorTableRangeForVisibility(
       for (const auto &range : param.ranges) {
         if (range.range_type != range_type)
           continue;
-        if (prefer_space_zero && range.register_space != 0)
+        if (range.register_space != register_space)
           continue;
         if (shader_register < range.base_register)
           continue;
@@ -410,11 +426,9 @@ bool MTLD3D12RootSignature::FindDescriptorTableRangeForVisibility(
         return true;
       }
     }
-    }
-    return false;
-  };
+  }
 
-  return search(true) || search(false);
+  return false;
 }
 
 HRESULT STDMETHODCALLTYPE

@@ -57,6 +57,7 @@ struct MTL_SM50_SHADER_ARGUMENT {
   sampler:            s2  -> 2
   */
   uint32_t SM50BindingSlot;
+  uint32_t SM50RegisterSpace;
   enum MTL_SM50_SHADER_ARGUMENT_FLAG Flags;
   uint32_t StructurePtrOffset;
 };

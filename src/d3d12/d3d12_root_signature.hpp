@@ -56,9 +56,18 @@ public:
                                 uint32_t shader_register,
                                 uint32_t *root_parameter_index,
                                 uint32_t *descriptor_offset) const;
+  bool FindDescriptorTableRange(D3D12_DESCRIPTOR_RANGE_TYPE range_type,
+                                uint32_t shader_register,
+                                uint32_t register_space,
+                                uint32_t *root_parameter_index,
+                                uint32_t *descriptor_offset) const;
   bool FindDescriptorTableRangeForVisibility(
       D3D12_DESCRIPTOR_RANGE_TYPE range_type, uint32_t shader_register,
       D3D12_SHADER_VISIBILITY shader_visibility,
+      uint32_t *root_parameter_index, uint32_t *descriptor_offset) const;
+  bool FindDescriptorTableRangeForVisibility(
+      D3D12_DESCRIPTOR_RANGE_TYPE range_type, uint32_t shader_register,
+      uint32_t register_space, D3D12_SHADER_VISIBILITY shader_visibility,
       uint32_t *root_parameter_index, uint32_t *descriptor_offset) const;
   uint32_t GetNumParameters() const { return m_parameters.size(); }
   uint32_t GetNumStaticSamplers() const { return m_num_static_samplers; }
