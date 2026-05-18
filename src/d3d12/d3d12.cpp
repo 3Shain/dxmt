@@ -33,6 +33,16 @@ constexpr GUID kIID_ID3D12SDKConfiguration1 = {
     0xad25,
     0x48b9,
     {0x9a, 0x57, 0xd9, 0xc3, 0x7e, 0x00, 0x9d, 0x9f}};
+constexpr GUID kCLSID_D3D12DeviceFactory = {
+    0x114863bf,
+    0xc386,
+    0x4aee,
+    {0xb3, 0x9d, 0x8f, 0x0b, 0xbb, 0x06, 0x29, 0x55}};
+constexpr GUID kIID_ID3D12DeviceFactory = {
+    0x61f307d3,
+    0xd34e,
+    0x4e7c,
+    {0x83, 0x74, 0x3b, 0xa4, 0xde, 0x23, 0xcc, 0xcb}};
 constexpr GUID kCLSID_D3D12StateObjectFactory = {
     0x54e1c9f3,
     0x1303,
@@ -60,6 +70,29 @@ struct ID3D12SDKConfiguration1 : public ID3D12SDKConfiguration {
                                                         REFIID riid,
                                                         void **ppvFactory) = 0;
   virtual void STDMETHODCALLTYPE FreeUnusedSDKs() = 0;
+};
+
+enum D3D12DeviceFactoryFlagsCompat : UINT {
+  D3D12DeviceFactoryFlagNone = 0,
+  D3D12DeviceFactoryFlagAllowReturningExistingDevice = 1,
+  D3D12DeviceFactoryFlagAllowReturningIncompatibleExistingDevice = 2,
+  D3D12DeviceFactoryFlagDisallowStoringNewDeviceAsSingleton = 4,
+};
+
+struct ID3D12DeviceFactoryCompat : public IUnknown {
+  virtual HRESULT STDMETHODCALLTYPE InitializeFromGlobalState() = 0;
+  virtual HRESULT STDMETHODCALLTYPE ApplyToGlobalState() = 0;
+  virtual HRESULT STDMETHODCALLTYPE SetFlags(D3D12DeviceFactoryFlagsCompat flags) = 0;
+  virtual D3D12DeviceFactoryFlagsCompat STDMETHODCALLTYPE GetFlags() = 0;
+  virtual HRESULT STDMETHODCALLTYPE GetConfigurationInterface(
+      REFCLSID clsid, REFIID iid, void **ppv) = 0;
+  virtual HRESULT STDMETHODCALLTYPE EnableExperimentalFeatures(
+      UINT num_features, const IID *iids, void *configuration_structs,
+      UINT *configuration_struct_sizes) = 0;
+  virtual HRESULT STDMETHODCALLTYPE CreateDevice(IUnknown *adapter,
+                                                D3D_FEATURE_LEVEL feature_level,
+                                                REFIID riid,
+                                                void **device) = 0;
 };
 
 union D3D12VersionNumberCompat {
@@ -168,17 +201,7 @@ public:
 
   HRESULT STDMETHODCALLTYPE CreateDeviceFactory(UINT SDKVersion, LPCSTR SDKPath,
                                                 REFIID riid,
-                                                void **ppvFactory) override {
-    if (!ppvFactory)
-      return E_POINTER;
-
-    *ppvFactory = nullptr;
-    TraceAgility("ID3D12SDKConfiguration1::CreateDeviceFactory version=%u "
-                 "path=%s riid=%s -> E_NOINTERFACE",
-                 SDKVersion, SDKPath ? SDKPath : "(null)",
-                 dxmt::str::format(riid).c_str());
-    return E_NOINTERFACE;
-  }
+                                                void **ppvFactory) override;
 
   void STDMETHODCALLTYPE FreeUnusedSDKs() override {
     TraceAgility("ID3D12SDKConfiguration1::FreeUnusedSDKs");
@@ -187,6 +210,103 @@ public:
 private:
   std::atomic<ULONG> m_ref = {1};
 };
+
+class MTLD3D12DeviceFactory final : public ID3D12DeviceFactoryCompat {
+public:
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppv) override {
+    if (!ppv)
+      return E_POINTER;
+    *ppv = nullptr;
+    if (riid == IID_IUnknown || riid == kIID_ID3D12DeviceFactory) {
+      *ppv = this;
+      AddRef();
+      return S_OK;
+    }
+    return E_NOINTERFACE;
+  }
+
+  ULONG STDMETHODCALLTYPE AddRef() override { return ++m_ref; }
+
+  ULONG STDMETHODCALLTYPE Release() override {
+    ULONG ref = --m_ref;
+    if (!ref)
+      delete this;
+    return ref;
+  }
+
+  HRESULT STDMETHODCALLTYPE InitializeFromGlobalState() override {
+    TraceAgility("DeviceFactory::InitializeFromGlobalState");
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE ApplyToGlobalState() override {
+    TraceAgility("DeviceFactory::ApplyToGlobalState");
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE SetFlags(D3D12DeviceFactoryFlagsCompat flags) override {
+    m_flags = flags;
+    TraceAgility("DeviceFactory::SetFlags flags=0x%x", flags);
+    return S_OK;
+  }
+
+  D3D12DeviceFactoryFlagsCompat STDMETHODCALLTYPE GetFlags() override {
+    TraceAgility("DeviceFactory::GetFlags -> 0x%x", m_flags);
+    return m_flags;
+  }
+
+  HRESULT STDMETHODCALLTYPE GetConfigurationInterface(
+      REFCLSID clsid, REFIID iid, void **ppv) override {
+    if (!ppv)
+      return E_POINTER;
+    TraceAgility("DeviceFactory::GetConfigurationInterface clsid=%s iid=%s",
+                 dxmt::str::format(clsid).c_str(),
+                 dxmt::str::format(iid).c_str());
+    return D3D12GetInterface(clsid, iid, ppv);
+  }
+
+  HRESULT STDMETHODCALLTYPE EnableExperimentalFeatures(
+      UINT num_features, const IID *iids, void *, UINT *) override {
+    if (num_features && !iids)
+      return E_INVALIDARG;
+    TraceAgility("DeviceFactory::EnableExperimentalFeatures count=%u",
+                 num_features);
+    for (UINT i = 0; i < num_features; i++) {
+      TraceAgility("  feature[%u]=%s", i,
+                   dxmt::str::format(iids[i]).c_str());
+    }
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE CreateDevice(IUnknown *adapter,
+                                         D3D_FEATURE_LEVEL feature_level,
+                                         REFIID riid, void **device) override {
+    TraceAgility("DeviceFactory::CreateDevice adapter=%p FL=%d riid=%s",
+                 adapter, feature_level, dxmt::str::format(riid).c_str());
+    return D3D12CreateDevice(adapter, feature_level, riid, device);
+  }
+
+private:
+  std::atomic<ULONG> m_ref = {1};
+  D3D12DeviceFactoryFlagsCompat m_flags = D3D12DeviceFactoryFlagNone;
+};
+
+HRESULT STDMETHODCALLTYPE MTLD3D12SDKConfiguration::CreateDeviceFactory(
+    UINT SDKVersion, LPCSTR SDKPath, REFIID riid, void **ppvFactory) {
+  if (!ppvFactory)
+    return E_POINTER;
+
+  *ppvFactory = nullptr;
+  auto *factory = new MTLD3D12DeviceFactory();
+  HRESULT hr = factory->QueryInterface(riid, ppvFactory);
+  factory->Release();
+  TraceAgility("ID3D12SDKConfiguration1::CreateDeviceFactory version=%u "
+               "path=%s riid=%s -> 0x%lx out=%p",
+               SDKVersion, SDKPath ? SDKPath : "(null)",
+               dxmt::str::format(riid).c_str(), hr,
+               ppvFactory ? *ppvFactory : nullptr);
+  return hr;
+}
 
 class MTLD3D12StateObjectDatabase final
     : public ID3D12StateObjectDatabaseCompat {
@@ -1286,6 +1406,15 @@ extern "C" HRESULT WINAPI D3D12GetInterface(REFCLSID clsid, REFIID riid,
     HRESULT hr = configuration->QueryInterface(riid, ppv);
     configuration->Release();
     TraceAgility("D3D12GetInterface SDKConfiguration riid=%s -> 0x%lx out=%p",
+                 str::format(riid).c_str(), hr, ppv ? *ppv : nullptr);
+    return hr;
+  }
+  if (clsid == kCLSID_D3D12DeviceFactory ||
+      clsid == kIID_ID3D12DeviceFactory) {
+    auto *factory = new MTLD3D12DeviceFactory();
+    HRESULT hr = factory->QueryInterface(riid, ppv);
+    factory->Release();
+    TraceAgility("D3D12GetInterface DeviceFactory riid=%s -> 0x%lx out=%p",
                  str::format(riid).c_str(), hr, ppv ? *ppv : nullptr);
     return hr;
   }
