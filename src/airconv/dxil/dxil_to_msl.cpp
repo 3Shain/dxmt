@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cinttypes>
+#include <cstdlib>
 #include <algorithm>
 
 #define DXTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxil_trace.log", "a"); if (_tf) { fprintf(_tf, fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
@@ -90,6 +91,62 @@ static std::string varyingField(const char *base, uint32_t signature_id) {
   case 7: return std::string(base) + ".v6";
   case 8: return std::string(base) + ".v7";
   default: return std::string(base) + ".v0";
+  }
+}
+
+static bool parseUnsignedLiteral(const std::string &text, uint32_t &value) {
+  if (text.empty())
+    return false;
+  char *end = nullptr;
+  unsigned long parsed = std::strtoul(text.c_str(), &end, 10);
+  if (!end || *end != '\0')
+    return false;
+  value = (uint32_t)parsed;
+  return true;
+}
+
+static bool isKnownDXIntrinsic(uint32_t intrinsic_id) {
+  switch (intrinsic_id) {
+  case DXOP_LoadInput:
+  case DXOP_StoreOutput:
+  case DXOP_CreateHandle:
+  case DXOP_CBufferLoadLegacy:
+  case DXOP_ThreadId:
+  case DXOP_GroupId:
+  case DXOP_ThreadIDInGroup:
+  case DXOP_FlattenedThreadIDInGroup:
+  case DXOP_BufferLoad:
+  case DXOP_BufferStore:
+  case DXOP_TextureLoad:
+  case DXOP_TextureStore:
+  case DXOP_TextureGather:
+  case DXOP_TextureSample:
+  case DXOP_TextureSampleCmp:
+  case DXOP_Barrier:
+  case DXOP_Unary:
+  case DXOP_Binary:
+  case DXOP_Tertiary:
+  case DXOP_Dot2:
+  case DXOP_Dot3:
+  case DXOP_Dot4:
+  case DXOP_MakeDouble:
+  case DXOP_SplitDouble:
+  case DXOP_RawBufferLoad:
+  case DXOP_RawBufferStore:
+  case DXOP_AtomicBinOp:
+  case DXOP_AtomicCompareExchange:
+  case DXOP_DerivCoarseX:
+  case DXOP_DerivCoarseY:
+  case DXOP_DerivFineX:
+  case DXOP_DerivFineY:
+  case DXOP_CalcLOD:
+  case DXOP_Texture2DMSGetSamplePosition:
+  case DXOPRenderTargetGetSamplePosition:
+  case DXOP_NumPrimitives:
+  case DXOP_NumOutputVertices:
+    return true;
+  default:
+    return false;
   }
 }
 
@@ -487,19 +544,22 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
     for (size_t i = 2; i < inst.operands.size(); i++)
       call_args.push_back(inst.operands[i]);
 
-    if (callee < ctx.value_table.size() && ctx.value_table[callee].substr(0, 5) == "dx.op") {
-      uint32_t intrinsic_id = 0;
-      if (call_args.size() > 0) {
-        std::string id_str = getValue(call_args[0]);
-        char *end = nullptr;
-        unsigned long parsed = std::strtoul(id_str.c_str(), &end, 10);
-        if (end && *end == '\0') {
-          intrinsic_id = (uint32_t)parsed;
-        } else {
-          ctx.unsupported_intrinsics++;
-          DXTRACE("DXIL intrinsic id is not a literal: %s", id_str.c_str());
-        }
-      }
+    uint32_t intrinsic_id = 0;
+    bool has_intrinsic_literal = false;
+    if (call_args.size() > 0) {
+      std::string id_str = getValue(call_args[0]);
+      has_intrinsic_literal = parseUnsignedLiteral(id_str, intrinsic_id);
+    }
+
+    bool named_dxop = callee < ctx.value_table.size() && ctx.value_table[callee].substr(0, 5) == "dx.op";
+    if (named_dxop && !has_intrinsic_literal) {
+      ctx.unsupported_intrinsics++;
+      std::string id_str = call_args.empty() ? "<missing>" : getValue(call_args[0]);
+      DXTRACE("DXIL intrinsic id is not a literal: %s", id_str.c_str());
+      os << "  // dx.op call without literal intrinsic id\n";
+      ensureValueTable(value_counter);
+      ctx.value_table[value_counter] = result;
+    } else if (has_intrinsic_literal && (named_dxop || isKnownDXIntrinsic(intrinsic_id))) {
       std::vector<uint32_t> remaining_args(call_args.begin() + 1, call_args.end());
 
       std::string translated = translateDXIntrinsic(ctx, intrinsic_id, remaining_args);
@@ -991,7 +1051,9 @@ std::optional<MSLShader> DXILToMSL::convert(const LLVMModule &module,
     for (size_t i = 0; i < module.constants.size(); i++) {
       uint32_t val_idx = (uint32_t)i;
       if (val_idx < ctx.value_table.size()) {
-        ctx.value_table[val_idx] = "const_" + std::to_string(i);
+        ctx.value_table[val_idx] = module.constants[i].constant_data.empty()
+          ? "const_" + std::to_string(i)
+          : module.constants[i].constant_data;
       }
     }
 

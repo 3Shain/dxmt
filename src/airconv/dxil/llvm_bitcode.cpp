@@ -1,6 +1,7 @@
 #include "llvm_bitcode.hpp"
 #include <cstdio>
 #include <cstring>
+#include <cstdint>
 #include <bitset>
 
 #define DXTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxil_trace.log", "a"); if (_tf) { fprintf(_tf, fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
@@ -144,6 +145,14 @@ static constexpr uint32_t kConstantsCode_String = 8;
 static constexpr uint32_t kConstantsCode_Cast = 11;
 static constexpr uint32_t kConstantsCode_GEP = 12;
 static constexpr uint32_t kConstantsCode_Data = 15;
+
+static int64_t decodeSignedVBR(uint64_t value) {
+  if ((value & 1) == 0)
+    return (int64_t)(value >> 1);
+  if (value != 1)
+    return -(int64_t)(value >> 1);
+  return INT64_MIN;
+}
 
 struct Abbrev {
   std::vector<std::pair<uint32_t, uint64_t>> ops;
@@ -300,6 +309,31 @@ static bool parseConstantsBlock(ParseContext &ctx) {
       v.kind = LLVMValue::Constant;
       v.type_id = cur_type;
       v.id = (uint32_t)ctx.module.constants.size();
+      if (rec_code == kConstantsCode_Integer && ops.size() > 1) {
+        v.constant_data = std::to_string(decodeSignedVBR(ops[1]));
+      } else if (rec_code == kConstantsCode_Float && ops.size() > 1) {
+        if (cur_type < ctx.module.types.size() &&
+            ctx.module.types[cur_type].kind == LLVMType::Float) {
+          float f;
+          uint32_t raw = (uint32_t)ops[1];
+          memcpy(&f, &raw, sizeof(f));
+          char buf[64];
+          snprintf(buf, sizeof(buf), "%.9gf", (double)f);
+          v.constant_data = buf;
+        } else if (cur_type < ctx.module.types.size() &&
+                   ctx.module.types[cur_type].kind == LLVMType::Double) {
+          double d;
+          uint64_t raw = ops[1];
+          memcpy(&d, &raw, sizeof(d));
+          char buf[64];
+          snprintf(buf, sizeof(buf), "%.17g", d);
+          v.constant_data = buf;
+        }
+      } else if (rec_code == kConstantsCode_Null) {
+        v.constant_data = "0";
+      } else if (rec_code == kConstantsCode_Undefined) {
+        v.constant_data = "0";
+      }
       ctx.module.constants.push_back(v);
       break;
     }
