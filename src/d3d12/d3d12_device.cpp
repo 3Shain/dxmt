@@ -18,6 +18,7 @@
 #include "util_string.hpp"
 #include "d3d12_resource.hpp"
 #include <thread>
+#include <unordered_map>
 #include <vector>
 #include <string>
 #include <d3d12.h>
@@ -603,6 +604,133 @@ private:
 
   MTLD3D12Device *m_device;
   std::unordered_map<std::wstring, ID3D12PipelineState *> m_entries;
+};
+
+class MTLD3D12ShaderCacheSession
+    : public ComObject<ID3D12ShaderCacheSession> {
+public:
+  MTLD3D12ShaderCacheSession(MTLD3D12Device *device,
+                             const D3D12_SHADER_CACHE_SESSION_DESC &desc)
+      : m_device(device), m_desc(desc) {
+    m_device->AddRef();
+    TRACE("ShaderCacheSession create mode=%u flags=0x%x max_bytes=%u max_entries=%u version=%llu",
+          (unsigned)m_desc.Mode, (unsigned)m_desc.Flags,
+          m_desc.MaximumInMemoryCacheSizeBytes,
+          m_desc.MaximumInMemoryCacheEntries,
+          (unsigned long long)m_desc.Version);
+  }
+
+  ~MTLD3D12ShaderCacheSession() { m_device->Release(); }
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppv) override {
+    if (!ppv)
+      return E_POINTER;
+    *ppv = nullptr;
+    if (riid == IID_IUnknown || riid == IID_ID3D12Object ||
+        riid == IID_ID3D12DeviceChild ||
+        riid == IID_ID3D12ShaderCacheSession) {
+      *ppv = ref(this);
+      return S_OK;
+    }
+    return E_NOINTERFACE;
+  }
+
+  HRESULT STDMETHODCALLTYPE GetPrivateData(REFGUID, UINT *, void *) override {
+    return E_NOTIMPL;
+  }
+  HRESULT STDMETHODCALLTYPE SetPrivateData(REFGUID, UINT, const void *) override {
+    return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE SetPrivateDataInterface(REFGUID,
+                                                    const IUnknown *) override {
+    return S_OK;
+  }
+  HRESULT STDMETHODCALLTYPE SetName(LPCWSTR) override { return S_OK; }
+
+  HRESULT STDMETHODCALLTYPE GetDevice(REFIID riid, void **device) override {
+    return m_device->QueryInterface(riid, device);
+  }
+
+  HRESULT STDMETHODCALLTYPE FindValue(const void *key, UINT key_size,
+                                      void *value, UINT *value_size) override {
+    if (!value_size || (!key && key_size))
+      return E_POINTER;
+    auto iter = m_values.find(key_from_bytes(key, key_size));
+    if (iter == m_values.end()) {
+      TRACE("ShaderCacheSession FindValue miss key_size=%u", key_size);
+      *value_size = 0;
+      return DXGI_ERROR_NOT_FOUND;
+    }
+
+    UINT required = static_cast<UINT>(iter->second.size());
+    if (!value) {
+      *value_size = required;
+      TRACE("ShaderCacheSession FindValue size query key_size=%u value_size=%u",
+            key_size, required);
+      return S_OK;
+    }
+    if (*value_size < required) {
+      *value_size = required;
+      TRACE("ShaderCacheSession FindValue buffer too small key_size=%u required=%u",
+            key_size, required);
+      return HRESULT_FROM_WIN32(ERROR_MORE_DATA);
+    }
+    memcpy(value, iter->second.data(), required);
+    *value_size = required;
+    TRACE("ShaderCacheSession FindValue hit key_size=%u value_size=%u",
+          key_size, required);
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE StoreValue(const void *key, UINT key_size,
+                                       const void *value,
+                                       UINT value_size) override {
+    if ((!key && key_size) || (!value && value_size))
+      return E_POINTER;
+    if (m_desc.MaximumInMemoryCacheEntries &&
+        m_values.size() >= m_desc.MaximumInMemoryCacheEntries) {
+      TRACE("ShaderCacheSession StoreValue rejected: entry limit=%u",
+            m_desc.MaximumInMemoryCacheEntries);
+      return E_OUTOFMEMORY;
+    }
+    if (m_desc.MaximumInMemoryCacheSizeBytes &&
+        value_size > m_desc.MaximumInMemoryCacheSizeBytes) {
+      TRACE("ShaderCacheSession StoreValue rejected: value_size=%u limit=%u",
+            value_size, m_desc.MaximumInMemoryCacheSizeBytes);
+      return E_OUTOFMEMORY;
+    }
+    auto &entry = m_values[key_from_bytes(key, key_size)];
+    entry.resize(value_size);
+    if (value_size)
+      memcpy(entry.data(), value, value_size);
+    TRACE("ShaderCacheSession StoreValue key_size=%u value_size=%u entries=%zu",
+          key_size, value_size, m_values.size());
+    return S_OK;
+  }
+
+  void STDMETHODCALLTYPE SetDeleteOnDestroy() override {
+    m_delete_on_destroy = true;
+    TRACE("ShaderCacheSession SetDeleteOnDestroy");
+  }
+
+  D3D12_SHADER_CACHE_SESSION_DESC *STDMETHODCALLTYPE
+  GetDesc(D3D12_SHADER_CACHE_SESSION_DESC *__ret) override {
+    if (__ret)
+      *__ret = m_desc;
+    return __ret;
+  }
+
+private:
+  static std::string key_from_bytes(const void *key, UINT key_size) {
+    if (!key || !key_size)
+      return std::string();
+    return std::string(static_cast<const char *>(key), key_size);
+  }
+
+  MTLD3D12Device *m_device;
+  D3D12_SHADER_CACHE_SESSION_DESC m_desc;
+  std::unordered_map<std::string, std::vector<uint8_t>> m_values;
+  bool m_delete_on_destroy = false;
 };
 
 const D3D12_COMMAND_SIGNATURE_DESC *
@@ -1206,7 +1334,10 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     auto *sc = (D3D12_FEATURE_DATA_SHADER_CACHE *)feature_data;
     if (feature_data_size < sizeof(*sc))
       return E_INVALIDARG;
-    sc->SupportFlags = D3D12_SHADER_CACHE_SUPPORT_NONE;
+    sc->SupportFlags = (D3D12_SHADER_CACHE_SUPPORT_FLAGS)(
+        D3D12_SHADER_CACHE_SUPPORT_SINGLE_PSO |
+        D3D12_SHADER_CACHE_SUPPORT_LIBRARY);
+    TRACE("  SHADER_CACHE: SupportFlags=0x%x", (unsigned)sc->SupportFlags);
     return S_OK;
   }
   case D3D12_FEATURE_D3D12_OPTIONS3: {
@@ -2743,15 +2874,27 @@ void STDMETHODCALLTYPE MTLD3D12Device::GetCopyableFootprints1(
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateShaderCacheSession(
     const D3D12_SHADER_CACHE_SESSION_DESC *desc, REFIID riid,
     void **session) {
-  TRACE("ID3D12Device9::CreateShaderCacheSession -> E_NOTIMPL");
-  return E_NOTIMPL;
+  if (!desc || !session)
+    return E_POINTER;
+  InitReturnPtr(session);
+  TRACE("ID3D12Device9::CreateShaderCacheSession mode=%u flags=0x%x riid=%s",
+        (unsigned)desc->Mode, (unsigned)desc->Flags,
+        str::format(riid).c_str());
+  auto *cache = new MTLD3D12ShaderCacheSession(this, *desc);
+  HRESULT hr = cache->QueryInterface(riid, session);
+  if (FAILED(hr))
+    delete cache;
+  TRACE("ID3D12Device9::CreateShaderCacheSession -> 0x%lx session=%p", hr,
+        session ? *session : nullptr);
+  return hr;
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::ShaderCacheControl(
     D3D12_SHADER_CACHE_KIND_FLAGS kinds,
     D3D12_SHADER_CACHE_CONTROL_FLAGS control) {
-  TRACE("ID3D12Device9::ShaderCacheControl -> E_NOTIMPL");
-  return E_NOTIMPL;
+  TRACE("ID3D12Device9::ShaderCacheControl kinds=0x%x control=0x%x -> S_OK",
+        (unsigned)kinds, (unsigned)control);
+  return S_OK;
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateCommandQueue1(
