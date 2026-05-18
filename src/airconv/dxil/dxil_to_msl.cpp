@@ -50,6 +50,39 @@ enum DXIntrinsicOpcode {
   DXOP_NumOutputVertices = 110,
 };
 
+enum DXILMathOpcode {
+  DXILOP_FAbs = 6,
+  DXILOP_Saturate = 7,
+  DXILOP_IsNaN = 8,
+  DXILOP_IsInf = 9,
+  DXILOP_IsFinite = 10,
+  DXILOP_Cos = 12,
+  DXILOP_Sin = 13,
+  DXILOP_Tan = 14,
+  DXILOP_Acos = 15,
+  DXILOP_Asin = 16,
+  DXILOP_Atan = 17,
+  DXILOP_Exp = 21,
+  DXILOP_Frc = 22,
+  DXILOP_Log = 23,
+  DXILOP_Sqrt = 24,
+  DXILOP_Rsqrt = 25,
+  DXILOP_Round_ne = 26,
+  DXILOP_Round_ni = 27,
+  DXILOP_Round_pi = 28,
+  DXILOP_Round_z = 29,
+  DXILOP_FMax = 35,
+  DXILOP_FMin = 36,
+  DXILOP_IMax = 37,
+  DXILOP_IMin = 38,
+  DXILOP_UMax = 39,
+  DXILOP_UMin = 40,
+  DXILOP_FMad = 46,
+  DXILOP_Fma = 47,
+  DXILOP_IMad = 48,
+  DXILOP_UMad = 49,
+};
+
 static const char *kMetalHeader = R"(#include <metal_stdlib>
 using namespace metal;
 
@@ -103,6 +136,21 @@ static bool parseUnsignedLiteral(const std::string &text, uint32_t &value) {
     return false;
   value = (uint32_t)parsed;
   return true;
+}
+
+static bool startsWith(const std::string &text, const char *prefix) {
+  return text.rfind(prefix, 0) == 0;
+}
+
+static std::string resolveBindingName(const std::string &handle, const char *target_prefix) {
+  const char *prefixes[] = {"srv", "uav", "cbuf", "buf", "tex", "samp"};
+  for (auto *prefix : prefixes) {
+    if (startsWith(handle, prefix)) {
+      const char *suffix = handle.c_str() + std::strlen(prefix);
+      return std::string(target_prefix) + suffix;
+    }
+  }
+  return handle;
 }
 
 static bool isKnownDXIntrinsic(uint32_t intrinsic_id) {
@@ -355,24 +403,43 @@ void DXILToMSL::emitFunctionPrologue(EmitContext &ctx) {
 
 std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic_id,
                                               const std::vector<uint32_t> &args) {
+  auto valueArg = [&](size_t arg, const char *fallback) -> std::string {
+    if (arg >= args.size())
+      return fallback;
+    uint32_t idx = args[arg];
+    if (idx < ctx.value_table.size() && !ctx.value_table[idx].empty())
+      return ctx.value_table[idx];
+    return fallback;
+  };
+
+  auto literalArg = [&](size_t arg, uint32_t fallback, const char *label) -> uint32_t {
+    std::string text = valueArg(arg, "");
+    uint32_t value = 0;
+    if (parseUnsignedLiteral(text, value))
+      return value;
+    DXTRACE("DXIL intrinsic %u: %s is not a literal: %s",
+            intrinsic_id, label, text.empty() ? "<missing>" : text.c_str());
+    return fallback;
+  };
+
   switch (intrinsic_id) {
   case DXOP_CreateHandle: {
-    if (args.size() < 5) return "0";
-    uint32_t resource_class = args[1];
-    uint32_t range_id = args[2];
-    uint32_t index = args[3];
-    bool non_uniform = args[4] != 0;
+    if (args.size() < 4) return "0";
+    uint32_t resource_class = literalArg(0, 0, "resource class");
+    uint32_t range_id = literalArg(1, 0, "range id");
+    uint32_t index = literalArg(2, 0, "resource index");
+    bool non_uniform = literalArg(3, 0, "non-uniform index") != 0;
     (void)non_uniform;
     ctx.next_binding++;
     std::string res_name;
     if (resource_class == 0) {
-      res_name = "buf" + std::to_string(range_id);
+      res_name = "srv" + std::to_string(range_id);
     } else if (resource_class == 1) {
-      res_name = "samp" + std::to_string(range_id);
+      res_name = "uav" + std::to_string(range_id);
     } else if (resource_class == 2) {
-      res_name = "tex" + std::to_string(range_id);
+      res_name = "cbuf" + std::to_string(range_id);
     } else if (resource_class == 3) {
-      res_name = "buf" + std::to_string(range_id);
+      res_name = "samp" + std::to_string(range_id);
     } else {
       res_name = "buf" + std::to_string(range_id);
     }
@@ -383,7 +450,7 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
   case DXOP_ThreadId: {
     ctx.uses_thread_id = true;
     if (!args.empty()) {
-      uint32_t component = args[0];
+      uint32_t component = literalArg(0, 0, "thread id component");
       if (component == 0) return "(int)dtid.x";
       if (component == 1) return "(int)dtid.y";
       if (component == 2) return "(int)dtid.z";
@@ -394,7 +461,7 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
   case DXOP_GroupId: {
     ctx.uses_group_id = true;
     if (!args.empty()) {
-      uint32_t component = args[0];
+      uint32_t component = literalArg(0, 0, "group id component");
       if (component == 0) return "(int)ggid.x";
       if (component == 1) return "(int)ggid.y";
       if (component == 2) return "(int)ggid.z";
@@ -405,7 +472,7 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
   case DXOP_ThreadIDInGroup: {
     ctx.uses_group_thread_id = true;
     if (!args.empty()) {
-      uint32_t component = args[0];
+      uint32_t component = literalArg(0, 0, "group thread id component");
       if (component == 0) return "(int)gtid.x";
       if (component == 1) return "(int)gtid.y";
       if (component == 2) return "(int)gtid.z";
@@ -415,31 +482,34 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
 
   case DXOP_CBufferLoadLegacy: {
     if (args.size() < 2) return "float4(0)";
-    auto handle = args[0] < ctx.value_table.size() ? ctx.value_table[args[0]] : "buf0";
-    auto reg_idx = args[1] < ctx.value_table.size() ? ctx.value_table[args[1]] : "0";
+    auto handle = resolveBindingName(valueArg(0, "cbuf0"), "buf");
+    auto reg_idx = valueArg(1, "0");
     return "(reinterpret_cast<device float4&>(" + handle + "[(" + reg_idx + ")*64]))";
   }
 
   case DXOP_BufferLoad: {
     if (args.size() < 3) return "float4(0)";
-    auto handle = args[0] < ctx.value_table.size() ? ctx.value_table[args[0]] : "buf0";
-    auto index = args[1] < ctx.value_table.size() ? ctx.value_table[args[1]] : "0";
-    auto w = args.size() > 2 && args[2] < ctx.value_table.size() ? ctx.value_table[args[2]] : "0";
+    auto handle = resolveBindingName(valueArg(0, "srv0"), "buf");
+    auto index = valueArg(1, "0");
     return "(reinterpret_cast<device float4&>(" + handle + "[(" + index + ")*16]))";
   }
 
   case DXOP_TextureLoad: {
     if (args.size() < 3) return "float4(0)";
-    auto handle = args[0] < ctx.value_table.size() ? ctx.value_table[args[0]] : "tex0";
-    auto coord = args[2] < ctx.value_table.size() ? ctx.value_table[args[2]] : "int2(0)";
+    auto handle = resolveBindingName(valueArg(0, "srv0"), "tex");
+    auto coord_x = valueArg(2, "0");
+    auto coord_y = valueArg(3, "0");
+    auto coord = "uint2(" + coord_x + ", " + coord_y + ")";
     return handle + ".read(" + coord + ")";
   }
 
   case DXOP_TextureSample: {
     if (args.size() < 4) return "float4(0)";
-    auto handle = args[0] < ctx.value_table.size() ? ctx.value_table[args[0]] : "tex0";
-    auto sampler = args.size() > 1 && args[1] < ctx.value_table.size() ? ctx.value_table[args[1]] : "samp0";
-    auto coord = args[2] < ctx.value_table.size() ? ctx.value_table[args[2]] : "float2(0)";
+    auto handle = resolveBindingName(valueArg(0, "srv0"), "tex");
+    auto sampler = resolveBindingName(valueArg(1, "samp0"), "samp");
+    auto coord_x = valueArg(2, "0.0");
+    auto coord_y = valueArg(3, "0.0");
+    auto coord = "float2(" + coord_x + ", " + coord_y + ")";
     return handle + ".sample(" + sampler + ", " + coord + ")";
   }
 
@@ -447,31 +517,112 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     return "threadgroup_barrier(mem_flags::mem_threadgroup)";
   }
 
+  case DXOP_Unary: {
+    if (args.size() < 2) return "0";
+    uint32_t op = literalArg(0, 0xFFFFFFFFu, "unary opcode");
+    auto x = valueArg(1, "0.0");
+    switch (op) {
+    case DXILOP_FAbs: return "abs(" + x + ")";
+    case DXILOP_Saturate: return "clamp(" + x + ", 0.0, 1.0)";
+    case DXILOP_IsNaN: return "isnan(" + x + ")";
+    case DXILOP_IsInf: return "isinf(" + x + ")";
+    case DXILOP_IsFinite: return "isfinite(" + x + ")";
+    case DXILOP_Cos: return "cos(" + x + ")";
+    case DXILOP_Sin: return "sin(" + x + ")";
+    case DXILOP_Tan: return "tan(" + x + ")";
+    case DXILOP_Acos: return "acos(" + x + ")";
+    case DXILOP_Asin: return "asin(" + x + ")";
+    case DXILOP_Atan: return "atan(" + x + ")";
+    case DXILOP_Exp: return "exp2(" + x + ")";
+    case DXILOP_Frc: return "fract(" + x + ")";
+    case DXILOP_Log: return "log2(" + x + ")";
+    case DXILOP_Sqrt: return "sqrt(" + x + ")";
+    case DXILOP_Rsqrt: return "rsqrt(" + x + ")";
+    case DXILOP_Round_ne: return "rint(" + x + ")";
+    case DXILOP_Round_ni: return "floor(" + x + ")";
+    case DXILOP_Round_pi: return "ceil(" + x + ")";
+    case DXILOP_Round_z: return "trunc(" + x + ")";
+    default:
+      ctx.unsupported_intrinsics++;
+      DXTRACE("DXIL unknown unary opcode: %u", op);
+      return x;
+    }
+  }
+
+  case DXOP_Binary: {
+    if (args.size() < 3) return "0";
+    uint32_t op = literalArg(0, 0xFFFFFFFFu, "binary opcode");
+    auto a = valueArg(1, "0");
+    auto b = valueArg(2, "0");
+    switch (op) {
+    case DXILOP_FMax:
+    case DXILOP_IMax: return "max(" + a + ", " + b + ")";
+    case DXILOP_FMin:
+    case DXILOP_IMin: return "min(" + a + ", " + b + ")";
+    case DXILOP_UMax: return "max((uint)(" + a + "), (uint)(" + b + "))";
+    case DXILOP_UMin: return "min((uint)(" + a + "), (uint)(" + b + "))";
+    default:
+      ctx.unsupported_intrinsics++;
+      DXTRACE("DXIL unknown binary opcode: %u", op);
+      return a;
+    }
+  }
+
+  case DXOP_Tertiary: {
+    if (args.size() < 4) return "0";
+    uint32_t op = literalArg(0, 0xFFFFFFFFu, "tertiary opcode");
+    auto a = valueArg(1, "0");
+    auto b = valueArg(2, "0");
+    auto c = valueArg(3, "0");
+    switch (op) {
+    case DXILOP_FMad:
+    case DXILOP_Fma: return "fma(" + a + ", " + b + ", " + c + ")";
+    case DXILOP_IMad:
+    case DXILOP_UMad: return "((" + a + ") * (" + b + ") + (" + c + "))";
+    default:
+      ctx.unsupported_intrinsics++;
+      DXTRACE("DXIL unknown tertiary opcode: %u", op);
+      return a;
+    }
+  }
+
   case DXOP_Dot2: {
-    if (args.size() < 3) return "0.0";
-    auto a = args[1] < ctx.value_table.size() ? ctx.value_table[args[1]] : "float2(0)";
-    auto b = args[2] < ctx.value_table.size() ? ctx.value_table[args[2]] : "float2(0)";
-    return "dot(" + a + ", " + b + ")";
+    if (args.size() < 4) return "0.0";
+    auto ax = valueArg(0, "0.0");
+    auto ay = valueArg(1, "0.0");
+    auto bx = valueArg(2, "0.0");
+    auto by = valueArg(3, "0.0");
+    return "((" + ax + ")*(" + bx + ") + (" + ay + ")*(" + by + "))";
   }
 
   case DXOP_Dot3: {
-    if (args.size() < 3) return "0.0";
-    auto a = args[1] < ctx.value_table.size() ? ctx.value_table[args[1]] : "float3(0)";
-    auto b = args[2] < ctx.value_table.size() ? ctx.value_table[args[2]] : "float3(0)";
-    return "dot(" + a + ", " + b + ")";
+    if (args.size() < 6) return "0.0";
+    auto ax = valueArg(0, "0.0");
+    auto ay = valueArg(1, "0.0");
+    auto az = valueArg(2, "0.0");
+    auto bx = valueArg(3, "0.0");
+    auto by = valueArg(4, "0.0");
+    auto bz = valueArg(5, "0.0");
+    return "((" + ax + ")*(" + bx + ") + (" + ay + ")*(" + by + ") + (" + az + ")*(" + bz + "))";
   }
 
   case DXOP_Dot4: {
-    if (args.size() < 3) return "0.0";
-    auto a = args[1] < ctx.value_table.size() ? ctx.value_table[args[1]] : "float4(0)";
-    auto b = args[2] < ctx.value_table.size() ? ctx.value_table[args[2]] : "float4(0)";
-    return "dot(" + a + ", " + b + ")";
+    if (args.size() < 8) return "0.0";
+    auto ax = valueArg(0, "0.0");
+    auto ay = valueArg(1, "0.0");
+    auto az = valueArg(2, "0.0");
+    auto aw = valueArg(3, "0.0");
+    auto bx = valueArg(4, "0.0");
+    auto by = valueArg(5, "0.0");
+    auto bz = valueArg(6, "0.0");
+    auto bw = valueArg(7, "0.0");
+    return "((" + ax + ")*(" + bx + ") + (" + ay + ")*(" + by + ") + (" + az + ")*(" + bz + ") + (" + aw + ")*(" + bw + "))";
   }
 
   case DXOP_LoadInput: {
     if (args.size() < 3) return "0.0";
-    uint32_t input_id = args[0];
-    uint32_t component = args[2];
+    uint32_t input_id = literalArg(0, 0, "input id");
+    uint32_t component = literalArg(2, 0, "input component");
     if (ctx.shader.kind == DxilShaderKind::Pixel) {
       return varyingField("in", input_id) + componentSuffix(component);
     }
@@ -482,9 +633,9 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
 
   case DXOP_StoreOutput: {
     if (args.size() < 4) return "";
-    uint32_t output_id = args[0];
-    uint32_t component = args[2];
-    auto val = args[3] < ctx.value_table.size() ? ctx.value_table[args[3]] : "float4(0)";
+    uint32_t output_id = literalArg(0, 0, "output id");
+    uint32_t component = literalArg(2, 0, "output component");
+    auto val = valueArg(3, "float4(0)");
 
     if (ctx.shader.kind == DxilShaderKind::Vertex) {
       return varyingField("out", output_id) + componentSuffix(component) + " = " + val;
