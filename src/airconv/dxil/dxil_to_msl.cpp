@@ -14,6 +14,10 @@ enum DXIntrinsicOpcode {
   DXOP_LoadInput = 4,
   DXOP_StoreOutput = 5,
   DXOP_CreateHandle = 57,
+  DXOP_CreateHandleForLib = 160,
+  DXOP_AnnotateHandle = 216,
+  DXOP_CreateHandleFromBinding = 217,
+  DXOP_CreateHandleFromHeap = 218,
   DXOP_CBufferLoadLegacy = 59,
   DXOP_ThreadId = 93,
   DXOP_GroupId = 94,
@@ -174,6 +178,10 @@ static bool isKnownDXIntrinsic(uint32_t intrinsic_id) {
   case DXOP_LoadInput:
   case DXOP_StoreOutput:
   case DXOP_CreateHandle:
+  case DXOP_CreateHandleForLib:
+  case DXOP_AnnotateHandle:
+  case DXOP_CreateHandleFromBinding:
+  case DXOP_CreateHandleFromHeap:
   case DXOP_CBufferLoadLegacy:
   case DXOP_ThreadId:
   case DXOP_GroupId:
@@ -460,6 +468,45 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
       res_name = "buf" + std::to_string(range_id);
     }
     DXTRACE("DXIL CreateHandle: class=%u range=%u index=%u -> %s", resource_class, range_id, index, res_name.c_str());
+    return res_name;
+  }
+
+  case DXOP_CreateHandleForLib: {
+    auto handle = valueArg(0, "srv0");
+    DXTRACE("DXIL CreateHandleForLib: %s", handle.c_str());
+    return handle;
+  }
+
+  case DXOP_AnnotateHandle: {
+    auto handle = valueArg(0, "srv0");
+    DXTRACE("DXIL AnnotateHandle: %s", handle.c_str());
+    return handle;
+  }
+
+  case DXOP_CreateHandleFromBinding: {
+    uint32_t index = args.size() >= 2
+                         ? literalArg(1, 0, "binding resource index")
+                         : 0;
+    bool non_uniform = args.size() >= 3 &&
+                       literalArg(2, 0, "binding non-uniform index") != 0;
+    (void)non_uniform;
+    std::string res_name = "srv" + std::to_string(index);
+    DXTRACE("DXIL CreateHandleFromBinding: index=%u -> %s", index,
+            res_name.c_str());
+    return res_name;
+  }
+
+  case DXOP_CreateHandleFromHeap: {
+    uint32_t heap_index = literalArg(0, 0, "heap index");
+    bool sampler_heap = args.size() >= 2 &&
+                        literalArg(1, 0, "sampler heap") != 0;
+    bool non_uniform = args.size() >= 3 &&
+                       literalArg(2, 0, "heap non-uniform index") != 0;
+    (void)non_uniform;
+    std::string res_name = std::string(sampler_heap ? "samp" : "srv") +
+                           std::to_string(heap_index);
+    DXTRACE("DXIL CreateHandleFromHeap: heap_index=%u sampler=%d -> %s",
+            heap_index, sampler_heap, res_name.c_str());
     return res_name;
   }
 
