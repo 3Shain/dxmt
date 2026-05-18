@@ -127,7 +127,9 @@ static constexpr uint32_t kTypeCode_Byte = 27;
 
 static constexpr uint32_t kModuleCode_Function = 8;
 static constexpr uint32_t kModuleCode_GlobalVar = 7;
-static constexpr uint32_t kModuleCode_VSTOffset = 19;
+static constexpr uint32_t kModuleCode_Triple = 2;
+static constexpr uint32_t kModuleCode_VSTOffset = 13;
+static constexpr uint32_t kModuleCode_SourceFilename = 16;
 
 static constexpr uint32_t kValueSymTabCode_Entry = 1;
 static constexpr uint32_t kValueSymTabCode_BBEntry = 2;
@@ -297,6 +299,17 @@ static std::string recordString(const std::vector<uint64_t> &ops, size_t first) 
     text.push_back((char)(ops[i] & 0xff));
   }
   return text;
+}
+
+static bool isPrintableString(const std::string &text) {
+  if (text.empty())
+    return false;
+  for (char c : text) {
+    unsigned char ch = (unsigned char)c;
+    if (ch < 0x20 || ch >= 0x7f)
+      return false;
+  }
+  return true;
 }
 
 struct SubBlockHeader {
@@ -1170,7 +1183,22 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
       continue;
 
     uint32_t rec_code = (uint32_t)ops[0];
-    if (rec_code == kModuleCode_Function) {
+    if (rec_code == kModuleCode_Triple) {
+      auto triple = recordString(ops, 1);
+      if (isPrintableString(triple)) {
+        module.target_triple = triple;
+        DXTRACE("DXIL module triple=%s", module.target_triple.c_str());
+      }
+    } else if (rec_code == kModuleCode_SourceFilename) {
+      auto source = recordString(ops, 1);
+      if (isPrintableString(source)) {
+        module.source_filename = source;
+        DXTRACE("DXIL module source=%s", module.source_filename.c_str());
+      }
+    } else if (rec_code == kModuleCode_VSTOffset && ops.size() > 1) {
+      DXTRACE("DXIL module VST offset word=%llu",
+              (unsigned long long)ops[1]);
+    } else if (rec_code == kModuleCode_Function) {
       size_t record_base = 1;
       if (ops.size() > 5 && isFunctionTypeRef(module, (uint32_t)ops[3]) &&
           ops[5] <= 1)
