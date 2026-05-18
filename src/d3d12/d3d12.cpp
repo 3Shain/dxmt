@@ -48,6 +48,16 @@ constexpr GUID kCLSID_D3D12StateObjectFactory = {
     0x1303,
     0x4112,
     {0xbf, 0x8e, 0x7b, 0xf2, 0xbb, 0x60, 0x6a, 0x73}};
+constexpr GUID kCLSID_D3D12RuntimeValidationControl = {
+    0xe5b53e74,
+    0x3fca,
+    0x47b4,
+    {0x88, 0xb9, 0xa8, 0xb4, 0x1e, 0xf8, 0xfb, 0x73}};
+constexpr GUID kCLSID_D3D12ApplicationIdentity = {
+    0x08d8e1e8,
+    0x75a6,
+    0x42a7,
+    {0xbf, 0x3a, 0xd0, 0x5f, 0xe5, 0x29, 0xc4, 0x7c}};
 constexpr GUID kIID_ID3D12StateObjectDatabase = {
     0xc56060b7,
     0xb5fc,
@@ -58,6 +68,16 @@ constexpr GUID kIID_ID3D12StateObjectDatabaseFactory = {
     0x648a,
     0x4611,
     {0xbd, 0x41, 0x27, 0xfd, 0x09, 0x48, 0xb9, 0xeb}};
+constexpr GUID kIID_ID3D12RuntimeValidationControl = {
+    0xc706c811,
+    0x3663,
+    0x4bf1,
+    {0x91, 0xb9, 0x1e, 0x8a, 0x7c, 0x11, 0x4a, 0xb9}};
+constexpr GUID kIID_ID3D12ApplicationIdentity = {
+    0x82dc6c85,
+    0x727b,
+    0x4a8d,
+    {0x91, 0x69, 0xdb, 0x6c, 0xe3, 0xe9, 0x75, 0xa0}};
 
 struct ID3D12SDKConfiguration : public IUnknown {
   virtual HRESULT STDMETHODCALLTYPE SetSDKVersion(UINT SDKVersion,
@@ -95,6 +115,12 @@ struct ID3D12DeviceFactoryCompat : public IUnknown {
                                                 void **device) = 0;
 };
 
+struct ID3D12RuntimeValidationControlCompat : public IUnknown {
+  virtual HRESULT STDMETHODCALLTYPE DisableFailuresFromStricterValidationInAppLocalRuntime(
+      BOOL disable) = 0;
+  virtual BOOL STDMETHODCALLTYPE FailuresFromStricterValidationInAppLocalRuntimeDisabled() = 0;
+};
+
 union D3D12VersionNumberCompat {
   UINT64 Version;
   UINT16 VersionParts[4];
@@ -106,6 +132,11 @@ struct D3D12ApplicationDescCompat {
   D3D12VersionNumberCompat Version;
   LPCWSTR pEngineName;
   D3D12VersionNumberCompat EngineVersion;
+};
+
+struct ID3D12ApplicationIdentityCompat : public IUnknown {
+  virtual HRESULT STDMETHODCALLTYPE SetApplicationIdentity(
+      const D3D12ApplicationDescCompat *desc, REFGUID app_id) = 0;
 };
 
 typedef void(STDMETHODCALLTYPE *D3D12ApplicationDescFuncCompat)(
@@ -464,6 +495,88 @@ public:
     HRESULT hr = database->QueryInterface(riid, state_object_database);
     database->Release();
     return hr;
+  }
+
+private:
+  std::atomic<ULONG> m_ref = {1};
+};
+
+class MTLD3D12RuntimeValidationControl final
+    : public ID3D12RuntimeValidationControlCompat {
+public:
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppv) override {
+    if (!ppv)
+      return E_POINTER;
+    *ppv = nullptr;
+    if (riid == IID_IUnknown || riid == kIID_ID3D12RuntimeValidationControl) {
+      *ppv = this;
+      AddRef();
+      return S_OK;
+    }
+    return E_NOINTERFACE;
+  }
+
+  ULONG STDMETHODCALLTYPE AddRef() override { return ++m_ref; }
+
+  ULONG STDMETHODCALLTYPE Release() override {
+    ULONG ref = --m_ref;
+    if (!ref)
+      delete this;
+    return ref;
+  }
+
+  HRESULT STDMETHODCALLTYPE DisableFailuresFromStricterValidationInAppLocalRuntime(
+      BOOL disable) override {
+    m_disabled = disable;
+    TraceAgility("RuntimeValidationControl::DisableFailuresFromStricterValidationInAppLocalRuntime disabled=%d",
+                 disable);
+    return S_OK;
+  }
+
+  BOOL STDMETHODCALLTYPE FailuresFromStricterValidationInAppLocalRuntimeDisabled() override {
+    TraceAgility("RuntimeValidationControl::FailuresFromStricterValidationInAppLocalRuntimeDisabled -> %d",
+                 m_disabled);
+    return m_disabled;
+  }
+
+private:
+  std::atomic<ULONG> m_ref = {1};
+  BOOL m_disabled = FALSE;
+};
+
+class MTLD3D12ApplicationIdentity final
+    : public ID3D12ApplicationIdentityCompat {
+public:
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppv) override {
+    if (!ppv)
+      return E_POINTER;
+    *ppv = nullptr;
+    if (riid == IID_IUnknown || riid == kIID_ID3D12ApplicationIdentity) {
+      *ppv = this;
+      AddRef();
+      return S_OK;
+    }
+    return E_NOINTERFACE;
+  }
+
+  ULONG STDMETHODCALLTYPE AddRef() override { return ++m_ref; }
+
+  ULONG STDMETHODCALLTYPE Release() override {
+    ULONG ref = --m_ref;
+    if (!ref)
+      delete this;
+    return ref;
+  }
+
+  HRESULT STDMETHODCALLTYPE SetApplicationIdentity(
+      const D3D12ApplicationDescCompat *desc, REFGUID app_id) override {
+    if (!desc)
+      return E_INVALIDARG;
+    TraceAgility("ApplicationIdentity::SetApplicationIdentity name=%ls engine=%ls app_id=%s",
+                 desc->pName ? desc->pName : L"(null)",
+                 desc->pEngineName ? desc->pEngineName : L"(null)",
+                 dxmt::str::format(app_id).c_str());
+    return S_OK;
   }
 
 private:
@@ -1424,6 +1537,22 @@ extern "C" HRESULT WINAPI D3D12GetInterface(REFCLSID clsid, REFIID riid,
     HRESULT hr = factory->QueryInterface(riid, ppv);
     factory->Release();
     TraceAgility("D3D12GetInterface StateObjectFactory riid=%s -> 0x%lx out=%p",
+                 str::format(riid).c_str(), hr, ppv ? *ppv : nullptr);
+    return hr;
+  }
+  if (clsid == kCLSID_D3D12RuntimeValidationControl) {
+    auto *control = new MTLD3D12RuntimeValidationControl();
+    HRESULT hr = control->QueryInterface(riid, ppv);
+    control->Release();
+    TraceAgility("D3D12GetInterface RuntimeValidationControl riid=%s -> 0x%lx out=%p",
+                 str::format(riid).c_str(), hr, ppv ? *ppv : nullptr);
+    return hr;
+  }
+  if (clsid == kCLSID_D3D12ApplicationIdentity) {
+    auto *identity = new MTLD3D12ApplicationIdentity();
+    HRESULT hr = identity->QueryInterface(riid, ppv);
+    identity->Release();
+    TraceAgility("D3D12GetInterface ApplicationIdentity riid=%s -> 0x%lx out=%p",
                  str::format(riid).c_str(), hr, ppv ? *ppv : nullptr);
     return hr;
   }
