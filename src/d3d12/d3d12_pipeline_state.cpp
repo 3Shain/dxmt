@@ -194,16 +194,19 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
   if (bytecode && size >= 4) {
     auto *magic = (const uint32_t *)bytecode;
     PSTRACE("CompileShader: %s size=%zu magic=0x%08x (DXBC=0x43425844 DXIL=0x4C495844)", func_name, size, *magic);
-    if (*magic == 0x43425844 && size >= 20) {
+    if (*magic == 0x43425844 && size >= 32) {
       auto *chunks = (const uint32_t *)bytecode;
-      uint32_t num_chunks = chunks[4];
-      PSTRACE("  DXBC: num_chunks=%u", num_chunks);
+      uint32_t container_size = chunks[6];
+      uint32_t num_chunks = chunks[7];
+      PSTRACE("  DXBC: container_size=%u num_chunks=%u", container_size, num_chunks);
       for (uint32_t i = 0; i < num_chunks && i < 16; i++) {
-        uint32_t offset = chunks[5 + i];
+        uint32_t offset = chunks[8 + i];
         if (offset + 8 <= size) {
           char tag[5] = {};
           memcpy(tag, (const char *)bytecode + offset, 4);
-          uint32_t chunk_size = *((const uint32_t *)bytecode + offset/4 + 1);
+          uint32_t chunk_size = 0;
+          memcpy(&chunk_size, (const char *)bytecode + offset + 4,
+                 sizeof(chunk_size));
           PSTRACE("  chunk[%u]: tag='%s' offset=%u size=%u", i, tag, offset, chunk_size);
         }
       }

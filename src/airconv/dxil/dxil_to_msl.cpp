@@ -18,6 +18,7 @@ enum DXIntrinsicOpcode {
   DXOP_AnnotateHandle = 216,
   DXOP_CreateHandleFromBinding = 217,
   DXOP_CreateHandleFromHeap = 218,
+  DXOP_CBufferLoad = 58,
   DXOP_CBufferLoadLegacy = 59,
   DXOP_ThreadId = 93,
   DXOP_GroupId = 94,
@@ -29,6 +30,8 @@ enum DXIntrinsicOpcode {
   DXOP_TextureStore = 67,
   DXOP_TextureStoreSample = 225,
   DXOP_TextureGather = 73,
+  DXOP_TextureGatherCmp = 74,
+  DXOP_TextureGatherRaw = 223,
   DXOP_TextureSample = 60,
   DXOP_TextureSampleBias = 61,
   DXOP_TextureSampleLevel = 62,
@@ -224,6 +227,7 @@ static bool isKnownDXIntrinsic(uint32_t intrinsic_id) {
   case DXOP_AnnotateHandle:
   case DXOP_CreateHandleFromBinding:
   case DXOP_CreateHandleFromHeap:
+  case DXOP_CBufferLoad:
   case DXOP_CBufferLoadLegacy:
   case DXOP_ThreadId:
   case DXOP_GroupId:
@@ -235,6 +239,8 @@ static bool isKnownDXIntrinsic(uint32_t intrinsic_id) {
   case DXOP_TextureStore:
   case DXOP_TextureStoreSample:
   case DXOP_TextureGather:
+  case DXOP_TextureGatherCmp:
+  case DXOP_TextureGatherRaw:
   case DXOP_TextureSample:
   case DXOP_TextureSampleBias:
   case DXOP_TextureSampleLevel:
@@ -610,6 +616,7 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     return "(int)(gtid.x + gtid.y * gsz.x + gtid.z * gsz.x * gsz.y)";
   }
 
+  case DXOP_CBufferLoad:
   case DXOP_CBufferLoadLegacy: {
     if (args.size() < 2) return "float4(0)";
     auto handle = resolveBindingName(valueArg(0, "cbuf0"), "buf");
@@ -688,10 +695,14 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     auto handle = resolveBindingName(valueArg(0, "uav0"), "tex");
     auto coord_x = valueArg(1, "0");
     auto coord_y = valueArg(2, "0");
-    auto value_x = valueArg(4, "0.0");
-    auto value_y = valueArg(5, "0.0");
-    auto value_z = valueArg(6, "0.0");
-    auto value_w = valueArg(7, "0.0");
+    size_t value_base = intrinsic_id == DXOP_TextureStoreSample ? 5 : 4;
+    auto value_x = valueArg(value_base + 0, "0.0");
+    auto value_y = valueArg(value_base + 1, "0.0");
+    auto value_z = valueArg(value_base + 2, "0.0");
+    auto value_w = valueArg(value_base + 3, "0.0");
+    if (intrinsic_id == DXOP_TextureStoreSample) {
+      DXTRACE("DXIL TextureStoreSample lowered without explicit sample index");
+    }
     return handle + ".write(float4(" + value_x + ", " + value_y + ", " +
            value_z + ", " + value_w + "), uint2(" + coord_x + ", " +
            coord_y + "))";
@@ -717,13 +728,20 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     return handle + ".sample(" + sampler + ", " + coord + ")";
   }
 
-  case DXOP_TextureGather: {
+  case DXOP_TextureGather:
+  case DXOP_TextureGatherCmp:
+  case DXOP_TextureGatherRaw: {
     if (args.size() < 4) return "float4(0)";
     auto handle = resolveBindingName(valueArg(0, "srv0"), "tex");
     auto sampler = resolveBindingName(valueArg(1, "samp0"), "samp");
     auto coord_x = valueArg(2, "0.0");
     auto coord_y = valueArg(3, "0.0");
     uint32_t channel = args.size() > 8 ? literalArg(8, 0, "gather channel") : 0;
+    if (intrinsic_id == DXOP_TextureGatherCmp) {
+      DXTRACE("DXIL TextureGatherCmp lowered without explicit compare");
+    } else if (intrinsic_id == DXOP_TextureGatherRaw) {
+      DXTRACE("DXIL TextureGatherRaw lowered through typed gather");
+    }
     return handle + ".gather(" + sampler + ", float2(" + coord_x + ", " +
            coord_y + "), component::" + componentName(channel) + ")";
   }
