@@ -182,6 +182,86 @@ struct D3D12RasterizerDesc2 {
   D3D12_CONSERVATIVE_RASTERIZATION_MODE ConservativeRaster;
 };
 
+struct D3D12FeatureOptions12 {
+  INT MSPrimitivesPipelineStatisticIncludesCulledPrimitives;
+  BOOL EnhancedBarriersSupported;
+  BOOL RelaxedFormatCastingSupported;
+};
+
+struct D3D12FeatureOptions13 {
+  BOOL UnrestrictedBufferTextureCopyPitchSupported;
+  BOOL UnrestrictedVertexElementAlignmentSupported;
+  BOOL InvertedViewportHeightFlipsYSupported;
+  BOOL InvertedViewportDepthFlipsZSupported;
+  BOOL TextureCopyBetweenDimensionsSupported;
+  BOOL AlphaBlendFactorSupported;
+};
+
+struct D3D12FeatureOptions14 {
+  BOOL AdvancedTextureOpsSupported;
+  BOOL WriteableMSAATexturesSupported;
+  BOOL IndependentFrontAndBackStencilRefMaskSupported;
+};
+
+struct D3D12FeatureOptions15 {
+  BOOL TriangleFanSupported;
+  BOOL DynamicIndexBufferStripCutSupported;
+};
+
+struct D3D12FeatureOptions16 {
+  BOOL DynamicDepthBiasSupported;
+  BOOL GPUUploadHeapSupported;
+};
+
+struct D3D12FeatureOptions17 {
+  BOOL NonNormalizedCoordinateSamplersSupported;
+  BOOL ManualWriteTrackingResourceSupported;
+};
+
+struct D3D12FeatureOptions18 {
+  BOOL RenderPassesValid;
+};
+
+struct D3D12FeatureOptions19 {
+  BOOL MismatchingOutputDimensionsSupported;
+  UINT SupportedSampleCountsWithNoOutputs;
+  BOOL PointSamplingAddressesNeverRoundUp;
+  BOOL RasterizerDesc2Supported;
+  BOOL NarrowQuadrilateralLinesSupported;
+  BOOL AnisoFilterWithPointMipSupported;
+  UINT MaxSamplerDescriptorHeapSize;
+  UINT MaxSamplerDescriptorHeapSizeWithStaticSamplers;
+  UINT MaxViewDescriptorHeapSize;
+  BOOL ComputeOnlyCustomHeapSupported;
+};
+
+struct D3D12FeatureOptions20 {
+  BOOL ComputeOnlyWriteWatchSupported;
+  UINT RecreateAtTier;
+};
+
+struct D3D12FeatureOptions21 {
+  UINT WorkGraphsTier;
+  UINT ExecuteIndirectTier;
+  BOOL SampleCmpGradientAndBiasSupported;
+  BOOL ExtendedCommandInfoSupported;
+};
+
+struct D3D12FeatureOptions22 {
+  BOOL ShaderExecutionReorderingActuallyReorders;
+  BOOL CreateByteOffsetViewsSupported;
+  UINT Max1DDispatchSize;
+  UINT Max1DDispatchMeshSize;
+};
+
+struct D3D12FeatureBoolSupport {
+  BOOL Supported;
+};
+
+struct D3D12FeatureTightAlignment {
+  UINT SupportTier;
+};
+
 struct D3D12ViewInstanceLocation {
   UINT ViewportArrayIndex;
   UINT RenderTargetArrayIndex;
@@ -615,7 +695,7 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
   if ((UINT_PTR)feature_data > 0 && (UINT_PTR)feature_data < 0x10000) {
     TRACE("!!! SUSPICIOUS CheckFeatureSupport: feature_data=%p looks like row_pitch (small int), this=%p — probable vtable slot 13 collision (ReadFromSubresource->CheckFeatureSupport)", feature_data, (void*)this);
   }
-  switch (feature) {
+  switch ((UINT)feature) {
   case D3D12_FEATURE_D3D12_OPTIONS: {
     auto *opts = (D3D12_FEATURE_DATA_D3D12_OPTIONS *)feature_data;
     if (feature_data_size < sizeof(*opts))
@@ -992,6 +1072,158 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     if (feature_data_size < sizeof(*o))
       return E_INVALIDARG;
     o->AtomicInt64OnDescriptorHeapResourceSupported = FALSE;
+    return S_OK;
+  }
+  case 41: { // D3D12_FEATURE_D3D12_OPTIONS12
+    auto *o = (D3D12FeatureOptions12 *)feature_data;
+    if (feature_data_size < sizeof(*o))
+      return E_INVALIDARG;
+    o->MSPrimitivesPipelineStatisticIncludesCulledPrimitives = 0;
+    o->EnhancedBarriersSupported = FALSE;
+    o->RelaxedFormatCastingSupported = FALSE;
+    TRACE("  OPTIONS12: EnhancedBarriers=%d RelaxedFormatCasting=%d",
+          o->EnhancedBarriersSupported, o->RelaxedFormatCastingSupported);
+    return S_OK;
+  }
+  case 42: { // D3D12_FEATURE_D3D12_OPTIONS13
+    auto *o = (D3D12FeatureOptions13 *)feature_data;
+    if (feature_data_size < sizeof(*o))
+      return E_INVALIDARG;
+    memset(o, 0, sizeof(*o));
+    TRACE("  OPTIONS13: conservative unsupported");
+    return S_OK;
+  }
+  case 43: { // D3D12_FEATURE_D3D12_OPTIONS14
+    auto *o = (D3D12FeatureOptions14 *)feature_data;
+    if (feature_data_size < sizeof(*o))
+      return E_INVALIDARG;
+    memset(o, 0, sizeof(*o));
+    TRACE("  OPTIONS14: conservative unsupported");
+    return S_OK;
+  }
+  case 44: { // D3D12_FEATURE_D3D12_OPTIONS15
+    auto *o = (D3D12FeatureOptions15 *)feature_data;
+    if (feature_data_size < sizeof(*o))
+      return E_INVALIDARG;
+    o->TriangleFanSupported = FALSE;
+    o->DynamicIndexBufferStripCutSupported = FALSE;
+    TRACE("  OPTIONS15: TriangleFan=%d DynamicStripCut=%d",
+          o->TriangleFanSupported, o->DynamicIndexBufferStripCutSupported);
+    return S_OK;
+  }
+  case 45: { // D3D12_FEATURE_D3D12_OPTIONS16
+    auto *o = (D3D12FeatureOptions16 *)feature_data;
+    if (feature_data_size < sizeof(*o))
+      return E_INVALIDARG;
+    o->DynamicDepthBiasSupported = FALSE;
+    o->GPUUploadHeapSupported = FALSE;
+    TRACE("  OPTIONS16: DynamicDepthBias=%d GPUUploadHeap=%d",
+          o->DynamicDepthBiasSupported, o->GPUUploadHeapSupported);
+    return S_OK;
+  }
+  case 46: { // D3D12_FEATURE_D3D12_OPTIONS17
+    auto *o = (D3D12FeatureOptions17 *)feature_data;
+    if (feature_data_size < sizeof(*o))
+      return E_INVALIDARG;
+    memset(o, 0, sizeof(*o));
+    TRACE("  OPTIONS17: conservative unsupported");
+    return S_OK;
+  }
+  case 47: { // D3D12_FEATURE_D3D12_OPTIONS18
+    auto *o = (D3D12FeatureOptions18 *)feature_data;
+    if (feature_data_size < sizeof(*o))
+      return E_INVALIDARG;
+    o->RenderPassesValid = TRUE;
+    TRACE("  OPTIONS18: RenderPassesValid=%d", o->RenderPassesValid);
+    return S_OK;
+  }
+  case 48: { // D3D12_FEATURE_D3D12_OPTIONS19
+    auto *o = (D3D12FeatureOptions19 *)feature_data;
+    if (feature_data_size < sizeof(*o))
+      return E_INVALIDARG;
+    memset(o, 0, sizeof(*o));
+    o->RasterizerDesc2Supported = TRUE;
+    o->MaxSamplerDescriptorHeapSize = 2048;
+    o->MaxSamplerDescriptorHeapSizeWithStaticSamplers = 2048;
+    o->MaxViewDescriptorHeapSize = 1000000;
+    TRACE("  OPTIONS19: RasterizerDesc2=%d MaxSamplerHeap=%u MaxViewHeap=%u",
+          o->RasterizerDesc2Supported, o->MaxSamplerDescriptorHeapSize,
+          o->MaxViewDescriptorHeapSize);
+    return S_OK;
+  }
+  case 49: { // D3D12_FEATURE_D3D12_OPTIONS20
+    auto *o = (D3D12FeatureOptions20 *)feature_data;
+    if (feature_data_size < sizeof(*o))
+      return E_INVALIDARG;
+    o->ComputeOnlyWriteWatchSupported = FALSE;
+    o->RecreateAtTier = 0;
+    TRACE("  OPTIONS20: RecreateAtTier=%u", o->RecreateAtTier);
+    return S_OK;
+  }
+  case 50: { // D3D12_FEATURE_PREDICATION
+    auto *p = (D3D12FeatureBoolSupport *)feature_data;
+    if (feature_data_size < sizeof(*p))
+      return E_INVALIDARG;
+    p->Supported = FALSE;
+    TRACE("  PREDICATION: Supported=%d", p->Supported);
+    return S_OK;
+  }
+  case 52: { // D3D12_FEATURE_HARDWARE_COPY
+    auto *p = (D3D12FeatureBoolSupport *)feature_data;
+    if (feature_data_size < sizeof(*p))
+      return E_INVALIDARG;
+    p->Supported = FALSE;
+    TRACE("  HARDWARE_COPY: Supported=%d", p->Supported);
+    return S_OK;
+  }
+  case 53: { // D3D12_FEATURE_D3D12_OPTIONS21
+    auto *o = (D3D12FeatureOptions21 *)feature_data;
+    if (feature_data_size < sizeof(*o))
+      return E_INVALIDARG;
+    o->WorkGraphsTier = 0;
+    o->ExecuteIndirectTier = 10;
+    o->SampleCmpGradientAndBiasSupported = FALSE;
+    o->ExtendedCommandInfoSupported = FALSE;
+    TRACE("  OPTIONS21: WorkGraphsTier=%u ExecuteIndirectTier=%u",
+          o->WorkGraphsTier, o->ExecuteIndirectTier);
+    return S_OK;
+  }
+  case 54: { // D3D12_FEATURE_D3D12_TIGHT_ALIGNMENT
+    auto *t = (D3D12FeatureTightAlignment *)feature_data;
+    if (feature_data_size < sizeof(*t))
+      return E_INVALIDARG;
+    t->SupportTier = 0;
+    TRACE("  TIGHT_ALIGNMENT: SupportTier=%u", t->SupportTier);
+    return S_OK;
+  }
+  case 56: { // D3D12_FEATURE_APPLICATION_SPECIFIC_DRIVER_STATE
+    auto *p = (D3D12FeatureBoolSupport *)feature_data;
+    if (feature_data_size < sizeof(*p))
+      return E_INVALIDARG;
+    p->Supported = FALSE;
+    TRACE("  APPLICATION_SPECIFIC_DRIVER_STATE: Supported=%d", p->Supported);
+    return S_OK;
+  }
+  case 57: { // D3D12_FEATURE_BYTECODE_BYPASS_HASH_SUPPORTED
+    auto *p = (D3D12FeatureBoolSupport *)feature_data;
+    if (feature_data_size < sizeof(*p))
+      return E_INVALIDARG;
+    p->Supported = FALSE;
+    TRACE("  BYTECODE_BYPASS_HASH: Supported=%d", p->Supported);
+    return S_OK;
+  }
+  case 65: { // D3D12_FEATURE_D3D12_OPTIONS22
+    auto *o = (D3D12FeatureOptions22 *)feature_data;
+    if (feature_data_size < sizeof(*o))
+      return E_INVALIDARG;
+    o->ShaderExecutionReorderingActuallyReorders = FALSE;
+    o->CreateByteOffsetViewsSupported = FALSE;
+    o->Max1DDispatchSize = 65535;
+    o->Max1DDispatchMeshSize = 0;
+    TRACE("  OPTIONS22: SER=%d ByteOffsetViews=%d MaxDispatch=%u MaxMesh=%u",
+          o->ShaderExecutionReorderingActuallyReorders,
+          o->CreateByteOffsetViewsSupported, o->Max1DDispatchSize,
+          o->Max1DDispatchMeshSize);
     return S_OK;
   }
   case D3D12_FEATURE_PROTECTED_RESOURCE_SESSION_SUPPORT: {
