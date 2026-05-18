@@ -14,6 +14,7 @@
 #include "../../libs/DXBCParser/DXBCUtils.h"
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <unistd.h>
 #include <vector>
 #include <process.h>
@@ -50,6 +51,72 @@ void DumpShaderText(const char *path, const char *text) {
     fputs(text, df);
     fclose(df);
   }
+}
+
+const char *DxilShaderKindName(dxmt::dxil::DxilShaderKind kind) {
+  switch (kind) {
+  case dxmt::dxil::DxilShaderKind::Pixel: return "pixel";
+  case dxmt::dxil::DxilShaderKind::Vertex: return "vertex";
+  case dxmt::dxil::DxilShaderKind::Geometry: return "geometry";
+  case dxmt::dxil::DxilShaderKind::Hull: return "hull";
+  case dxmt::dxil::DxilShaderKind::Domain: return "domain";
+  case dxmt::dxil::DxilShaderKind::Compute: return "compute";
+  case dxmt::dxil::DxilShaderKind::Library: return "library";
+  case dxmt::dxil::DxilShaderKind::Mesh: return "mesh";
+  case dxmt::dxil::DxilShaderKind::Amplification: return "amplification";
+  default: return "other";
+  }
+}
+
+void DumpDXILModuleSummary(const char *path, const dxmt::dxil::LLVMModule &module,
+                           const dxmt::dxil::DxilParsedShader &shader_info) {
+  if (!path)
+    return;
+  EnsureShaderCacheDir();
+  FILE *df = fopen(path, "w");
+  if (!df)
+    return;
+
+  fprintf(df, "kind=%s(%u)\n", DxilShaderKindName(shader_info.kind),
+          (uint32_t)shader_info.kind);
+  fprintf(df, "shader_model=%u.%u\n", shader_info.shader_model.major,
+          shader_info.shader_model.minor);
+  fprintf(df, "entry=%s\n", shader_info.entry_point.c_str());
+  fprintf(df, "bitcode_size=%u\n", shader_info.bitcode.size);
+  fprintf(df, "source_filename=%s\n", module.source_filename.c_str());
+  fprintf(df, "target_triple=%s\n", module.target_triple.c_str());
+  fprintf(df, "types=%zu constants=%zu functions=%zu\n", module.types.size(),
+          module.constants.size(), module.functions.size());
+
+  size_t total_blocks = 0;
+  size_t total_instructions = 0;
+  std::map<int, size_t> opcode_counts;
+  for (const auto &fn : module.functions) {
+    total_blocks += fn.blocks.size();
+    for (const auto &block : fn.blocks) {
+      total_instructions += block.instructions.size();
+      for (const auto &inst : block.instructions)
+        opcode_counts[(int)inst.opcode]++;
+    }
+  }
+
+  fprintf(df, "blocks=%zu instructions=%zu\n", total_blocks,
+          total_instructions);
+  fprintf(df, "\nfunctions:\n");
+  for (const auto &fn : module.functions) {
+    size_t inst_count = 0;
+    for (const auto &block : fn.blocks)
+      inst_count += block.instructions.size();
+    fprintf(df, "  name=%s declaration=%d type=%u blocks=%zu instructions=%zu\n",
+            fn.name.c_str(), fn.is_declaration, fn.type_id, fn.blocks.size(),
+            inst_count);
+  }
+
+  fprintf(df, "\nopcodes:\n");
+  for (const auto &entry : opcode_counts)
+    fprintf(df, "  opcode=%d count=%zu\n", entry.first, entry.second);
+
+  fclose(df);
 }
 
 constexpr WMTColorWriteMask kColorWriteMaskMap[16] = {
@@ -263,10 +330,13 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
           char cache_path[256];
           snprintf(cache_path, sizeof(cache_path), "/tmp/dxmt_shader_cache/%016zx", hash);
           char dxbc_path[256], metallib_path[256], reflection_path[256],
+              module_summary_path[256],
               metallib_error_path[256];
           snprintf(dxbc_path, sizeof(dxbc_path), "%s.dxbc", cache_path);
           snprintf(metallib_path, sizeof(metallib_path), "%s.metallib", cache_path);
           snprintf(reflection_path, sizeof(reflection_path), "%s.json", cache_path);
+          snprintf(module_summary_path, sizeof(module_summary_path),
+                   "%s.module.txt", cache_path);
           snprintf(metallib_error_path, sizeof(metallib_error_path),
                    "%s.metallib.err.txt", cache_path);
           EnsureShaderCacheDir();
@@ -299,13 +369,18 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
 
             PSTRACE("  Bitcode parsed: types=%zu functions=%zu constants=%zu",
                     module->types.size(), module->functions.size(), module->constants.size());
+            DumpDXILModuleSummary(module_summary_path, *module, shader_info);
+            PSTRACE("  DXIL module summary written to %s", module_summary_path);
 
             auto msl_result = dxmt::dxil::DXILToMSL::convert(*module, shader_info);
             if (!msl_result) {
               PSTRACE("  DXILToMSL::convert FAILED");
               DumpShaderBlob(dxbc_path, bytecode, size);
               return RecordCompileFailure("shader/dxil_to_msl",
-                                          str::format(func_name, " DXIL to MSL conversion failed; dumped ", dxbc_path));
+                                          str::format(func_name,
+                                                      " DXIL to MSL conversion failed; module ",
+                                                      module_summary_path,
+                                                      "; dxbc ", dxbc_path));
             }
 
             PSTRACE("  MSL generated: %zu bytes, entry=%s", msl_result->source.size(), msl_result->entry_point.c_str());
