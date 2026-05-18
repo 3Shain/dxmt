@@ -257,6 +257,25 @@ struct PendingFunction {
   std::string name;
 };
 
+static BlockInfo *findOrCreateBlockInfo(std::vector<BlockInfo> &block_infos,
+                                        uint32_t block_id) {
+  for (auto &info : block_infos) {
+    if (info.block_id == block_id)
+      return &info;
+  }
+  block_infos.push_back({block_id, {}});
+  return &block_infos.back();
+}
+
+static std::vector<Abbrev> getBlockAbbrevs(const ParseContext &ctx,
+                                           uint32_t block_id) {
+  for (auto &info : ctx.block_infos) {
+    if (info.block_id == block_id)
+      return info.abbrevs;
+  }
+  return {};
+}
+
 static uint32_t getFunctionParamCount(const LLVMModule &module, uint32_t type_id) {
   if (type_id >= module.types.size())
     return 0;
@@ -410,6 +429,43 @@ static std::vector<uint64_t> readRecord(BitstreamReader &r, uint32_t code,
     ops.push_back(readAbbrevField(r, op));
   }
   return ops;
+}
+
+static bool parseBlockInfoBlock(ParseContext &ctx, uint32_t abbrev_len,
+                                uint32_t end_bit) {
+  static constexpr uint32_t kBlockInfoCodeSetBID = 1;
+  uint32_t current_block_id = 0;
+
+  while (!ctx.reader.atEnd() && ctx.reader.tell() < end_bit) {
+    uint32_t code = ctx.reader.read(abbrev_len);
+    if (code == kEndBlock) {
+      ctx.reader.align32();
+      return true;
+    }
+    if (code == kEnterSubBlock) {
+      auto header = readSubBlockHeader(ctx.reader);
+      ctx.reader.seek(header.end_bit);
+      continue;
+    }
+    if (code == kDefineAbbrev) {
+      if (current_block_id) {
+        auto *info = findOrCreateBlockInfo(ctx.block_infos, current_block_id);
+        readAbbrevRecord(ctx.reader, info->abbrevs);
+      } else {
+        std::vector<Abbrev> ignored;
+        readAbbrevRecord(ctx.reader, ignored);
+      }
+      continue;
+    }
+
+    auto ops = readRecord(ctx.reader, code, ctx.cur_abbrevs);
+    if (ops.empty())
+      continue;
+
+    if ((uint32_t)ops[0] == kBlockInfoCodeSetBID && ops.size() > 1)
+      current_block_id = (uint32_t)ops[1];
+  }
+  return false;
 }
 
 static bool parseTypeBlock(ParseContext &ctx, uint32_t abbrev_len, uint32_t end_bit) {
@@ -753,7 +809,9 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn,
       auto header = readSubBlockHeader(ctx.reader);
       if (header.block_id == kBlockID_Constants) {
         uint32_t function_next_value = next_value;
-        ParseContext const_ctx{ctx.reader, ctx.module, {}, {}};
+        ParseContext const_ctx{ctx.reader, ctx.module,
+                               getBlockAbbrevs(ctx, header.block_id),
+                               ctx.block_infos};
         parseConstantsBlock(const_ctx, function_next_value,
                             header.new_abbrev_len, header.end_bit);
         next_value = function_next_value;
@@ -1133,18 +1191,28 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
       auto header = readSubBlockHeader(reader);
 
       switch (header.block_id) {
+      case kBlockID_BlockInfo:
+        parseBlockInfoBlock(ctx, header.new_abbrev_len, header.end_bit);
+        break;
       case kBlockID_Type: {
-        ParseContext type_ctx{reader, module, {}, {}};
+        ParseContext type_ctx{reader, module,
+                              getBlockAbbrevs(ctx, header.block_id),
+                              ctx.block_infos};
         parseTypeBlock(type_ctx, header.new_abbrev_len, header.end_bit);
         break;
       }
       case kBlockID_Constants: {
-        ParseContext const_ctx{reader, module, {}, {}};
+        ParseContext const_ctx{reader, module,
+                               getBlockAbbrevs(ctx, header.block_id),
+                               ctx.block_infos};
         parseConstantsBlock(const_ctx, next_module_value_id,
                             header.new_abbrev_len, header.end_bit);
         break;
       }
       case kBlockID_Function: {
+        DXTRACE("DXIL function block: next=%zu pending=%zu bit=%u end=%u",
+                next_function_body, pending_functions.size(), reader.tell(),
+                header.end_bit);
         if (next_function_body < pending_functions.size()) {
           auto pending = pending_functions[next_function_body++];
           LLVMFunction fn;
@@ -1154,9 +1222,13 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
           fn.name = pending.name;
           fn.instruction_start_value = next_module_value_id + fn.param_count;
           fn.is_declaration = false;
-          ParseContext func_ctx{reader, module, {}, {}};
+          ParseContext func_ctx{reader, module,
+                                getBlockAbbrevs(ctx, header.block_id),
+                                ctx.block_infos};
           parseFunctionBlock(func_ctx, fn, header.new_abbrev_len, header.end_bit);
           module.functions.push_back(fn);
+          DXTRACE("DXIL parsed function: value=%u name=%s blocks=%zu",
+                  fn.value_id, fn.name.c_str(), fn.blocks.size());
           if (!fn.name.empty())
             module.function_map[fn.name] = module.functions.size() - 1;
         } else {
@@ -1165,12 +1237,13 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
         break;
       }
       case kBlockID_ValueSymTab: {
-        ParseContext vst_ctx{reader, module, {}, {}};
+        ParseContext vst_ctx{reader, module,
+                             getBlockAbbrevs(ctx, header.block_id),
+                             ctx.block_infos};
         parseValueSymbolTable(vst_ctx, pending_functions,
                               header.new_abbrev_len, header.end_bit);
         break;
       }
-      case kBlockID_BlockInfo:
       default:
         reader.seek(header.end_bit);
         break;
@@ -1213,6 +1286,9 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
       pending.param_count = getFunctionParamCount(module, fn_type);
       if (!is_declaration)
         pending_functions.push_back(pending);
+      DXTRACE("DXIL module function: value=%u type=%u params=%u decl=%u pending=%zu",
+              pending.value_id, pending.type_id, pending.param_count,
+              is_declaration ? 1 : 0, pending_functions.size());
     } else if (rec_code == kModuleCode_GlobalVar) {
       next_module_value_id++;
     }
@@ -1238,6 +1314,9 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
     auto header = readSubBlockHeader(reader);
     if (header.block_id == kBlockID_Function &&
         next_function_body < pending_functions.size()) {
+      DXTRACE("DXIL trailing function block: next=%zu pending=%zu bit=%u end=%u",
+              next_function_body, pending_functions.size(), reader.tell(),
+              header.end_bit);
       auto pending = pending_functions[next_function_body++];
       LLVMFunction fn;
       fn.value_id = pending.value_id;
@@ -1246,9 +1325,13 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
       fn.name = pending.name;
       fn.instruction_start_value = next_module_value_id + fn.param_count;
       fn.is_declaration = false;
-      ParseContext func_ctx{reader, module, {}, {}};
+      ParseContext func_ctx{reader, module,
+                            getBlockAbbrevs(ctx, header.block_id),
+                            ctx.block_infos};
       parseFunctionBlock(func_ctx, fn, header.new_abbrev_len, header.end_bit);
       module.functions.push_back(fn);
+      DXTRACE("DXIL parsed trailing function: value=%u name=%s blocks=%zu",
+              fn.value_id, fn.name.c_str(), fn.blocks.size());
       if (!fn.name.empty())
         module.function_map[fn.name] = module.functions.size() - 1;
     } else {
