@@ -41,6 +41,17 @@ void DumpShaderBlob(const char *path, const void *bytecode, SIZE_T size) {
   }
 }
 
+void DumpShaderText(const char *path, const char *text) {
+  if (!path || !text)
+    return;
+  EnsureShaderCacheDir();
+  FILE *df = fopen(path, "w");
+  if (df) {
+    fputs(text, df);
+    fclose(df);
+  }
+}
+
 constexpr WMTColorWriteMask kColorWriteMaskMap[16] = {
     (WMTColorWriteMask)0,
     WMTColorWriteMaskRed,
@@ -296,16 +307,13 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
 
             PSTRACE("  MSL generated: %zu bytes, entry=%s", msl_result->source.size(), msl_result->entry_point.c_str());
 
-            {
-              char msl_path[256];
-              snprintf(msl_path, sizeof(msl_path), "%s.msl", cache_path);
-              FILE *msl_file = fopen(msl_path, "w");
-              if (msl_file) {
-                fwrite(msl_result->source.c_str(), 1, msl_result->source.size(), msl_file);
-                fclose(msl_file);
-                PSTRACE("  MSL source written to %s", msl_path);
-              }
-            }
+            char msl_path[256];
+            char msl_error_path[256];
+            snprintf(msl_path, sizeof(msl_path), "%s.msl", cache_path);
+            snprintf(msl_error_path, sizeof(msl_error_path),
+                     "%s.msl.err.txt", cache_path);
+            DumpShaderText(msl_path, msl_result->source.c_str());
+            PSTRACE("  MSL source written to %s", msl_path);
 
             WMT::Reference<WMT::Error> compile_err;
             auto library = wmt_device.newLibraryWithSource(
@@ -313,13 +321,17 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
 
             if (compile_err.handle) {
               char *err_desc = (char *)NSObject_description(compile_err.handle);
+              DumpShaderText(msl_error_path, err_desc ? err_desc : "unknown");
               PSTRACE("  newLibraryWithSource FAILED: %s", err_desc ? err_desc : "unknown");
               Logger::err(str::format("DXIL MSL compilation failed for ", func_name, ": ",
                                        err_desc ? err_desc : "unknown error"));
               DumpShaderBlob(dxbc_path, bytecode, size);
               return RecordCompileFailure("shader/metal_library_source",
                                           str::format(func_name, " MSL compile failed: ",
-                                                      err_desc ? err_desc : "unknown"));
+                                                      err_desc ? err_desc : "unknown",
+                                                      "; msl ", msl_path,
+                                                      "; error ", msl_error_path,
+                                                      "; dxbc ", dxbc_path));
             }
 
             PSTRACE("  Metal library compiled OK from source lib_handle=%llu", (unsigned long long)library.handle);
@@ -371,7 +383,8 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
               PSTRACE("  newFunction returned null for all entry points");
               Logger::err(str::format("DXIL: failed to get function from compiled library for ", func_name));
               return RecordCompileFailure("shader/metal_function_lookup",
-                                          str::format(func_name, " function lookup failed after MSL compile"));
+                                          str::format(func_name, " function lookup failed after MSL compile; msl ",
+                                                      msl_path));
             }
           }
 
