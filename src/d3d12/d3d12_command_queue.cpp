@@ -1324,8 +1324,6 @@ struct ReplayState {
     if (!render_enc_open || !pso)
       return;
 
-    uint32_t tex_slot = 0, samp_slot = 0;
-
     bool has_root_constants = false;
     for (uint32_t i = 0; i < 16; i++)
       has_root_constants |= root_constant_set[i] && root_constant_sizes[i] > 0;
@@ -1352,38 +1350,114 @@ struct ReplayState {
                i, root_constant_offsets[i], root_constant_sizes[i]);
       }
 
-      if (root_cbv_set[i] && root_cbvs[i]) {
-        auto *res = device->LookupResourceByGPUAddress(root_cbvs[i]);
-        if (res && res->GetMTLBuffer().handle) {
-          uint64_t offset = root_cbvs[i] - res->GetGPUVirtualAddress();
-          render_enc.setVertexBuffer(res->GetMTLBuffer(), offset, i);
-          render_enc.setFragmentBuffer(res->GetMTLBuffer(), offset, i);
+      auto root_register = [&](D3D12_ROOT_PARAMETER_TYPE type) {
+        if (graphics_root_sig && i < graphics_root_sig->GetParameters().size()) {
+          const auto &param = graphics_root_sig->GetParameters()[i];
+          if (param.type == type)
+            return param.register_index;
         }
-      }
+        return i;
+      };
+
+      auto bind_root_buffer = [&](D3D12_GPU_VIRTUAL_ADDRESS address,
+                                  D3D12_ROOT_PARAMETER_TYPE type,
+                                  const char *label) {
+        if (!address)
+          return;
+        auto *res = device->LookupResourceByGPUAddress(address);
+        if (!res || !res->GetMTLBuffer().handle)
+          return;
+        uint32_t slot = root_register(type);
+        if (slot >= 8)
+          return;
+        uint64_t offset = address - res->GetGPUVirtualAddress();
+        render_enc.setVertexBuffer(res->GetMTLBuffer(), offset, slot);
+        render_enc.setFragmentBuffer(res->GetMTLBuffer(), offset, slot);
+        QTRACE("ApplyRootBindings: root %s param=%u -> slot=%u gpu=0x%llx",
+               label, i, slot, (unsigned long long)address);
+      };
+
+      if (root_cbv_set[i])
+        bind_root_buffer(root_cbvs[i], D3D12_ROOT_PARAMETER_TYPE_CBV, "CBV");
+      if (root_srv_set[i])
+        bind_root_buffer(root_srvs[i], D3D12_ROOT_PARAMETER_TYPE_SRV, "SRV");
+      if (root_uav_set[i])
+        bind_root_buffer(root_uavs[i], D3D12_ROOT_PARAMETER_TYPE_UAV, "UAV");
+
+      auto bind_descriptor = [&](D3D12Descriptor *desc,
+                                 D3D12_DESCRIPTOR_RANGE_TYPE range_type,
+                                 uint32_t shader_register) {
+        if (!desc)
+          return;
+        if (range_type == D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER) {
+          if (shader_register < 4 && desc->metal_sampler.handle) {
+            render_enc.setFragmentSamplerState(desc->metal_sampler,
+                                               shader_register);
+            QTRACE("ApplyRootBindings: table sampler s%u", shader_register);
+          }
+          return;
+        }
+        if (!desc->resource || shader_register >= 8)
+          return;
+        auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
+        if (res->GetMTLBuffer().handle) {
+          uint64_t off = 0;
+          if (desc->cbv.BufferLocation) {
+            auto *cbv_res = device->LookupResourceByGPUAddress(desc->cbv.BufferLocation);
+            if (cbv_res)
+              off = desc->cbv.BufferLocation - cbv_res->GetGPUVirtualAddress();
+          }
+          render_enc.setVertexBuffer(res->GetMTLBuffer(), off,
+                                     shader_register);
+          render_enc.setFragmentBuffer(res->GetMTLBuffer(), off,
+                                       shader_register);
+          QTRACE("ApplyRootBindings: table buffer reg=%u type=%u off=%llu",
+                 shader_register, range_type, (unsigned long long)off);
+        } else if (res->GetMTLTexture().handle &&
+                   range_type != D3D12_DESCRIPTOR_RANGE_TYPE_CBV) {
+          render_enc.setFragmentTexture(res->GetMTLTexture(), shader_register);
+          QTRACE("ApplyRootBindings: table texture reg=%u type=%u tex=%llu",
+                 shader_register, range_type,
+                 (unsigned long long)res->GetMTLTexture().handle);
+        }
+      };
 
       if (root_table_set[i] && desc_heap_count > 0) {
         for (uint32_t h = 0; h < desc_heap_count; h++) {
           auto *heap = static_cast<MTLD3D12DescriptorHeap *>(desc_heaps[h]);
           if (!heap) continue;
+
+          if (graphics_root_sig && i < graphics_root_sig->GetParameters().size()) {
+            const auto &param = graphics_root_sig->GetParameters()[i];
+            if (param.type == D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE &&
+                !param.ranges.empty()) {
+              for (const auto &range : param.ranges) {
+                uint32_t max_slots =
+                    range.range_type == D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER ? 4 : 8;
+                if (range.base_register >= max_slots)
+                  continue;
+                uint32_t count = range.num_descriptors == UINT32_MAX
+                                     ? 1
+                                     : range.num_descriptors;
+                count = std::min<uint32_t>(count, max_slots - range.base_register);
+                for (uint32_t d = 0; d < count; d++) {
+                  auto *desc = heap->GetDescriptorFromGPUHandle(
+                      root_tables[i], range.offset_in_table + d);
+                  bind_descriptor(desc, range.range_type,
+                                  range.base_register + d);
+                }
+              }
+              continue;
+            }
+          }
+
           auto *desc = heap->GetDescriptorFromGPUHandle(root_tables[i]);
           if (!desc) continue;
-          if (desc->type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER && desc->metal_sampler.handle) {
-            render_enc.setFragmentSamplerState(desc->metal_sampler, samp_slot++);
-            continue;
-          }
-          if (!desc->resource) continue;
-          auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
-          if (res->GetMTLBuffer().handle) {
-            uint64_t off = 0;
-            if (desc->cbv.BufferLocation) {
-              auto *cbv_res = device->LookupResourceByGPUAddress(desc->cbv.BufferLocation);
-              if (cbv_res) off = desc->cbv.BufferLocation - cbv_res->GetGPUVirtualAddress();
-            }
-            render_enc.setVertexBuffer(res->GetMTLBuffer(), off, i);
-            render_enc.setFragmentBuffer(res->GetMTLBuffer(), off, i);
-          } else if (res->GetMTLTexture().handle) {
-            render_enc.setFragmentTexture(res->GetMTLTexture(), tex_slot++);
-          }
+          bind_descriptor(desc,
+                          desc->type == D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER
+                              ? D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER
+                              : D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+                          i);
         }
       }
     }
