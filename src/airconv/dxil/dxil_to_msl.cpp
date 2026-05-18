@@ -1619,7 +1619,9 @@ std::optional<MSLShader> DXILToMSL::convert(const LLVMModule &module,
 
   if (!module.functions.empty()) {
     for (size_t i = 0; i < module.constants.size(); i++) {
-      uint32_t val_idx = (uint32_t)i;
+      uint32_t val_idx = module.constants[i].id;
+      if (ctx.value_table.size() <= val_idx)
+        ctx.value_table.resize(val_idx + 1);
       if (val_idx < ctx.value_table.size()) {
         ctx.value_table[val_idx] = module.constants[i].constant_data.empty()
           ? "const_" + std::to_string(i)
@@ -1630,7 +1632,7 @@ std::optional<MSLShader> DXILToMSL::convert(const LLVMModule &module,
     auto &fn = module.functions.back();
     DXTRACE("DXILToMSL: entry function has %zu blocks", fn.blocks.size());
 
-    uint32_t value_counter = (uint32_t)module.constants.size();
+    uint32_t value_counter = fn.instruction_start_value;
 
     for (auto &block : fn.blocks) {
       for (auto &inst : block.instructions) {

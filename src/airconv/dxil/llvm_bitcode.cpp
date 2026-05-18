@@ -226,6 +226,29 @@ struct ParseContext {
   std::vector<BlockInfo> block_infos;
 };
 
+struct PendingFunction {
+  uint32_t value_id = 0;
+  uint32_t type_id = 0;
+  uint32_t param_count = 0;
+};
+
+static uint32_t getFunctionParamCount(const LLVMModule &module, uint32_t type_id) {
+  if (type_id >= module.types.size())
+    return 0;
+  auto &type = module.types[type_id];
+  if (type.kind != LLVMType::Function || type.type_refs.empty())
+    return 0;
+  return (uint32_t)type.type_refs.size() - 1;
+}
+
+static const LLVMValue *findConstantById(const LLVMModule &module, uint32_t id) {
+  for (auto &constant : module.constants) {
+    if (constant.id == id)
+      return &constant;
+  }
+  return nullptr;
+}
+
 static std::optional<uint32_t> readBlockHeader(BitstreamReader &r) {
   r.align32();
   uint32_t block_id = r.readVBR(8);
@@ -367,7 +390,7 @@ static bool parseTypeBlock(ParseContext &ctx) {
   return false;
 }
 
-static bool parseConstantsBlock(ParseContext &ctx) {
+static bool parseConstantsBlock(ParseContext &ctx, uint32_t &next_value_id) {
   auto abbrev_len = readBlockHeader(ctx.reader);
   if (!abbrev_len) return false;
 
@@ -400,7 +423,7 @@ static bool parseConstantsBlock(ParseContext &ctx) {
       LLVMValue v;
       v.kind = LLVMValue::Constant;
       v.type_id = cur_type;
-      v.id = (uint32_t)ctx.module.constants.size();
+      v.id = next_value_id++;
       if (rec_code == kConstantsCode_Integer && ops.size() > 1) {
         v.constant_data = std::to_string(decodeSignedVBR(ops[1]));
       } else if (rec_code == kConstantsCode_Float && ops.size() > 1) {
@@ -433,15 +456,15 @@ static bool parseConstantsBlock(ParseContext &ctx) {
       LLVMValue v;
       v.kind = LLVMValue::Constant;
       v.type_id = cur_type;
-      v.id = (uint32_t)ctx.module.constants.size();
+      v.id = next_value_id++;
       v.constant_data = "agg(";
       for (size_t i = 1; i < ops.size(); i++) {
         if (i > 1)
           v.constant_data += ",";
         uint32_t value_id = (uint32_t)ops[i];
-        if (value_id < ctx.module.constants.size() &&
-            !ctx.module.constants[value_id].constant_data.empty()) {
-          v.constant_data += ctx.module.constants[value_id].constant_data;
+        auto constant = findConstantById(ctx.module, value_id);
+        if (constant && !constant->constant_data.empty()) {
+          v.constant_data += constant->constant_data;
         } else {
           v.constant_data += std::to_string(value_id);
         }
@@ -462,7 +485,7 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
   if (!abbrev_len) return false;
 
   uint32_t cur_block = 0;
-  uint32_t next_value = (uint32_t)ctx.module.constants.size();
+  uint32_t next_value = fn.instruction_start_value;
 
   auto value = [&](uint64_t encoded) {
     return decodeRelativeValue(encoded, next_value);
@@ -474,8 +497,8 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn) {
 
     if (value_id >= next_value && slot < record.size()) {
       type_id = (uint32_t)record[slot++];
-    } else if (value_id < ctx.module.constants.size()) {
-      type_id = ctx.module.constants[value_id].type_id;
+    } else if (auto constant = findConstantById(ctx.module, value_id)) {
+      type_id = constant->type_id;
     }
 
     return value_id;
@@ -829,7 +852,9 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
   DXTRACE("  abbrev_len=%u", abbrev_len.value_or(0));
   if (!abbrev_len) return std::nullopt;
 
-  std::vector<uint32_t> pending_fn_types;
+  std::vector<PendingFunction> pending_functions;
+  size_t next_function_body = 0;
+  uint32_t next_module_value_id = 0;
 
   while (!reader.atEnd()) {
     uint32_t code = reader.read(*abbrev_len);
@@ -853,15 +878,17 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
       }
       case kBlockID_Constants: {
         ParseContext const_ctx{reader, module, {}, {}};
-        parseConstantsBlock(const_ctx);
+        parseConstantsBlock(const_ctx, next_module_value_id);
         break;
       }
       case kBlockID_Function: {
-        if (!pending_fn_types.empty()) {
-          uint32_t fn_type = pending_fn_types.back();
-          pending_fn_types.pop_back();
+        if (next_function_body < pending_functions.size()) {
+          auto pending = pending_functions[next_function_body++];
           LLVMFunction fn;
-          fn.type_id = fn_type;
+          fn.value_id = pending.value_id;
+          fn.type_id = pending.type_id;
+          fn.param_count = pending.param_count;
+          fn.instruction_start_value = next_module_value_id + fn.param_count;
           fn.is_declaration = false;
           ParseContext func_ctx{reader, module, {}, {}};
           parseFunctionBlock(func_ctx, fn);
@@ -887,7 +914,16 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
       uint32_t rec_code = (uint32_t)ops[0];
 
       if (rec_code == kModuleCode_Function) {
-        pending_fn_types.push_back(ops.size() > 1 ? (uint32_t)ops[1] : 0);
+        uint32_t fn_type = ops.size() > 1 ? (uint32_t)ops[1] : 0;
+        bool is_declaration = ops.size() > 3 ? ops[3] != 0 : true;
+        PendingFunction pending;
+        pending.value_id = next_module_value_id++;
+        pending.type_id = fn_type;
+        pending.param_count = getFunctionParamCount(module, fn_type);
+        if (!is_declaration)
+          pending_functions.push_back(pending);
+      } else if (rec_code == kModuleCode_GlobalVar) {
+        next_module_value_id++;
       }
     }
   }

@@ -107,9 +107,12 @@ struct LLVMBasicBlock {
 
 struct LLVMFunction {
   std::string name;
+  uint32_t value_id = 0;
   uint32_t type_id = 0;
   uint32_t calling_conv = 0;
   bool is_declaration = true;
+  uint32_t param_count = 0;
+  uint32_t instruction_start_value = 0;
   std::vector<LLVMType> param_types;
   LLVMType return_type;
   std::vector<LLVMBasicBlock> blocks;
