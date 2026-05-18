@@ -85,6 +85,81 @@ static bool format_is_stream_output_compatible(DXGI_FORMAT format) {
   }
 }
 
+template <typename T>
+static size_t pipeline_stream_payload_offset() {
+  size_t offset = sizeof(UINT);
+  size_t alignment = alignof(T);
+  return (offset + alignment - 1) & ~(alignment - 1);
+}
+
+template <typename T>
+static size_t pipeline_stream_subobject_size() {
+  size_t size = pipeline_stream_payload_offset<T>() + sizeof(T);
+  size_t alignment = alignof(void *);
+  return (size + alignment - 1) & ~(alignment - 1);
+}
+
+template <typename T>
+static bool read_pipeline_stream_subobject(uint8_t *stream, uint8_t *end,
+                                           T *value) {
+  size_t offset = pipeline_stream_payload_offset<T>();
+  if (stream + offset + sizeof(T) > end)
+    return false;
+  *value = *reinterpret_cast<T *>(stream + offset);
+  return true;
+}
+
+template <typename T>
+static bool advance_pipeline_stream(uint8_t **stream, uint8_t *end) {
+  size_t size = pipeline_stream_subobject_size<T>();
+  if (*stream + size > end)
+    return false;
+  *stream += size;
+  return true;
+}
+
+struct D3D12RTFormatArray {
+  UINT NumRenderTargets;
+  DXGI_FORMAT RTFormats[8];
+};
+
+struct D3D12DepthStencilDesc1 {
+  BOOL DepthEnable;
+  D3D12_DEPTH_WRITE_MASK DepthWriteMask;
+  D3D12_COMPARISON_FUNC DepthFunc;
+  BOOL StencilEnable;
+  UINT8 StencilReadMask;
+  UINT8 StencilWriteMask;
+  D3D12_DEPTH_STENCILOP_DESC FrontFace;
+  D3D12_DEPTH_STENCILOP_DESC BackFace;
+  BOOL DepthBoundsTestEnable;
+};
+
+struct D3D12ViewInstanceLocation {
+  UINT ViewportArrayIndex;
+  UINT RenderTargetArrayIndex;
+};
+
+struct D3D12ViewInstancingDesc {
+  UINT ViewInstanceCount;
+  const D3D12ViewInstanceLocation *pViewInstanceLocations;
+  UINT Flags;
+};
+
+static D3D12_DEPTH_STENCIL_DESC
+convert_depth_stencil_desc1(const D3D12DepthStencilDesc1 &desc1) {
+  D3D12_DEPTH_STENCIL_DESC desc = {};
+  desc.DepthEnable = desc1.DepthEnable;
+  desc.DepthWriteMask = desc1.DepthWriteMask;
+  desc.DepthFunc = desc1.DepthFunc;
+  desc.StencilEnable = desc1.StencilEnable;
+  desc.StencilReadMask = desc1.StencilReadMask;
+  desc.StencilWriteMask = desc1.StencilWriteMask;
+  desc.FrontFace = desc1.FrontFace;
+  desc.BackFace = desc1.BackFace;
+  return desc;
+}
+
 class MTLD3D12CommandSignature : public ComObject<ID3D12CommandSignature> {
 public:
   MTLD3D12CommandSignature(MTLD3D12Device *device, const D3D12_COMMAND_SIGNATURE_DESC &desc)
@@ -1415,148 +1490,236 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreatePipelineState(
 
   *ppPipelineState = nullptr;
 
-  struct SubobjectHeader {
-    UINT Type;
-    UINT Size;
-  };
-
   auto *stream = (uint8_t *)desc->pPipelineStateSubobjectStream;
   auto *end = stream + desc->SizeInBytes;
 
   D3D12_GRAPHICS_PIPELINE_STATE_DESC graphics_desc = {};
   D3D12_COMPUTE_PIPELINE_STATE_DESC compute_desc = {};
   bool has_cs = false;
-  bool has_vs = false;
   bool is_compute = true;
 
-  while (stream + sizeof(SubobjectHeader) <= end) {
-    auto *header = (SubobjectHeader *)stream;
-    stream += sizeof(SubobjectHeader);
+  graphics_desc.SampleMask = UINT_MAX;
+  graphics_desc.SampleDesc.Count = 1;
 
-    if (stream + header->Size > end)
-      break;
+  while (stream + sizeof(UINT) <= end) {
+    uint8_t *subobject = stream;
+    UINT type = *reinterpret_cast<UINT *>(subobject);
+    bool advanced = false;
 
-    switch (header->Type) {
+    switch (type) {
     case 0: { // D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_ROOT_SIGNATURE
-      if (header->Size >= sizeof(ID3D12RootSignature*))
-        graphics_desc.pRootSignature = *(ID3D12RootSignature**)stream;
+      ID3D12RootSignature *root_signature = nullptr;
+      if (!read_pipeline_stream_subobject(subobject, end, &root_signature))
+        return E_INVALIDARG;
+      graphics_desc.pRootSignature = root_signature;
+      compute_desc.pRootSignature = root_signature;
+      advanced = advance_pipeline_stream<ID3D12RootSignature *>(&stream, end);
       break;
     }
     case 1: { // VS
-      if (header->Size >= sizeof(D3D12_SHADER_BYTECODE)) {
-        graphics_desc.VS = *(D3D12_SHADER_BYTECODE*)stream;
-        has_vs = true;
-        is_compute = false;
-      }
+      if (!read_pipeline_stream_subobject(subobject, end, &graphics_desc.VS))
+        return E_INVALIDARG;
+      is_compute = false;
+      advanced = advance_pipeline_stream<D3D12_SHADER_BYTECODE>(&stream, end);
       break;
     }
     case 2: { // PS
-      if (header->Size >= sizeof(D3D12_SHADER_BYTECODE))
-        graphics_desc.PS = *(D3D12_SHADER_BYTECODE*)stream;
+      if (!read_pipeline_stream_subobject(subobject, end, &graphics_desc.PS))
+        return E_INVALIDARG;
+      is_compute = false;
+      advanced = advance_pipeline_stream<D3D12_SHADER_BYTECODE>(&stream, end);
       break;
     }
     case 3: { // DS
-      if (header->Size >= sizeof(D3D12_SHADER_BYTECODE))
-        graphics_desc.DS = *(D3D12_SHADER_BYTECODE*)stream;
+      if (!read_pipeline_stream_subobject(subobject, end, &graphics_desc.DS))
+        return E_INVALIDARG;
+      is_compute = false;
+      advanced = advance_pipeline_stream<D3D12_SHADER_BYTECODE>(&stream, end);
       break;
     }
     case 4: { // HS
-      if (header->Size >= sizeof(D3D12_SHADER_BYTECODE))
-        graphics_desc.HS = *(D3D12_SHADER_BYTECODE*)stream;
+      if (!read_pipeline_stream_subobject(subobject, end, &graphics_desc.HS))
+        return E_INVALIDARG;
+      is_compute = false;
+      advanced = advance_pipeline_stream<D3D12_SHADER_BYTECODE>(&stream, end);
       break;
     }
     case 5: { // GS
-      if (header->Size >= sizeof(D3D12_SHADER_BYTECODE))
-        graphics_desc.GS = *(D3D12_SHADER_BYTECODE*)stream;
+      if (!read_pipeline_stream_subobject(subobject, end, &graphics_desc.GS))
+        return E_INVALIDARG;
+      is_compute = false;
+      advanced = advance_pipeline_stream<D3D12_SHADER_BYTECODE>(&stream, end);
       break;
     }
     case 6: { // CS
-      if (header->Size >= sizeof(D3D12_SHADER_BYTECODE)) {
-        compute_desc.CS = *(D3D12_SHADER_BYTECODE*)stream;
-        has_cs = true;
-      }
+      if (!read_pipeline_stream_subobject(subobject, end, &compute_desc.CS))
+        return E_INVALIDARG;
+      has_cs = true;
+      advanced = advance_pipeline_stream<D3D12_SHADER_BYTECODE>(&stream, end);
       break;
     }
     case 7: { // STREAM_OUTPUT
-      if (header->Size >= sizeof(D3D12_STREAM_OUTPUT_DESC))
-        graphics_desc.StreamOutput = *(D3D12_STREAM_OUTPUT_DESC*)stream;
+      if (!read_pipeline_stream_subobject(subobject, end,
+                                          &graphics_desc.StreamOutput))
+        return E_INVALIDARG;
+      is_compute = false;
+      advanced = advance_pipeline_stream<D3D12_STREAM_OUTPUT_DESC>(&stream, end);
       break;
     }
     case 8: { // BLEND
-      if (header->Size >= sizeof(D3D12_BLEND_DESC))
-        graphics_desc.BlendState = *(D3D12_BLEND_DESC*)stream;
+      if (!read_pipeline_stream_subobject(subobject, end,
+                                          &graphics_desc.BlendState))
+        return E_INVALIDARG;
+      is_compute = false;
+      advanced = advance_pipeline_stream<D3D12_BLEND_DESC>(&stream, end);
       break;
     }
     case 9: { // SAMPLE_MASK
-      if (header->Size >= sizeof(UINT))
-        graphics_desc.SampleMask = *(UINT*)stream;
+      if (!read_pipeline_stream_subobject(subobject, end,
+                                          &graphics_desc.SampleMask))
+        return E_INVALIDARG;
+      is_compute = false;
+      advanced = advance_pipeline_stream<UINT>(&stream, end);
       break;
     }
     case 10: { // RASTERIZER
-      if (header->Size >= sizeof(D3D12_RASTERIZER_DESC))
-        graphics_desc.RasterizerState = *(D3D12_RASTERIZER_DESC*)stream;
+      if (!read_pipeline_stream_subobject(subobject, end,
+                                          &graphics_desc.RasterizerState))
+        return E_INVALIDARG;
+      is_compute = false;
+      advanced = advance_pipeline_stream<D3D12_RASTERIZER_DESC>(&stream, end);
       break;
     }
     case 11: { // DEPTH_STENCIL
-      if (header->Size >= sizeof(D3D12_DEPTH_STENCIL_DESC))
-        graphics_desc.DepthStencilState = *(D3D12_DEPTH_STENCIL_DESC*)stream;
+      if (!read_pipeline_stream_subobject(subobject, end,
+                                          &graphics_desc.DepthStencilState))
+        return E_INVALIDARG;
+      is_compute = false;
+      advanced = advance_pipeline_stream<D3D12_DEPTH_STENCIL_DESC>(&stream, end);
       break;
     }
     case 12: { // INPUT_LAYOUT
-      if (header->Size >= sizeof(D3D12_INPUT_LAYOUT_DESC))
-        graphics_desc.InputLayout = *(D3D12_INPUT_LAYOUT_DESC*)stream;
+      if (!read_pipeline_stream_subobject(subobject, end,
+                                          &graphics_desc.InputLayout))
+        return E_INVALIDARG;
+      is_compute = false;
+      advanced = advance_pipeline_stream<D3D12_INPUT_LAYOUT_DESC>(&stream, end);
       break;
     }
     case 13: { // IB_STRIP_CUT_VALUE
-      if (header->Size >= sizeof(D3D12_INDEX_BUFFER_STRIP_CUT_VALUE))
-        graphics_desc.IBStripCutValue = *(D3D12_INDEX_BUFFER_STRIP_CUT_VALUE*)stream;
+      if (!read_pipeline_stream_subobject(subobject, end,
+                                          &graphics_desc.IBStripCutValue))
+        return E_INVALIDARG;
+      is_compute = false;
+      advanced =
+          advance_pipeline_stream<D3D12_INDEX_BUFFER_STRIP_CUT_VALUE>(&stream, end);
       break;
     }
     case 14: { // PRIMITIVE_TOPOLOGY
-      if (header->Size >= sizeof(D3D12_PRIMITIVE_TOPOLOGY_TYPE))
-        graphics_desc.PrimitiveTopologyType = *(D3D12_PRIMITIVE_TOPOLOGY_TYPE*)stream;
+      if (!read_pipeline_stream_subobject(subobject, end,
+                                          &graphics_desc.PrimitiveTopologyType))
+        return E_INVALIDARG;
+      is_compute = false;
+      advanced =
+          advance_pipeline_stream<D3D12_PRIMITIVE_TOPOLOGY_TYPE>(&stream, end);
       break;
     }
     case 15: { // RENDER_TARGET_FORMATS
-      struct RTVFormats { UINT NumRenderTargets; DXGI_FORMAT RTFormats[8]; };
-      if (header->Size >= sizeof(RTVFormats)) {
-        auto *fmt = (RTVFormats*)stream;
-        graphics_desc.NumRenderTargets = fmt->NumRenderTargets;
-        for (UINT i = 0; i < 8 && i < fmt->NumRenderTargets; i++)
-          graphics_desc.RTVFormats[i] = fmt->RTFormats[i];
-      }
+      D3D12RTFormatArray fmt = {};
+      if (!read_pipeline_stream_subobject(subobject, end, &fmt))
+        return E_INVALIDARG;
+      graphics_desc.NumRenderTargets = fmt.NumRenderTargets;
+      for (UINT i = 0; i < 8 && i < fmt.NumRenderTargets; i++)
+        graphics_desc.RTVFormats[i] = fmt.RTFormats[i];
+      is_compute = false;
+      advanced = advance_pipeline_stream<D3D12RTFormatArray>(&stream, end);
       break;
     }
     case 16: { // DEPTH_STENCIL_FORMAT
-      if (header->Size >= sizeof(DXGI_FORMAT))
-        graphics_desc.DSVFormat = *(DXGI_FORMAT*)stream;
+      if (!read_pipeline_stream_subobject(subobject, end,
+                                          &graphics_desc.DSVFormat))
+        return E_INVALIDARG;
+      is_compute = false;
+      advanced = advance_pipeline_stream<DXGI_FORMAT>(&stream, end);
       break;
     }
     case 17: { // SAMPLE_DESC
-      if (header->Size >= sizeof(DXGI_SAMPLE_DESC))
-        graphics_desc.SampleDesc = *(DXGI_SAMPLE_DESC*)stream;
+      if (!read_pipeline_stream_subobject(subobject, end,
+                                          &graphics_desc.SampleDesc))
+        return E_INVALIDARG;
+      is_compute = false;
+      advanced = advance_pipeline_stream<DXGI_SAMPLE_DESC>(&stream, end);
       break;
     }
     case 18: { // NODE_MASK
-      if (header->Size >= sizeof(UINT))
-        graphics_desc.NodeMask = *(UINT*)stream;
+      UINT node_mask = 0;
+      if (!read_pipeline_stream_subobject(subobject, end, &node_mask))
+        return E_INVALIDARG;
+      graphics_desc.NodeMask = node_mask;
+      compute_desc.NodeMask = node_mask;
+      advanced = advance_pipeline_stream<UINT>(&stream, end);
       break;
     }
     case 19: { // CACHED_PSO
-      if (header->Size >= sizeof(D3D12_CACHED_PIPELINE_STATE))
-        graphics_desc.CachedPSO = *(D3D12_CACHED_PIPELINE_STATE*)stream;
+      D3D12_CACHED_PIPELINE_STATE cached_pso = {};
+      if (!read_pipeline_stream_subobject(subobject, end, &cached_pso))
+        return E_INVALIDARG;
+      graphics_desc.CachedPSO = cached_pso;
+      compute_desc.CachedPSO = cached_pso;
+      advanced =
+          advance_pipeline_stream<D3D12_CACHED_PIPELINE_STATE>(&stream, end);
       break;
     }
     case 20: { // FLAGS
-      if (header->Size >= sizeof(D3D12_PIPELINE_STATE_FLAGS))
-        graphics_desc.Flags = *(D3D12_PIPELINE_STATE_FLAGS*)stream;
+      D3D12_PIPELINE_STATE_FLAGS flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+      if (!read_pipeline_stream_subobject(subobject, end, &flags))
+        return E_INVALIDARG;
+      graphics_desc.Flags = flags;
+      compute_desc.Flags = flags;
+      advanced = advance_pipeline_stream<D3D12_PIPELINE_STATE_FLAGS>(&stream, end);
+      break;
+    }
+    case 21: { // DEPTH_STENCIL1
+      D3D12DepthStencilDesc1 depth_stencil = {};
+      if (!read_pipeline_stream_subobject(subobject, end, &depth_stencil))
+        return E_INVALIDARG;
+      graphics_desc.DepthStencilState =
+          convert_depth_stencil_desc1(depth_stencil);
+      is_compute = false;
+      advanced = advance_pipeline_stream<D3D12DepthStencilDesc1>(&stream, end);
+      break;
+    }
+    case 22: { // VIEW_INSTANCING
+      D3D12ViewInstancingDesc view_instancing = {};
+      if (!read_pipeline_stream_subobject(subobject, end, &view_instancing))
+        return E_INVALIDARG;
+      TRACE("CreatePipelineState: view instancing count=%u flags=0x%x ignored",
+            view_instancing.ViewInstanceCount, view_instancing.Flags);
+      is_compute = false;
+      advanced = advance_pipeline_stream<D3D12ViewInstancingDesc>(&stream, end);
+      break;
+    }
+    case 24: // AS
+    case 25: { // MS
+      D3D12_SHADER_BYTECODE shader = {};
+      if (!read_pipeline_stream_subobject(subobject, end, &shader))
+        return E_INVALIDARG;
+      TRACE("CreatePipelineState: mesh/amplification shader subobject type=%u ignored",
+            type);
+      is_compute = false;
+      advanced = advance_pipeline_stream<D3D12_SHADER_BYTECODE>(&stream, end);
       break;
     }
     default:
-      TRACE("CreatePipelineState: unknown subobject type %u size %u", header->Type, header->Size);
-      break;
+      TRACE("CreatePipelineState: unknown subobject type %u at offset=%zu",
+            type,
+            static_cast<size_t>(subobject -
+                                (uint8_t *)desc->pPipelineStateSubobjectStream));
+      return E_INVALIDARG;
     }
-    stream += header->Size;
+
+    if (!advanced)
+      return E_INVALIDARG;
   }
 
   if (has_cs && is_compute) {
