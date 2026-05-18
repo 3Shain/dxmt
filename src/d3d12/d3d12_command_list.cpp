@@ -671,6 +671,38 @@ void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::BeginRenderPass(
     }
     OMSetRenderTargets(num_render_targets, rt_handles, FALSE,
                        depth_stencil ? &depth_stencil->cpuDescriptor : nullptr);
+
+    for (UINT i = 0; i < num_render_targets && i < 8; i++) {
+      if (render_targets[i].BeginningAccess.Type ==
+          D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR) {
+        ClearRenderTargetView(render_targets[i].cpuDescriptor,
+                              render_targets[i].BeginningAccess.Clear
+                                  .ClearValue.Color,
+                              0, nullptr);
+      }
+    }
+  }
+
+  if (depth_stencil) {
+    D3D12_CLEAR_FLAGS clear_flags = (D3D12_CLEAR_FLAGS)0;
+    FLOAT depth = 1.0f;
+    UINT8 stencil = 0;
+    if (depth_stencil->DepthBeginningAccess.Type ==
+        D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR) {
+      clear_flags =
+          (D3D12_CLEAR_FLAGS)(clear_flags | D3D12_CLEAR_FLAG_DEPTH);
+      depth = depth_stencil->DepthBeginningAccess.Clear.ClearValue.DepthStencil.Depth;
+    }
+    if (depth_stencil->StencilBeginningAccess.Type ==
+        D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR) {
+      clear_flags =
+          (D3D12_CLEAR_FLAGS)(clear_flags | D3D12_CLEAR_FLAG_STENCIL);
+      stencil =
+          depth_stencil->StencilBeginningAccess.Clear.ClearValue.DepthStencil.Stencil;
+    }
+    if (clear_flags)
+      ClearDepthStencilView(depth_stencil->cpuDescriptor, clear_flags, depth,
+                            stencil, 0, nullptr);
   }
 }
 
