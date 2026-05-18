@@ -43,6 +43,16 @@ constexpr GUID kIID_ID3D12DeviceFactory = {
     0xd34e,
     0x4e7c,
     {0x83, 0x74, 0x3b, 0xa4, 0xde, 0x23, 0xcc, 0xcb}};
+constexpr GUID kIID_ID3D12DeviceConfiguration = {
+    0x78dbf87b,
+    0xf766,
+    0x422b,
+    {0xa6, 0x1c, 0xc8, 0xc4, 0x46, 0xbd, 0xb9, 0xad}};
+constexpr GUID kIID_ID3D12DeviceConfiguration1 = {
+    0xed342442,
+    0x6343,
+    0x4e16,
+    {0xbb, 0x82, 0xa3, 0xa5, 0x77, 0x87, 0x4e, 0x56}};
 constexpr GUID kCLSID_D3D12StateObjectFactory = {
     0x54e1c9f3,
     0x1303,
@@ -113,6 +123,47 @@ struct ID3D12DeviceFactoryCompat : public IUnknown {
                                                 D3D_FEATURE_LEVEL feature_level,
                                                 REFIID riid,
                                                 void **device) = 0;
+};
+
+enum D3D12DeviceFlagsCompat : UINT {
+  D3D12DeviceFlagNone = 0,
+  D3D12DeviceFlagDebugLayerEnabled = 1,
+  D3D12DeviceFlagGPUBasedValidationEnabled = 2,
+  D3D12DeviceFlagSynchronizedCommandQueueValidationDisabled = 4,
+  D3D12DeviceFlagDREDAutoBreadcrumbsEnabled = 8,
+  D3D12DeviceFlagDREDPageFaultReportingEnabled = 16,
+  D3D12DeviceFlagDREDWatsonReportingEnabled = 32,
+  D3D12DeviceFlagDREDBreadcrumbContextEnabled = 64,
+  D3D12DeviceFlagDREDUseMarkersOnlyBreadcrumbs = 128,
+  D3D12DeviceFlagShaderInstrumentationEnabled = 256,
+  D3D12DeviceFlagAutoDebugNameEnabled = 512,
+  D3D12DeviceFlagForceLegacyStateValidation = 1024,
+};
+
+struct D3D12DeviceConfigurationDescCompat {
+  D3D12DeviceFlagsCompat Flags;
+  UINT GpuBasedValidationFlags;
+  UINT SDKVersion;
+  UINT NumEnabledExperimentalFeatures;
+};
+
+struct ID3D12DeviceConfigurationCompat : public IUnknown {
+  virtual D3D12DeviceConfigurationDescCompat *STDMETHODCALLTYPE GetDesc(
+      D3D12DeviceConfigurationDescCompat *ret) = 0;
+  virtual HRESULT STDMETHODCALLTYPE GetEnabledExperimentalFeatures(
+      GUID *guids, UINT num_guids) = 0;
+  virtual HRESULT STDMETHODCALLTYPE SerializeVersionedRootSignature(
+      const D3D12_VERSIONED_ROOT_SIGNATURE_DESC *desc, ID3DBlob **result,
+      ID3DBlob **error) = 0;
+  virtual HRESULT STDMETHODCALLTYPE CreateVersionedRootSignatureDeserializer(
+      const void *blob, SIZE_T size, REFIID riid, void **deserializer) = 0;
+};
+
+struct ID3D12DeviceConfiguration1Compat
+    : public ID3D12DeviceConfigurationCompat {
+  virtual HRESULT STDMETHODCALLTYPE CreateVersionedRootSignatureDeserializerFromSubobjectInLibrary(
+      const void *library_blob, SIZE_T size, LPCWSTR root_signature_subobject_name,
+      REFIID riid, void **deserializer) = 0;
 };
 
 struct ID3D12RuntimeValidationControlCompat : public IUnknown {
@@ -293,6 +344,11 @@ public:
     TraceAgility("DeviceFactory::GetConfigurationInterface clsid=%s iid=%s",
                  dxmt::str::format(clsid).c_str(),
                  dxmt::str::format(iid).c_str());
+    if (iid == kIID_ID3D12DeviceConfiguration ||
+        iid == kIID_ID3D12DeviceConfiguration1) {
+      extern HRESULT CreateD3D12DeviceConfiguration(REFIID riid, void **ppv);
+      return CreateD3D12DeviceConfiguration(iid, ppv);
+    }
     return D3D12GetInterface(clsid, iid, ppv);
   }
 
@@ -321,6 +377,99 @@ private:
   std::atomic<ULONG> m_ref = {1};
   D3D12DeviceFactoryFlagsCompat m_flags = D3D12DeviceFactoryFlagNone;
 };
+
+class MTLD3D12DeviceConfiguration final
+    : public ID3D12DeviceConfiguration1Compat {
+public:
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppv) override {
+    if (!ppv)
+      return E_POINTER;
+    *ppv = nullptr;
+    if (riid == IID_IUnknown || riid == kIID_ID3D12DeviceConfiguration ||
+        riid == kIID_ID3D12DeviceConfiguration1) {
+      *ppv = this;
+      AddRef();
+      return S_OK;
+    }
+    return E_NOINTERFACE;
+  }
+
+  ULONG STDMETHODCALLTYPE AddRef() override { return ++m_ref; }
+
+  ULONG STDMETHODCALLTYPE Release() override {
+    ULONG ref = --m_ref;
+    if (!ref)
+      delete this;
+    return ref;
+  }
+
+  D3D12DeviceConfigurationDescCompat *STDMETHODCALLTYPE GetDesc(
+      D3D12DeviceConfigurationDescCompat *ret) override {
+    if (!ret)
+      return nullptr;
+    ret->Flags = D3D12DeviceFlagNone;
+    ret->GpuBasedValidationFlags = 0;
+    ret->SDKVersion = kD3D12AgilitySDKVersion;
+    ret->NumEnabledExperimentalFeatures = 0;
+    TraceAgility("DeviceConfiguration::GetDesc sdk=%u",
+                 kD3D12AgilitySDKVersion);
+    return ret;
+  }
+
+  HRESULT STDMETHODCALLTYPE GetEnabledExperimentalFeatures(
+      GUID *guids, UINT num_guids) override {
+    if (num_guids && !guids)
+      return E_POINTER;
+    TraceAgility("DeviceConfiguration::GetEnabledExperimentalFeatures count=%u -> S_OK",
+                 num_guids);
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE SerializeVersionedRootSignature(
+      const D3D12_VERSIONED_ROOT_SIGNATURE_DESC *desc, ID3DBlob **result,
+      ID3DBlob **error) override {
+    TraceAgility("DeviceConfiguration::SerializeVersionedRootSignature version=%u",
+                 desc ? desc->Version : 0);
+    return D3D12SerializeVersionedRootSignature(desc, result, error);
+  }
+
+  HRESULT STDMETHODCALLTYPE CreateVersionedRootSignatureDeserializer(
+      const void *blob, SIZE_T size, REFIID riid,
+      void **deserializer) override {
+    TraceAgility("DeviceConfiguration::CreateVersionedRootSignatureDeserializer size=%zu riid=%s",
+                 size, dxmt::str::format(riid).c_str());
+    return D3D12CreateVersionedRootSignatureDeserializer(blob, size, riid,
+                                                         deserializer);
+  }
+
+  HRESULT STDMETHODCALLTYPE CreateVersionedRootSignatureDeserializerFromSubobjectInLibrary(
+      const void *library_blob, SIZE_T size,
+      LPCWSTR root_signature_subobject_name, REFIID riid,
+      void **deserializer) override {
+    TraceAgility("DeviceConfiguration::CreateVersionedRootSignatureDeserializerFromSubobjectInLibrary size=%zu subobject=%ls riid=%s",
+                 size,
+                 root_signature_subobject_name ? root_signature_subobject_name
+                                               : L"(null)",
+                 dxmt::str::format(riid).c_str());
+    return D3D12CreateVersionedRootSignatureDeserializer(
+        library_blob, size, riid, deserializer);
+  }
+
+private:
+  std::atomic<ULONG> m_ref = {1};
+};
+
+HRESULT CreateD3D12DeviceConfiguration(REFIID riid, void **ppv) {
+  if (!ppv)
+    return E_POINTER;
+  *ppv = nullptr;
+  auto *configuration = new MTLD3D12DeviceConfiguration();
+  HRESULT hr = configuration->QueryInterface(riid, ppv);
+  configuration->Release();
+  TraceAgility("CreateD3D12DeviceConfiguration riid=%s -> 0x%lx out=%p",
+               dxmt::str::format(riid).c_str(), hr, ppv ? *ppv : nullptr);
+  return hr;
+}
 
 HRESULT STDMETHODCALLTYPE MTLD3D12SDKConfiguration::CreateDeviceFactory(
     UINT SDKVersion, LPCSTR SDKPath, REFIID riid, void **ppvFactory) {
@@ -1509,6 +1658,20 @@ extern "C" UINT WINAPI D3D12SDKVersion() {
   return kD3D12AgilitySDKVersion;
 }
 
+extern "C" HRESULT WINAPI D3D12EnableExperimentalFeatures(
+    UINT feature_count, const IID *iids, void *configurations,
+    UINT *configuration_sizes) {
+  if (feature_count && !iids)
+    return E_INVALIDARG;
+
+  TraceAgility("D3D12EnableExperimentalFeatures count=%u configs=%p sizes=%p",
+               feature_count, configurations, configuration_sizes);
+  for (UINT i = 0; i < feature_count; i++) {
+    TraceAgility("  feature[%u]=%s", i, str::format(iids[i]).c_str());
+  }
+  return S_OK;
+}
+
 extern "C" HRESULT WINAPI D3D12GetInterface(REFCLSID clsid, REFIID riid,
                                             void **ppv) {
   if (!ppv)
@@ -1530,6 +1693,10 @@ extern "C" HRESULT WINAPI D3D12GetInterface(REFCLSID clsid, REFIID riid,
     TraceAgility("D3D12GetInterface DeviceFactory riid=%s -> 0x%lx out=%p",
                  str::format(riid).c_str(), hr, ppv ? *ppv : nullptr);
     return hr;
+  }
+  if (riid == kIID_ID3D12DeviceConfiguration ||
+      riid == kIID_ID3D12DeviceConfiguration1) {
+    return CreateD3D12DeviceConfiguration(riid, ppv);
   }
   if (clsid == kCLSID_D3D12StateObjectFactory ||
       clsid == kIID_ID3D12StateObjectDatabaseFactory) {
