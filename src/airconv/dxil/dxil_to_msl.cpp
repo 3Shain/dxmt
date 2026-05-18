@@ -27,9 +27,18 @@ enum DXIntrinsicOpcode {
   DXOP_BufferStore = 69,
   DXOP_TextureLoad = 66,
   DXOP_TextureStore = 67,
+  DXOP_TextureStoreSample = 225,
   DXOP_TextureGather = 73,
   DXOP_TextureSample = 60,
-  DXOP_TextureSampleCmp = 63,
+  DXOP_TextureSampleBias = 61,
+  DXOP_TextureSampleLevel = 62,
+  DXOP_TextureSampleGrad = 63,
+  DXOP_TextureSampleCmp = 64,
+  DXOP_TextureSampleCmpLevelZero = 65,
+  DXOP_TextureSampleCmpLevel = 224,
+  DXOP_BufferUpdateCounter = 70,
+  DXOP_CheckAccessFullyMapped = 71,
+  DXOP_GetDimensions = 72,
   DXOP_Barrier = 80,
   DXOP_Unary = 13,
   DXOP_Binary = 14,
@@ -52,8 +61,11 @@ enum DXIntrinsicOpcode {
   DXOP_DerivFineX = 85,
   DXOP_DerivFineY = 86,
   DXOP_CalcLOD = 81,
-  DXOP_Texture2DMSGetSamplePosition = 97,
-  DXOPRenderTargetGetSamplePosition = 98,
+  DXOP_Texture2DMSGetSamplePosition = 75,
+  DXOP_RenderTargetGetSamplePosition = 76,
+  DXOP_RenderTargetGetSampleCount = 77,
+  DXOP_Texture2DMSGetSamplePositionLegacy = 97,
+  DXOP_RenderTargetGetSamplePositionLegacy = 98,
   DXOP_NumPrimitives = 109,
   DXOP_NumOutputVertices = 110,
 };
@@ -221,9 +233,18 @@ static bool isKnownDXIntrinsic(uint32_t intrinsic_id) {
   case DXOP_BufferStore:
   case DXOP_TextureLoad:
   case DXOP_TextureStore:
+  case DXOP_TextureStoreSample:
   case DXOP_TextureGather:
   case DXOP_TextureSample:
+  case DXOP_TextureSampleBias:
+  case DXOP_TextureSampleLevel:
+  case DXOP_TextureSampleGrad:
   case DXOP_TextureSampleCmp:
+  case DXOP_TextureSampleCmpLevelZero:
+  case DXOP_TextureSampleCmpLevel:
+  case DXOP_BufferUpdateCounter:
+  case DXOP_CheckAccessFullyMapped:
+  case DXOP_GetDimensions:
   case DXOP_Barrier:
   case DXOP_Unary:
   case DXOP_Binary:
@@ -247,7 +268,10 @@ static bool isKnownDXIntrinsic(uint32_t intrinsic_id) {
   case DXOP_DerivFineY:
   case DXOP_CalcLOD:
   case DXOP_Texture2DMSGetSamplePosition:
-  case DXOPRenderTargetGetSamplePosition:
+  case DXOP_RenderTargetGetSamplePosition:
+  case DXOP_RenderTargetGetSampleCount:
+  case DXOP_Texture2DMSGetSamplePositionLegacy:
+  case DXOP_RenderTargetGetSamplePositionLegacy:
   case DXOP_NumPrimitives:
   case DXOP_NumOutputVertices:
     return true;
@@ -658,7 +682,8 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     return handle + ".read(" + coord + ")";
   }
 
-  case DXOP_TextureStore: {
+  case DXOP_TextureStore:
+  case DXOP_TextureStoreSample: {
     if (args.size() < 6) return "";
     auto handle = resolveBindingName(valueArg(0, "uav0"), "tex");
     auto coord_x = valueArg(1, "0");
@@ -672,13 +697,23 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
            coord_y + "))";
   }
 
-  case DXOP_TextureSample: {
+  case DXOP_TextureSample:
+  case DXOP_TextureSampleBias:
+  case DXOP_TextureSampleLevel:
+  case DXOP_TextureSampleGrad: {
     if (args.size() < 4) return "float4(0)";
     auto handle = resolveBindingName(valueArg(0, "srv0"), "tex");
     auto sampler = resolveBindingName(valueArg(1, "samp0"), "samp");
     auto coord_x = valueArg(2, "0.0");
     auto coord_y = valueArg(3, "0.0");
     auto coord = "float2(" + coord_x + ", " + coord_y + ")";
+    if (intrinsic_id == DXOP_TextureSampleGrad) {
+      DXTRACE("DXIL SampleGrad lowered without explicit gradients");
+    } else if (intrinsic_id == DXOP_TextureSampleLevel) {
+      DXTRACE("DXIL SampleLevel lowered without explicit LOD");
+    } else if (intrinsic_id == DXOP_TextureSampleBias) {
+      DXTRACE("DXIL SampleBias lowered without explicit bias");
+    }
     return handle + ".sample(" + sampler + ", " + coord + ")";
   }
 
@@ -693,7 +728,9 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
            coord_y + "), component::" + componentName(channel) + ")";
   }
 
-  case DXOP_TextureSampleCmp: {
+  case DXOP_TextureSampleCmp:
+  case DXOP_TextureSampleCmpLevelZero:
+  case DXOP_TextureSampleCmpLevel: {
     if (args.size() < 5) return "0.0";
     auto handle = resolveBindingName(valueArg(0, "srv0"), "tex");
     auto sampler = resolveBindingName(valueArg(1, "samp0"), "samp");
@@ -703,6 +740,21 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     auto sample = handle + ".sample(" + sampler + ", float2(" + coord_x +
                   ", " + coord_y + ")).r";
     return "((" + sample + ") < (" + compare + ") ? 1.0 : 0.0)";
+  }
+
+  case DXOP_BufferUpdateCounter: {
+    DXTRACE("DXIL BufferUpdateCounter lowered to non-mutating counter fallback");
+    return "0";
+  }
+
+  case DXOP_CheckAccessFullyMapped:
+    return "true";
+
+  case DXOP_GetDimensions: {
+    if (args.empty()) return "uint4(0)";
+    auto handle = resolveBindingName(valueArg(0, "srv0"), "tex");
+    return "uint4(" + handle + ".get_width(), " + handle +
+           ".get_height(), 1, 1)";
   }
 
   case DXOP_DerivCoarseX:
@@ -747,13 +799,18 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
   }
 
   case DXOP_Texture2DMSGetSamplePosition:
-  case DXOPRenderTargetGetSamplePosition: {
+  case DXOP_RenderTargetGetSamplePosition:
+  case DXOP_Texture2DMSGetSamplePositionLegacy:
+  case DXOP_RenderTargetGetSamplePositionLegacy: {
     if (!args.empty()) {
       uint32_t component = literalArg(args.size() - 1, 0, "sample position component");
       return component == 0 ? "0.5" : "0.5";
     }
     return "0.5";
   }
+
+  case DXOP_RenderTargetGetSampleCount:
+    return "1";
 
   case DXOP_NumPrimitives:
   case DXOP_NumOutputVertices:
