@@ -977,11 +977,16 @@ MTLD3D12Device::QueryInterface(REFIID riid, void **ppvObject) {
       riid == IID_ID3D12Device4 || riid == IID_ID3D12Device5 ||
       riid == IID_ID3D12Device6 || riid == IID_ID3D12Device7 ||
       riid == IID_ID3D12Device8 || riid == IID_ID3D12Device9 ||
-      riid == IID_ID3D12Device10 ||
-      riid == IID_ID3D12Device11_ || riid == IID_ID3D12Device12_) {
+      riid == IID_ID3D12Device10) {
     *ppvObject = ref(this);
     TRACE("D3D12Device::QI(%s) -> S_OK (device)", str::format(riid).c_str());
     return S_OK;
+  }
+
+  if (riid == IID_ID3D12Device11_ || riid == IID_ID3D12Device12_) {
+    TRACE("D3D12Device::QI(%s) -> E_NOINTERFACE (no ID3D12Device11/12 vtable)",
+          str::format(riid).c_str());
+    return E_NOINTERFACE;
   }
 
   if (riid == __uuidof(IMTLDXGIDevice) && m_dxgi_device) {
