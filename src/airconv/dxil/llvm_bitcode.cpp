@@ -859,6 +859,10 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn,
     return value_id;
   };
 
+  auto popValue = [&](const std::vector<uint64_t> &record, size_t &slot) {
+    return slot < record.size() ? value(record[slot++]) : 0;
+  };
+
   auto noteResult = [&]() {
     next_value++;
   };
@@ -947,7 +951,12 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn,
           function_type_id = (uint32_t)ops[slot++];
 
         uint32_t callee_type_id = 0;
-        uint32_t callee = valueTypePair(ops, slot, callee_type_id);
+        uint32_t callee = 0;
+        if (function_type_id) {
+          callee = popValue(ops, slot);
+        } else {
+          callee = valueTypePair(ops, slot, callee_type_id);
+        }
 
         uint32_t return_type_id = 0;
         size_t fixed_arg_count = 0;
@@ -1001,13 +1010,15 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn,
     case kFuncCode_InstBinop: {
       if (cur_block < fn.blocks.size()) {
         LLVMInstruction inst;
-        inst.opcode = ops.size() > 4 ? decodeBinop((uint32_t)ops[4])
+        size_t slot = 1;
+        uint32_t type_id = 0;
+        uint32_t lhs = valueTypePair(ops, slot, type_id);
+        uint32_t rhs = popValue(ops, slot);
+        inst.opcode = slot < ops.size() ? decodeBinop((uint32_t)ops[slot])
                                      : LLVMInstruction::Add;
-        if (ops.size() > 2) inst.type_id = (uint32_t)ops[2];
-        if (ops.size() > 1)
-          inst.operands.push_back(value(ops[1]));
-        if (ops.size() > 3)
-          inst.operands.push_back(value(ops[3]));
+        inst.type_id = type_id;
+        inst.operands.push_back(lhs);
+        inst.operands.push_back(rhs);
         fn.blocks[cur_block].instructions.push_back(inst);
         noteResult();
       }
@@ -1046,10 +1057,15 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn,
       if (cur_block < fn.blocks.size()) {
         LLVMInstruction inst;
         inst.opcode = LLVMInstruction::Load;
-        if (ops.size() > 2 && ops.size() >= 5)
-          inst.type_id = (uint32_t)ops[2];
-        if (ops.size() > 1)
-          inst.operands.push_back(value(ops[1]));
+        size_t slot = 1;
+        uint32_t ptr_type_id = 0;
+        inst.operands.push_back(valueTypePair(ops, slot, ptr_type_id));
+        if (slot + 3 == ops.size())
+          inst.type_id = (uint32_t)ops[slot++];
+        else if (ptr_type_id < ctx.module.types.size() &&
+                 ctx.module.types[ptr_type_id].kind == LLVMType::Pointer &&
+                 !ctx.module.types[ptr_type_id].type_refs.empty())
+          inst.type_id = ctx.module.types[ptr_type_id].type_refs[0];
         fn.blocks[cur_block].instructions.push_back(inst);
         noteResult();
       }
@@ -1059,10 +1075,13 @@ static bool parseFunctionBlock(ParseContext &ctx, LLVMFunction &fn,
       if (cur_block < fn.blocks.size()) {
         LLVMInstruction inst;
         inst.opcode = LLVMInstruction::Store;
-        if (ops.size() > 1)
-          inst.operands.push_back(value(ops[1]));
-        if (ops.size() > 3)
-          inst.operands.push_back(value(ops[3]));
+        size_t slot = 1;
+        uint32_t ptr_type_id = 0;
+        uint32_t ptr = valueTypePair(ops, slot, ptr_type_id);
+        uint32_t value_type_id = 0;
+        uint32_t stored = valueTypePair(ops, slot, value_type_id);
+        inst.operands.push_back(ptr);
+        inst.operands.push_back(stored);
         fn.blocks[cur_block].instructions.push_back(inst);
       }
       break;
@@ -1243,6 +1262,7 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
   std::vector<FunctionNameRef> function_name_refs;
   size_t next_function_body = 0;
   uint32_t next_module_value_id = 0;
+  uint32_t next_function_value_id = 0;
   bool use_strtab_names = false;
 
   ParseContext ctx{reader, module, {}, {}};
@@ -1291,7 +1311,7 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
           fn.type_id = pending.type_id;
           fn.param_count = pending.param_count;
           fn.name = pending.name;
-          fn.instruction_start_value = next_module_value_id + fn.param_count;
+          fn.instruction_start_value = next_function_value_id + fn.param_count;
           fn.is_declaration = false;
           ParseContext func_ctx{reader, module,
                                 getBlockAbbrevs(ctx, header.block_id),
@@ -1358,7 +1378,9 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
                                 ? ops[record_base + 2] != 0
                                 : true;
       PendingFunction pending;
-      pending.value_id = next_module_value_id++;
+      pending.value_id = next_function_value_id++;
+      if (next_module_value_id < next_function_value_id)
+        next_module_value_id = next_function_value_id;
       pending.type_id = fn_type;
       pending.param_count = getFunctionParamCount(module, fn_type);
       if (use_strtab_names && record_base == 3 && ops.size() > 2) {
@@ -1371,6 +1393,7 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
               pending.value_id, pending.type_id, pending.param_count,
               is_declaration ? 1 : 0, pending_functions.size());
     } else if (rec_code == kModuleCode_GlobalVar) {
+      next_function_value_id++;
       next_module_value_id++;
     }
   }
@@ -1408,7 +1431,7 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
       fn.type_id = pending.type_id;
       fn.param_count = pending.param_count;
       fn.name = pending.name;
-      fn.instruction_start_value = next_module_value_id + fn.param_count;
+      fn.instruction_start_value = next_function_value_id + fn.param_count;
       fn.is_declaration = false;
       ParseContext func_ctx{reader, module,
                             getBlockAbbrevs(ctx, header.block_id),
