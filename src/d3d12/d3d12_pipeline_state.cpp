@@ -522,6 +522,8 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
               if (out_func.handle) {
                 PSTRACE("  DXIL loaded from cache OK! entry=%s", fn_name);
                 s_shader_cache[hash] = out_func;
+                if (type == ShaderType::Vertex)
+                  m_vs_uses_stage_in = true;
                 char *tg = strstr(rbuf, "\"tg_size\"");
                 if (tg) {
                   int tw=1,th=1,td=1;
