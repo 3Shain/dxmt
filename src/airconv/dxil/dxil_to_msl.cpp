@@ -162,6 +162,32 @@ static bool startsWith(const std::string &text, const char *prefix) {
   return text.rfind(prefix, 0) == 0;
 }
 
+static std::vector<std::string> parseAggregateLiteral(const std::string &text) {
+  std::vector<std::string> values;
+  if (!startsWith(text, "agg(") || text.size() < 5 || text.back() != ')')
+    return values;
+  size_t start = 4;
+  while (start < text.size() - 1) {
+    size_t comma = text.find(',', start);
+    size_t end = comma == std::string::npos ? text.size() - 1 : comma;
+    values.push_back(text.substr(start, end - start));
+    if (comma == std::string::npos)
+      break;
+    start = comma + 1;
+  }
+  return values;
+}
+
+static const char *bindingPrefixForClass(uint32_t resource_class) {
+  switch (resource_class) {
+  case 0: return "srv";
+  case 1: return "uav";
+  case 2: return "cbuf";
+  case 3: return "samp";
+  default: return "buf";
+  }
+}
+
 static std::string resolveBindingName(const std::string &handle, const char *target_prefix) {
   const char *prefixes[] = {"srv", "uav", "cbuf", "buf", "tex", "samp"};
   for (auto *prefix : prefixes) {
@@ -455,18 +481,9 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
     bool non_uniform = literalArg(3, 0, "non-uniform index") != 0;
     (void)non_uniform;
     ctx.next_binding++;
-    std::string res_name;
-    if (resource_class == 0) {
-      res_name = "srv" + std::to_string(range_id);
-    } else if (resource_class == 1) {
-      res_name = "uav" + std::to_string(range_id);
-    } else if (resource_class == 2) {
-      res_name = "cbuf" + std::to_string(range_id);
-    } else if (resource_class == 3) {
-      res_name = "samp" + std::to_string(range_id);
-    } else {
-      res_name = "buf" + std::to_string(range_id);
-    }
+    std::string res_name =
+        std::string(bindingPrefixForClass(resource_class)) +
+        std::to_string(range_id);
     DXTRACE("DXIL CreateHandle: class=%u range=%u index=%u -> %s", resource_class, range_id, index, res_name.c_str());
     return res_name;
   }
@@ -484,15 +501,27 @@ std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic
   }
 
   case DXOP_CreateHandleFromBinding: {
+    auto binding = valueArg(0, "");
+    auto binding_values = parseAggregateLiteral(binding);
+    uint32_t lower_bound = 0;
+    uint32_t resource_class = 0;
+    if (binding_values.size() > 0)
+      parseUnsignedLiteral(binding_values[0], lower_bound);
+    if (binding_values.size() > 3)
+      parseUnsignedLiteral(binding_values[3], resource_class);
     uint32_t index = args.size() >= 2
                          ? literalArg(1, 0, "binding resource index")
                          : 0;
     bool non_uniform = args.size() >= 3 &&
                        literalArg(2, 0, "binding non-uniform index") != 0;
     (void)non_uniform;
-    std::string res_name = "srv" + std::to_string(index);
-    DXTRACE("DXIL CreateHandleFromBinding: index=%u -> %s", index,
-            res_name.c_str());
+    uint32_t binding_index = lower_bound + index;
+    std::string res_name =
+        std::string(bindingPrefixForClass(resource_class)) +
+        std::to_string(binding_index);
+    DXTRACE("DXIL CreateHandleFromBinding: binding=%s lower=%u class=%u index=%u -> %s",
+            binding.empty() ? "<missing>" : binding.c_str(), lower_bound,
+            resource_class, index, res_name.c_str());
     return res_name;
   }
 

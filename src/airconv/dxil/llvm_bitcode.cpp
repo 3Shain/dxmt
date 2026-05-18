@@ -380,6 +380,27 @@ static bool parseConstantsBlock(ParseContext &ctx) {
       ctx.module.constants.push_back(v);
       break;
     }
+    case kConstantsCode_Aggregate: {
+      LLVMValue v;
+      v.kind = LLVMValue::Constant;
+      v.type_id = cur_type;
+      v.id = (uint32_t)ctx.module.constants.size();
+      v.constant_data = "agg(";
+      for (size_t i = 1; i < ops.size(); i++) {
+        if (i > 1)
+          v.constant_data += ",";
+        uint32_t value_id = (uint32_t)ops[i];
+        if (value_id < ctx.module.constants.size() &&
+            !ctx.module.constants[value_id].constant_data.empty()) {
+          v.constant_data += ctx.module.constants[value_id].constant_data;
+        } else {
+          v.constant_data += std::to_string(value_id);
+        }
+      }
+      v.constant_data += ")";
+      ctx.module.constants.push_back(v);
+      break;
+    }
     default:
       break;
     }
