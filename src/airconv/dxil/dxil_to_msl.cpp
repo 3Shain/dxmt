@@ -1613,35 +1613,40 @@ std::optional<MSLShader> DXILToMSL::convert(const LLVMModule &module,
   EmitContext ctx{os, module, shader, {}, {}, {}, 0, 0, 0, false, false,
                   false, false};
 
+  if (module.functions.empty()) {
+    DXTRACE("DXILToMSL: refusing to emit default shader for module with no functions");
+    return std::nullopt;
+  }
+
+  auto &fn = module.functions.back();
+  if (fn.blocks.empty()) {
+    DXTRACE("DXILToMSL: refusing to emit shader for entry function with no blocks");
+    return std::nullopt;
+  }
+
   emitFunctionPrologue(ctx);
 
   ctx.value_table.resize(256);
 
-  if (!module.functions.empty()) {
-    for (size_t i = 0; i < module.constants.size(); i++) {
-      uint32_t val_idx = module.constants[i].id;
-      if (ctx.value_table.size() <= val_idx)
-        ctx.value_table.resize(val_idx + 1);
-      if (val_idx < ctx.value_table.size()) {
-        ctx.value_table[val_idx] = module.constants[i].constant_data.empty()
-          ? "const_" + std::to_string(i)
-          : module.constants[i].constant_data;
-      }
+  for (size_t i = 0; i < module.constants.size(); i++) {
+    uint32_t val_idx = module.constants[i].id;
+    if (ctx.value_table.size() <= val_idx)
+      ctx.value_table.resize(val_idx + 1);
+    if (val_idx < ctx.value_table.size()) {
+      ctx.value_table[val_idx] = module.constants[i].constant_data.empty()
+        ? "const_" + std::to_string(i)
+        : module.constants[i].constant_data;
     }
+  }
 
-    auto &fn = module.functions.back();
-    DXTRACE("DXILToMSL: entry function has %zu blocks", fn.blocks.size());
+  DXTRACE("DXILToMSL: entry function has %zu blocks", fn.blocks.size());
 
-    uint32_t value_counter = fn.instruction_start_value;
+  uint32_t value_counter = fn.instruction_start_value;
 
-    for (auto &block : fn.blocks) {
-      for (auto &inst : block.instructions) {
-        emitInstruction(ctx, inst, value_counter);
-      }
+  for (auto &block : fn.blocks) {
+    for (auto &inst : block.instructions) {
+      emitInstruction(ctx, inst, value_counter);
     }
-  } else {
-    os << "  // No functions parsed from DXIL bitcode\n";
-    DXTRACE("DXILToMSL: no functions in module");
   }
 
   os << "}\n";
