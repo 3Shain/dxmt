@@ -94,10 +94,12 @@ static constexpr uint32_t kUnabbrevRecord = 3;
 static constexpr uint32_t kBlockID_Module = 8;
 static constexpr uint32_t kBlockID_BlockInfo = 0;
 static constexpr uint32_t kBlockID_ValueSymTab = 14;
+static constexpr uint32_t kBlockID_Strtab = 23;
 static constexpr uint32_t kBlockID_Function = 12;
 static constexpr uint32_t kBlockID_Type = 17;
 static constexpr uint32_t kBlockID_Constants = 11;
 
+static constexpr uint32_t kModuleCode_Version = 1;
 static constexpr uint32_t kTypeCode_Void = 2;
 static constexpr uint32_t kTypeCode_Float = 3;
 static constexpr uint32_t kTypeCode_Double = 4;
@@ -134,6 +136,8 @@ static constexpr uint32_t kModuleCode_SourceFilename = 16;
 static constexpr uint32_t kValueSymTabCode_Entry = 1;
 static constexpr uint32_t kValueSymTabCode_BBEntry = 2;
 static constexpr uint32_t kValueSymTabCode_FnEntry = 3;
+
+static constexpr uint32_t kStrtabCode_Blob = 1;
 
 static constexpr uint32_t kFuncCode_DeclareBlocks = 1;
 static constexpr uint32_t kFuncCode_InstRet = 10;
@@ -255,6 +259,12 @@ struct PendingFunction {
   uint32_t type_id = 0;
   uint32_t param_count = 0;
   std::string name;
+};
+
+struct FunctionNameRef {
+  uint32_t value_id = 0;
+  uint32_t offset = 0;
+  uint32_t size = 0;
 };
 
 static BlockInfo *findOrCreateBlockInfo(std::vector<BlockInfo> &block_infos,
@@ -466,6 +476,65 @@ static bool parseBlockInfoBlock(ParseContext &ctx, uint32_t abbrev_len,
       current_block_id = (uint32_t)ops[1];
   }
   return false;
+}
+
+static std::string parseStringTableBlock(BitstreamReader &reader,
+                                         uint32_t abbrev_len,
+                                         uint32_t end_bit) {
+  std::vector<Abbrev> abbrevs;
+  std::string strtab;
+
+  while (!reader.atEnd() && reader.tell() < end_bit) {
+    uint32_t code = reader.read(abbrev_len);
+    if (code == kEndBlock) {
+      reader.align32();
+      return strtab;
+    }
+    if (code == kEnterSubBlock) {
+      auto header = readSubBlockHeader(reader);
+      reader.seek(header.end_bit);
+      continue;
+    }
+    if (code == kDefineAbbrev) {
+      readAbbrevRecord(reader, abbrevs);
+      continue;
+    }
+
+    auto ops = readRecord(reader, code, abbrevs);
+    if (ops.empty() || (uint32_t)ops[0] != kStrtabCode_Blob)
+      continue;
+
+    strtab.clear();
+    strtab.reserve(ops.size() - 1);
+    for (size_t i = 1; i < ops.size(); i++)
+      strtab.push_back((char)(ops[i] & 0xff));
+  }
+  return strtab;
+}
+
+static void applyFunctionNamesFromStrtab(
+    LLVMModule &module, const std::vector<FunctionNameRef> &name_refs,
+    const std::string &strtab) {
+  if (strtab.empty())
+    return;
+
+  for (auto &ref : name_refs) {
+    if ((uint64_t)ref.offset + ref.size > strtab.size())
+      continue;
+    std::string name = strtab.substr(ref.offset, ref.size);
+    if (!isPrintableString(name))
+      continue;
+
+    for (size_t i = 0; i < module.functions.size(); i++) {
+      auto &fn = module.functions[i];
+      if (fn.value_id == ref.value_id && fn.name.empty()) {
+        fn.name = name;
+        module.function_map[name] = i;
+        DXTRACE("DXIL strtab function name: value=%u name=%s", ref.value_id,
+                name.c_str());
+      }
+    }
+  }
 }
 
 static bool parseTypeBlock(ParseContext &ctx, uint32_t abbrev_len, uint32_t end_bit) {
@@ -1171,8 +1240,10 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
     return std::nullopt;
 
   std::vector<PendingFunction> pending_functions;
+  std::vector<FunctionNameRef> function_name_refs;
   size_t next_function_body = 0;
   uint32_t next_module_value_id = 0;
+  bool use_strtab_names = false;
 
   ParseContext ctx{reader, module, {}, {}};
 
@@ -1256,7 +1327,13 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
       continue;
 
     uint32_t rec_code = (uint32_t)ops[0];
-    if (rec_code == kModuleCode_Triple) {
+    if (rec_code == kModuleCode_Version) {
+      if (ops.size() > 1)
+        use_strtab_names = ops[1] >= 2;
+      DXTRACE("DXIL module version=%llu use_strtab=%u",
+              ops.size() > 1 ? (unsigned long long)ops[1] : 0,
+              use_strtab_names ? 1 : 0);
+    } else if (rec_code == kModuleCode_Triple) {
       auto triple = recordString(ops, 1);
       if (isPrintableString(triple)) {
         module.target_triple = triple;
@@ -1284,6 +1361,10 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
       pending.value_id = next_module_value_id++;
       pending.type_id = fn_type;
       pending.param_count = getFunctionParamCount(module, fn_type);
+      if (use_strtab_names && record_base == 3 && ops.size() > 2) {
+        function_name_refs.push_back(
+            {pending.value_id, (uint32_t)ops[1], (uint32_t)ops[2]});
+      }
       if (!is_declaration)
         pending_functions.push_back(pending);
       DXTRACE("DXIL module function: value=%u type=%u params=%u decl=%u pending=%zu",
@@ -1312,8 +1393,12 @@ std::optional<LLVMModule> BitcodeReader::parse(const uint8_t *data, uint32_t siz
     }
 
     auto header = readSubBlockHeader(reader);
-    if (header.block_id == kBlockID_Function &&
-        next_function_body < pending_functions.size()) {
+    if (header.block_id == kBlockID_Strtab) {
+      auto strtab =
+          parseStringTableBlock(reader, header.new_abbrev_len, header.end_bit);
+      applyFunctionNamesFromStrtab(module, function_name_refs, strtab);
+    } else if (header.block_id == kBlockID_Function &&
+               next_function_body < pending_functions.size()) {
       DXTRACE("DXIL trailing function block: next=%zu pending=%zu bit=%u end=%u",
               next_function_body, pending_functions.size(), reader.tell(),
               header.end_bit);
