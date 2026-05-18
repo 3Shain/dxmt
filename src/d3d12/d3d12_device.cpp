@@ -258,12 +258,76 @@ struct D3D12FeatureOptions22 {
   UINT Max1DDispatchMeshSize;
 };
 
+struct D3D12FeatureOptionsMlir {
+  UINT MlirProgramsTier;
+};
+
 struct D3D12FeatureBoolSupport {
+  BOOL Supported;
+};
+
+struct D3D12FeaturePlacedResourceSupportInfo {
+  DXGI_FORMAT Format;
+  D3D12_RESOURCE_DIMENSION Dimension;
+  D3D12_HEAP_PROPERTIES DestHeapProperties;
   BOOL Supported;
 };
 
 struct D3D12FeatureTightAlignment {
   UINT SupportTier;
+};
+
+struct D3D12FeatureFenceBarriers {
+  UINT NodeIndex;
+  D3D12_COMMAND_LIST_TYPE CommandListType;
+  UINT FenceBarriersTier;
+};
+
+struct D3D12FeatureHardwareSchedulingQueueGroupings {
+  UINT ComputeQueuesPer3DQueue;
+};
+
+struct D3D12VersionNumber {
+  UINT64 Version;
+  UINT16 VersionParts[4];
+};
+
+struct D3D12FeatureShaderCacheAbiSupport {
+  WCHAR AdapterFamily[128];
+  UINT64 MinimumABISupportVersion;
+  UINT64 MaximumABISupportVersion;
+  D3D12VersionNumber CompilerVersion;
+  D3D12VersionNumber ApplicationProfileVersion;
+};
+
+struct D3D12FeatureBarrierLayout {
+  D3D12_COMMAND_LIST_TYPE CommandListType;
+  UINT Layout;
+  BOOL Supported;
+};
+
+struct D3D12FeatureMlirExchange {
+  GUID MlirInterface;
+  const void *InputData;
+  SIZE_T InputDataSizeInBytes;
+  void *OutputData;
+  SIZE_T *OutputDataSizeInBytes;
+};
+
+struct D3D12FeatureMlirInterfaceSupport {
+  UINT NumMlirInterfaces;
+  const GUID *MlirInterfacesRequested;
+  BOOL *MlirInterfacesSupported;
+};
+
+struct D3D12FeatureOptionsPreview {
+  UINT MaxGroupSharedMemoryPerGroupCS;
+  UINT MaxGroupSharedMemoryPerGroupAS;
+  UINT MaxGroupSharedMemoryPerGroupMS;
+};
+
+struct D3D12FeatureLinearAlgebraSupport {
+  UINT LinearAlgebraTier;
 };
 
 struct D3D12ViewInstanceLocation {
@@ -1332,6 +1396,22 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     TRACE("  PREDICATION: Supported=%d", p->Supported);
     return S_OK;
   }
+  case 51: { // D3D12_FEATURE_PLACED_RESOURCE_SUPPORT_INFO
+    auto *p = (D3D12FeaturePlacedResourceSupportInfo *)feature_data;
+    if (feature_data_size < sizeof(*p))
+      return E_INVALIDARG;
+    p->Supported = FALSE;
+    if (p->Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
+      p->Supported = TRUE;
+    } else {
+      MTL_DXGI_FORMAT_DESC metal_format;
+      p->Supported = SUCCEEDED(MTLQueryDXGIFormat(GetMTLDevice(), p->Format,
+                                                  metal_format));
+    }
+    TRACE("  PLACED_RESOURCE_SUPPORT: format=%u dimension=%u supported=%d",
+          (unsigned)p->Format, (unsigned)p->Dimension, p->Supported);
+    return S_OK;
+  }
   case 52: { // D3D12_FEATURE_HARDWARE_COPY
     auto *p = (D3D12FeatureBoolSupport *)feature_data;
     if (feature_data_size < sizeof(*p))
@@ -1376,6 +1456,49 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     TRACE("  BYTECODE_BYPASS_HASH: Supported=%d", p->Supported);
     return S_OK;
   }
+  case 59: { // D3D12_FEATURE_FENCE_BARRIERS
+    auto *f = (D3D12FeatureFenceBarriers *)feature_data;
+    if (feature_data_size < sizeof(*f))
+      return E_INVALIDARG;
+    f->FenceBarriersTier = 0;
+    TRACE("  FENCE_BARRIERS: type=%u tier=%u", (unsigned)f->CommandListType,
+          f->FenceBarriersTier);
+    return S_OK;
+  }
+  case 60: { // D3D12_FEATURE_HARDWARE_SCHEDULING_QUEUE_GROUPINGS
+    auto *g = (D3D12FeatureHardwareSchedulingQueueGroupings *)feature_data;
+    if (feature_data_size < sizeof(*g))
+      return E_INVALIDARG;
+    g->ComputeQueuesPer3DQueue = 0;
+    TRACE("  HARDWARE_SCHEDULING_QUEUE_GROUPINGS: ComputeQueuesPer3DQueue=%u",
+          g->ComputeQueuesPer3DQueue);
+    return S_OK;
+  }
+  case 61: { // D3D12_FEATURE_SHADER_CACHE_ABI_SUPPORT
+    auto *s = (D3D12FeatureShaderCacheAbiSupport *)feature_data;
+    if (feature_data_size < sizeof(*s))
+      return E_INVALIDARG;
+    memset(s, 0, sizeof(*s));
+    TRACE("  SHADER_CACHE_ABI_SUPPORT: unsupported");
+    return S_OK;
+  }
+  case 63: { // D3D12_FEATURE_ASYNC_COMMANDS
+    auto *p = (D3D12FeatureBoolSupport *)feature_data;
+    if (feature_data_size < sizeof(*p))
+      return E_INVALIDARG;
+    p->Supported = FALSE;
+    TRACE("  ASYNC_COMMANDS: Supported=%d", p->Supported);
+    return S_OK;
+  }
+  case 64: { // D3D12_FEATURE_BARRIER_LAYOUT
+    auto *b = (D3D12FeatureBarrierLayout *)feature_data;
+    if (feature_data_size < sizeof(*b))
+      return E_INVALIDARG;
+    b->Supported = FALSE;
+    TRACE("  BARRIER_LAYOUT: type=%u layout=%u supported=%d",
+          (unsigned)b->CommandListType, b->Layout, b->Supported);
+    return S_OK;
+  }
   case 65: { // D3D12_FEATURE_D3D12_OPTIONS22
     auto *o = (D3D12FeatureOptions22 *)feature_data;
     if (feature_data_size < sizeof(*o))
@@ -1388,6 +1511,66 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
           o->ShaderExecutionReorderingActuallyReorders,
           o->CreateByteOffsetViewsSupported, o->Max1DDispatchSize,
           o->Max1DDispatchMeshSize);
+    return S_OK;
+  }
+  case 68: { // D3D12_FEATURE_D3D12_OPTIONS_MLIR
+    auto *m = (D3D12FeatureOptionsMlir *)feature_data;
+    if (feature_data_size < sizeof(*m))
+      return E_INVALIDARG;
+    m->MlirProgramsTier = 0;
+    TRACE("  OPTIONS_MLIR: MlirProgramsTier=%u", m->MlirProgramsTier);
+    return S_OK;
+  }
+  case 69: { // D3D12_FEATURE_MLIR_EXCHANGE
+    auto *m = (D3D12FeatureMlirExchange *)feature_data;
+    if (feature_data_size < sizeof(*m))
+      return E_INVALIDARG;
+    if (m->OutputDataSizeInBytes)
+      *m->OutputDataSizeInBytes = 0;
+    TRACE("  MLIR_EXCHANGE: unsupported input=%zu output_size_ptr=%p",
+          (size_t)m->InputDataSizeInBytes, (void *)m->OutputDataSizeInBytes);
+    return S_OK;
+  }
+  case 70: { // D3D12_FEATURE_MLIR_INTERFACE_SUPPORT
+    auto *m = (D3D12FeatureMlirInterfaceSupport *)feature_data;
+    if (feature_data_size < sizeof(*m))
+      return E_INVALIDARG;
+    if (m->MlirInterfacesSupported) {
+      for (UINT i = 0; i < m->NumMlirInterfaces; i++)
+        m->MlirInterfacesSupported[i] = FALSE;
+    }
+    TRACE("  MLIR_INTERFACE_SUPPORT: count=%u", m->NumMlirInterfaces);
+    return S_OK;
+  }
+  case 72: { // D3D12_FEATURE_D3D12_OPTIONS_PREVIEW
+    auto *o = (D3D12FeatureOptionsPreview *)feature_data;
+    if (feature_data_size < sizeof(*o))
+      return E_INVALIDARG;
+    o->MaxGroupSharedMemoryPerGroupCS = 32768;
+    o->MaxGroupSharedMemoryPerGroupAS = 0;
+    o->MaxGroupSharedMemoryPerGroupMS = 0;
+    TRACE("  OPTIONS_PREVIEW: MaxGroupSharedCS=%u AS=%u MS=%u",
+          o->MaxGroupSharedMemoryPerGroupCS,
+          o->MaxGroupSharedMemoryPerGroupAS,
+          o->MaxGroupSharedMemoryPerGroupMS);
+    return S_OK;
+  }
+  case 77: { // D3D12_FEATURE_LINEAR_ALGEBRA_SUPPORT
+    auto *l = (D3D12FeatureLinearAlgebraSupport *)feature_data;
+    if (feature_data_size < sizeof(*l))
+      return E_INVALIDARG;
+    l->LinearAlgebraTier = 0;
+    TRACE("  LINEAR_ALGEBRA_SUPPORT: tier=%u", l->LinearAlgebraTier);
+    return S_OK;
+  }
+  case 78: { // D3D12_FEATURE_LINEAR_ALGEBRA_MATRIX_OPERATION_SUPPORT
+    if (!feature_data || feature_data_size < sizeof(UINT))
+      return E_INVALIDARG;
+    UINT operation_type = *reinterpret_cast<UINT *>(feature_data);
+    memset(feature_data, 0, feature_data_size);
+    *reinterpret_cast<UINT *>(feature_data) = operation_type;
+    TRACE("  LINEAR_ALGEBRA_MATRIX_OPERATION_SUPPORT: op=%u unsupported",
+          operation_type);
     return S_OK;
   }
   case D3D12_FEATURE_PROTECTED_RESOURCE_SESSION_SUPPORT: {
