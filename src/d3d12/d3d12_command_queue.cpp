@@ -1444,6 +1444,25 @@ WMTIndexType DXGIToWMTIndexFormat(DXGI_FORMAT fmt) {
   }
 }
 
+static uint32_t SubresourceMipLevel(const D3D12_RESOURCE_DESC &desc,
+                                    uint32_t subresource) {
+  uint32_t mip_levels = desc.MipLevels ? desc.MipLevels : 1;
+  return subresource % mip_levels;
+}
+
+static uint32_t SubresourceArraySlice(const D3D12_RESOURCE_DESC &desc,
+                                      uint32_t subresource) {
+  if (desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D)
+    return 0;
+  uint32_t mip_levels = desc.MipLevels ? desc.MipLevels : 1;
+  return subresource / mip_levels;
+}
+
+static uint32_t MipSize(uint64_t base, uint32_t mip) {
+  uint64_t size = base >> mip;
+  return (uint32_t)(size ? size : 1);
+}
+
 static void ReplayComputeDispatch(ReplayState &st, MTLD3D12Device *device,
                                   WMT::CommandBuffer cmdbuf, uint32_t x,
                                   uint32_t y, uint32_t z,
@@ -2383,6 +2402,91 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
           blit.encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&copy));
           ENC_END(blit.handle);
           blit.endEncoding();
+        }
+        break;
+      }
+      case CmdType::ResolveSubresource: {
+        auto *cmd = reinterpret_cast<const CmdResolveSubresource *>(header);
+        auto *dst_res = static_cast<MTLD3D12Resource *>(cmd->dst);
+        auto *src_res = static_cast<MTLD3D12Resource *>(cmd->src);
+        if (!dst_res || !src_res)
+          break;
+
+        D3D12_RESOURCE_DESC src_desc = {};
+        D3D12_RESOURCE_DESC dst_desc = {};
+        src_res->GetDesc(&src_desc);
+        dst_res->GetDesc(&dst_desc);
+        QTRACE("ResolveSubresource dst=%p sub=%u src=%p sub=%u fmt=%u mode=%u rect=%u dst=%u,%u",
+               (void*)dst_res, cmd->dst_sub, (void*)src_res, cmd->src_sub,
+               cmd->format, cmd->mode, cmd->has_src_rect, cmd->dst_x,
+               cmd->dst_y);
+
+        if (!src_res->GetMTLTexture().handle || !dst_res->GetMTLTexture().handle) {
+          QTRACE("ResolveSubresource SKIPPED non-texture resource");
+          break;
+        }
+
+        uint32_t src_mip = SubresourceMipLevel(src_desc, cmd->src_sub);
+        uint32_t src_slice = SubresourceArraySlice(src_desc, cmd->src_sub);
+        uint32_t dst_mip = SubresourceMipLevel(dst_desc, cmd->dst_sub);
+        uint32_t dst_slice = SubresourceArraySlice(dst_desc, cmd->dst_sub);
+        uint32_t full_w = MipSize(src_desc.Width, src_mip);
+        uint32_t full_h = MipSize(src_desc.Height ? src_desc.Height : 1, src_mip);
+
+        bool full_rect = !cmd->has_src_rect ||
+            (cmd->src_rect.left == 0 && cmd->src_rect.top == 0 &&
+             (uint32_t)cmd->src_rect.right == full_w &&
+             (uint32_t)cmd->src_rect.bottom == full_h);
+        bool full_dst = cmd->dst_x == 0 && cmd->dst_y == 0;
+        bool multisample = src_desc.SampleDesc.Count > 1;
+        if (multisample && full_rect && full_dst) {
+          st.CloseRenderEncoder();
+          WMTRenderPassInfo rp = {};
+          WMT::InitializeRenderPassInfo(rp);
+          rp.colors[0].texture = src_res->GetMTLTexture().handle;
+          rp.colors[0].load_action = WMTLoadActionLoad;
+          rp.colors[0].store_action = WMTStoreActionStoreAndMultisampleResolve;
+          rp.colors[0].level = src_mip;
+          rp.colors[0].slice = src_slice;
+          rp.colors[0].resolve_texture = dst_res->GetMTLTexture().handle;
+          rp.colors[0].resolve_level = dst_mip;
+          rp.colors[0].resolve_slice = dst_slice;
+          auto enc = cmdbuf.renderCommandEncoder(rp);
+          ENC_CREATE("render_resolve", enc.handle);
+          ENC_END(enc.handle);
+          enc.endEncoding();
+        } else if (!multisample) {
+          st.CloseRenderEncoder();
+          auto blit = cmdbuf.blitCommandEncoder();
+          ENC_CREATE("blit_resolve_copy", blit.handle);
+          uint32_t src_x = cmd->has_src_rect ? cmd->src_rect.left : 0;
+          uint32_t src_y = cmd->has_src_rect ? cmd->src_rect.top : 0;
+          uint32_t copy_w = cmd->has_src_rect
+                                ? std::max<LONG>(0, cmd->src_rect.right -
+                                                        cmd->src_rect.left)
+                                : full_w;
+          uint32_t copy_h = cmd->has_src_rect
+                                ? std::max<LONG>(0, cmd->src_rect.bottom -
+                                                        cmd->src_rect.top)
+                                : full_h;
+          struct wmtcmd_blit_copy_from_texture_to_texture copy = {};
+          copy.type = WMTBlitCommandCopyFromTextureToTexture;
+          copy.next.set(nullptr);
+          copy.src = src_res->GetMTLTexture().handle;
+          copy.src_slice = src_slice;
+          copy.src_level = src_mip;
+          copy.src_origin = {src_x, src_y, 0};
+          copy.src_size = {copy_w, copy_h, 1};
+          copy.dst = dst_res->GetMTLTexture().handle;
+          copy.dst_slice = dst_slice;
+          copy.dst_level = dst_mip;
+          copy.dst_origin = {cmd->dst_x, cmd->dst_y, 0};
+          blit.encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&copy));
+          ENC_END(blit.handle);
+          blit.endEncoding();
+        } else {
+          QTRACE("ResolveSubresource SKIPPED partial multisample resolve rect=%u dst=%u,%u",
+                 cmd->has_src_rect, cmd->dst_x, cmd->dst_y);
         }
         break;
       }

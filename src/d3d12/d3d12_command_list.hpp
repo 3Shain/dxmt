@@ -242,9 +242,14 @@ struct CmdResolveSubresource {
   CmdHeader header;
   ID3D12Resource *dst;
   uint32_t dst_sub;
+  uint32_t dst_x;
+  uint32_t dst_y;
   ID3D12Resource *src;
   uint32_t src_sub;
   DXGI_FORMAT format;
+  D3D12_RESOLVE_MODE mode;
+  uint8_t has_src_rect;
+  D3D12_RECT src_rect;
 };
 
 class MTLD3D12GraphicsCommandList : public ID3D12GraphicsCommandList6 {

@@ -240,6 +240,7 @@ void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ResolveSubresource(
   cmd.src = src;
   cmd.src_sub = src_sub;
   cmd.format = format;
+  cmd.mode = D3D12_RESOLVE_MODE_DECOMPRESS;
   Emit(cmd);
 }
 
@@ -660,7 +661,23 @@ void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ResolveSubresourceRegion(
     UINT dst_x, UINT dst_y,
     ID3D12Resource *src_resource, UINT src_sub_resource_idx,
     D3D12_RECT *src_rect, DXGI_FORMAT format,
-    D3D12_RESOLVE_MODE mode) {}
+    D3D12_RESOLVE_MODE mode) {
+  CmdResolveSubresource cmd = {};
+  cmd.header = {CmdType::ResolveSubresource, sizeof(cmd)};
+  cmd.dst = dst_resource;
+  cmd.dst_sub = dst_sub_resource_idx;
+  cmd.dst_x = dst_x;
+  cmd.dst_y = dst_y;
+  cmd.src = src_resource;
+  cmd.src_sub = src_sub_resource_idx;
+  cmd.format = format;
+  cmd.mode = mode;
+  if (src_rect) {
+    cmd.has_src_rect = 1;
+    cmd.src_rect = *src_rect;
+  }
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetViewInstanceMask(
     UINT mask) {}
