@@ -147,6 +147,13 @@ static bool parseUnsignedLiteral(const std::string &text, uint32_t &value) {
   return true;
 }
 
+static std::string componentAccessor(const std::string &index) {
+  uint32_t component = 0;
+  if (parseUnsignedLiteral(index, component))
+    return componentSuffix(component);
+  return "[" + index + "]";
+}
+
 static bool startsWith(const std::string &text, const char *prefix) {
   return text.rfind(prefix, 0) == 0;
 }
@@ -1142,7 +1149,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
       switch (pred) {
       case 0: os << "  bool " << result << " = false;\n"; break;
       case 1: os << "  bool " << result << " = true;\n"; break;
-      case 2: os << "  bool " << result << " = isunordered(" << lhs << ", " << rhs << ");\n"; break;
+      case 2: os << "  bool " << result << " = (isnan(" << lhs << ") || isnan(" << rhs << "));\n"; break;
       case 3: os << "  bool " << result << " = (" << lhs << " == " << rhs << ");\n"; break;
       case 4: os << "  bool " << result << " = (" << lhs << " != " << rhs << ");\n"; break;
       case 5: os << "  bool " << result << " = (" << lhs << " > " << rhs << ");\n"; break;
@@ -1179,7 +1186,8 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::Store: {
     if (inst.operands.size() >= 2) {
-      os << "  reinterpret_cast<device decltype(" << getValue(inst.operands[1]) << ")&>(" << getValue(inst.operands[0]) << ") = " << getValue(inst.operands[1]) << ";\n";
+      os << "  // generic store " << getValue(inst.operands[0]) << " <- "
+         << getValue(inst.operands[1]) << "\n";
     }
     break;
   }
@@ -1195,7 +1203,7 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
       for (size_t i = 2; i < inst.operands.size(); i++) {
         offset = "(" + offset + " + " + getValue(inst.operands[i]) + ")";
       }
-      os << "  device char* " << result << " = (" << base << " + (" << offset << "));\n";
+      os << "  auto* " << result << " = (" << base << " + (" << offset << "));\n";
       ctx.value_table[value_counter] = result;
     }
     value_counter++;
@@ -1204,7 +1212,8 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::Alloca: {
     ensureValueTable(value_counter);
-    os << "  thread char* " << result << " = (thread char*)alloca(256);\n";
+    os << "  thread char " << result << "_storage[256] = {};\n";
+    os << "  thread char* " << result << " = " << result << "_storage;\n";
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
@@ -1256,7 +1265,9 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
   case LLVMInstruction::ExtractElement: {
     ensureValueTable(value_counter);
     if (inst.operands.size() >= 2) {
-      os << "  auto " << result << " = " << getValue(inst.operands[0]) << "[" << getValue(inst.operands[1]) << "];\n";
+      auto idx = getValue(inst.operands[1]);
+      os << "  auto " << result << " = " << getValue(inst.operands[0])
+         << componentAccessor(idx) << ";\n";
       ctx.value_table[value_counter] = result;
     }
     value_counter++;
@@ -1265,7 +1276,17 @@ void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, u
 
   case LLVMInstruction::InsertElement: {
     ensureValueTable(value_counter);
-    os << "  auto " << result << " = " << (inst.operands.size() >= 1 ? getValue(inst.operands[0]) : "float4(0)") << "; // insertelement\n";
+    if (inst.operands.size() >= 3) {
+      auto vec = getValue(inst.operands[0]);
+      auto elem = getValue(inst.operands[1]);
+      auto idx = getValue(inst.operands[2]);
+      os << "  auto " << result << " = " << vec << ";\n";
+      os << "  " << result << componentAccessor(idx) << " = " << elem << ";\n";
+    } else {
+      os << "  auto " << result << " = "
+         << (inst.operands.size() >= 1 ? getValue(inst.operands[0]) : "float4(0)")
+         << "; // insertelement fallback\n";
+    }
     ctx.value_table[value_counter] = result;
     value_counter++;
     break;
