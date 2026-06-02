@@ -541,7 +541,7 @@ convert_dxbc_vertex_hull_shader(
       resource_map.output_element_count = max_hs_output_register;
     } else {
       /* since no control point phase */
-      if (vertex_max_output_register != max_hs_output_register) {
+      if (vertex_max_output_register < max_hs_output_register) {
         return llvm::make_error<UnsupportedFeature>(
             "Hull shader has control point phase pass-through, but vertex shader "
             "output signature doesn't match hull shader input signature."

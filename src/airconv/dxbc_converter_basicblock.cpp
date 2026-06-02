@@ -590,11 +590,16 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               );
               builder.SetInsertPoint(active);
 
+              auto src = ctx.resource.hull_cp_passthrough_src;
+              if (src->getType()->getNonOpaquePointerElementType() != ctx.resource.hull_cp_passthrough_type) {
+                src = builder.CreateBitCast(
+                    src, ctx.resource.hull_cp_passthrough_type->getPointerTo(src->getType()->getPointerAddressSpace())
+                );
+              }
+              assert(src->getType()->getNonOpaquePointerElementType() == ctx.resource.hull_cp_passthrough_type);
               builder.CreateStore(
-                builder.CreateLoad(
-                  ctx.resource.hull_cp_passthrough_type,
-                  ctx.resource.hull_cp_passthrough_src
-              ), ctx.resource.hull_cp_passthrough_dst);
+                  builder.CreateLoad(ctx.resource.hull_cp_passthrough_type, src), ctx.resource.hull_cp_passthrough_dst
+              );
 
               builder.CreateBr(sync);
               builder.SetInsertPoint(sync);
