@@ -1089,6 +1089,8 @@ handle_signature_gs(
 
     switch (siv) {
     case D3D10_SB_NAME_POSITION:
+    case D3D10_SB_NAME_CULL_DISTANCE:
+    case D3D10_SB_NAME_CLIP_DISTANCE:
       break;
     default:
       assert(0 && "Unexpected/unhandled geometry shader siv");
