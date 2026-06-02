@@ -389,7 +389,7 @@ convert_dxbc_geometry_shader(
     }
   };
 
-  if (is_strip) {
+  if (is_strip && pShaderInternal->gs_input_primitive != D3D10_SB_PRIMITIVE_POINT) {
     auto leading_vertex_index = primitive_id_in_warp;
     switch (pShaderInternal->gs_input_primitive) {
     case microsoft::D3D10_SB_PRIMITIVE_TRIANGLE: {
@@ -787,7 +787,7 @@ convert_dxbc_vertex_for_geometry_shader(
     pvalue primitive_valid_result = builder.getInt1(1);
     uint32_t primitive_vertices_mask = 0;
     // TODO: check primitive is valid
-    if (is_strip) {
+    if (is_strip && pGeometryStage->gs_input_primitive != D3D10_SB_PRIMITIVE_POINT) {
       switch (pGeometryStage->gs_input_primitive) {
       case microsoft::D3D10_SB_PRIMITIVE_TRIANGLE: {
         primitive_vertices_mask = 0b111 << primitive_id;
