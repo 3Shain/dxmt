@@ -26,6 +26,15 @@
 #include <cfloat>
 #include <format>
 
+#define MACDRV_ESCAPE_GET_SURFACE     6790
+#define MACDRV_ESCAPE_RELEASE_SURFACE 6791
+
+struct macdrv_escape_surface
+{
+    UINT64 surface; /* Opaque pointer to struct macdrv_client_surface */
+    UINT64 layer;   /* Opaque pointer to CAMetalLayer */
+};
+
 /**
 Ref: https://learn.microsoft.com/en-us/windows/win32/api/dxgi1_3/nf-dxgi1_3-idxgiswapchain2-setmaximumframelatency
 This value is 1 by default.
@@ -131,10 +140,26 @@ public:
       monitor_(wsi::getWindowMonitor(hWnd)),
       hud(WMT::DeveloperHUDProperties::instance()) {
 
-    native_view_ = WMT::CreateMetalViewFromHWND((intptr_t)hWnd, pDevice->GetMTLDevice(), layer_weak_);
+    HDC hdc = GetDC(hWnd);
+    int escapeCode = MACDRV_ESCAPE_GET_SURFACE;
+    int supported = ExtEscape(hdc, QUERYESCSUPPORT, sizeof(int), (LPCSTR)&escapeCode, 0, NULL);
+    if (supported > 0) {
+      struct macdrv_escape_surface surfaceInfo = {0};
+      int result = ExtEscape(hdc, MACDRV_ESCAPE_GET_SURFACE, 0, NULL, sizeof(surfaceInfo), (LPSTR)&surfaceInfo);
+      if (result > 0 && surfaceInfo.layer) {
+        client_surface_.handle = surfaceInfo.surface;
+        layer_weak_.handle = surfaceInfo.layer;
+      }
+    }
+    ReleaseDC(hWnd, hdc);
 
-    if (!native_view_) {
-      ERR("Failed to create metal view, it seems like your Wine has no exported symbols needed by DXMT.");
+    if (!layer_weak_) {
+      ERR("Failed to get metal layer via MACDRV_ESCAPE_GET_SURFACE.");
+      native_view_ = WMT::CreateMetalViewFromHWND((intptr_t)hWnd, pDevice->GetMTLDevice(), layer_weak_);
+    }
+
+    if (!layer_weak_) {
+      ERR("Failed to get metal layer, it seems like your Wine has not the needed functionality for DXMT.");
       abort();
     }
 
@@ -206,7 +231,16 @@ public:
 
   ~MTLD3D11SwapChain() {
     device_context_->WaitUntilGPUIdle();
-    WMT::ReleaseMetalView(native_view_);
+    if (client_surface_ != nullptr) {
+      HDC hdc = GetDC(hWnd);
+      struct macdrv_escape_surface surfaceInfo = {0};
+      surfaceInfo.surface = client_surface_.handle;
+      ExtEscape(hdc, MACDRV_ESCAPE_RELEASE_SURFACE, sizeof(surfaceInfo), (LPCSTR)&surfaceInfo, 0, NULL);
+      ReleaseDC(hWnd, hdc);
+    } else {
+      WMT::ReleaseMetalView(native_view_);
+    }
+    client_surface_ = {};
     native_view_ = {};
     CloseHandle(present_semaphore_);
   };
@@ -1056,6 +1090,7 @@ private:
   Com<IDXGIFactory1> factory_;
   Com<IMTLDXGIDevice> dxgi_device_;
   WMT::Object native_view_;
+  WMT::Object client_surface_;
   WMT::MetalLayer layer_weak_;
   ULONG presentation_count_;
   DXGI_SWAP_CHAIN_DESC1 desc_;
@@ -1095,13 +1130,6 @@ CreateSwapChain(
   if (ppSwapChain == NULL)
     return DXGI_ERROR_INVALID_CALL;
   InitReturnPtr(ppSwapChain);
-
-  DWORD window_process_id;
-  GetWindowThreadProcessId(hWnd, &window_process_id);
-  if (GetProcessId(GetCurrentProcess()) != window_process_id) {
-    ERR("CreateSwapChain: cross-process swapchain not supported yet");
-    return E_FAIL;
-  }
 
   Com<IMTLDXGIDevice> layer_factory;
   if (FAILED(pDevice->QueryInterface(IID_PPV_ARGS(&layer_factory)))) {
