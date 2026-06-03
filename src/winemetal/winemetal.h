@@ -886,6 +886,7 @@ enum WMTBlitCommandType : uint16_t {
   WMTBlitCommandFillBuffer,
   WMTBlitCommandResolveCounters,
   WMTBlitCommandCopyFromBufferToTextureWithBlitOption,
+  WMTBlitCommandCopyFromTextureToBufferWithBlitOption,
 };
 
 enum WMTBlitOption : uint16_t {
@@ -971,6 +972,22 @@ struct wmtcmd_blit_copy_from_texture_to_buffer {
   obj_handle_t src;
   uint32_t slice;
   uint32_t level;
+  struct WMTOrigin origin;
+  struct WMTSize size;
+  obj_handle_t dst;
+  uint64_t offset;
+  uint32_t bytes_per_row;
+  uint32_t bytes_per_image;
+};
+
+struct wmtcmd_blit_copy_from_texture_to_buffer_withblitoption {
+  enum WMTBlitCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t src;
+  uint32_t slice;
+  uint16_t level;
+  uint16_t options;
   struct WMTOrigin origin;
   struct WMTSize size;
   obj_handle_t dst;

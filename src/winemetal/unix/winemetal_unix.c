@@ -716,6 +716,21 @@ _MTLBlitCommandEncoder_encodeCommands(void *obj) {
           destinationBytesPerImage:body->bytes_per_image];
       break;
     }
+    case WMTBlitCommandCopyFromTextureToBufferWithBlitOption: {
+      struct wmtcmd_blit_copy_from_texture_to_buffer_withblitoption *body =
+          (struct wmtcmd_blit_copy_from_texture_to_buffer_withblitoption *)next;
+      [encoder copyFromTexture:(id<MTLTexture>)body->src
+                       sourceSlice:body->slice
+                       sourceLevel:body->level
+                      sourceOrigin:MTLOriginMake(body->origin.x, body->origin.y, body->origin.z)
+                        sourceSize:MTLSizeMake(body->size.width, body->size.height, body->size.depth)
+                          toBuffer:(id<MTLBuffer>)body->dst
+                 destinationOffset:body->offset
+            destinationBytesPerRow:body->bytes_per_row
+          destinationBytesPerImage:body->bytes_per_image
+                           options:(MTLBlitOption)body->options];
+      break;
+    }
     case WMTBlitCommandCopyFromTextureToTexture: {
       struct wmtcmd_blit_copy_from_texture_to_texture *body = (struct wmtcmd_blit_copy_from_texture_to_texture *)next;
       [encoder copyFromTexture:(id<MTLTexture>)body->src
