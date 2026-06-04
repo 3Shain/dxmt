@@ -1286,3 +1286,16 @@ MTLHeap_newTexture(obj_handle_t heap, struct WMTTextureInfo *info, uint64_t offs
   UNIX_CALL(142, &params);
   return params.ret;
 }
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newIndirectCommandBuffer(
+    obj_handle_t device, struct WMTIndirectCommandBufferInfo *info, uint64_t max_count, enum WMTResourceOptions options
+) {
+  struct unixcall_mtldevice_newicb params;
+  params.device = device;
+  WMT_MEMPTR_SET(params.info, info);
+  params.max_count = max_count;
+  params.options = options;
+  UNIX_CALL(143, &params);
+  return params.ret;
+}

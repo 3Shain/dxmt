@@ -772,6 +772,12 @@ _MTLBlitCommandEncoder_encodeCommands(void *obj) {
              destinationOffset:body->dst_offset];
       break;
     }
+    case WMTBlitCommandResetCommandsInBuffer: {
+      struct wmtcmd_blit_resetcommands *body = (struct wmtcmd_blit_resetcommands *)next;
+      [encoder resetCommandsInBuffer:(id<MTLIndirectCommandBuffer>)body->indirect_command_buffer
+                           withRange:NSMakeRange(body->location, body->length)];
+      break;
+    }
     }
 
     next = next->next.ptr;
@@ -855,6 +861,12 @@ _MTLComputeCommandEncoder_encodeCommands(void *obj) {
     case WMTComputeCommandMemoryBarrier: {
       struct wmtcmd_compute_memory_barrier *body = (struct wmtcmd_compute_memory_barrier *)next;
       [encoder memoryBarrierWithScope:(MTLBarrierScope)body->scope];
+      break;
+    }    
+    case WMTComputeCommandExecuteCommandsInBuffer: {
+      struct wmtcmd_compute_executecommands *body = (struct wmtcmd_compute_executecommands *)next;
+      [encoder executeCommandsInBuffer:(id<MTLIndirectCommandBuffer>)body->indirect_command_buffer
+                             withRange:NSMakeRange(body->location, body->length)];
       break;
     }
     }
@@ -1187,6 +1199,12 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
     case WMTRenderCommandDispatchThreadsPerTile: {
       struct wmtcmd_render_dispatch_threads_per_tile *body = (struct wmtcmd_render_dispatch_threads_per_tile *)next;
       [encoder dispatchThreadsPerTile:MTLSizeMake(body->width, body->height, 1)];
+      break;
+    }
+    case WMTRenderCommandExecuteCommandsInBuffer: {
+      struct wmtcmd_render_executecommands *body = (struct wmtcmd_render_executecommands *)next;
+      [encoder executeCommandsInBuffer:(id<MTLIndirectCommandBuffer>)body->indirect_command_buffer
+                             withRange:NSMakeRange(body->location, body->length)];
       break;
     }
     }
@@ -3004,6 +3022,50 @@ _MTLHeap_newTexture(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLDevice_newIndirectCommandBuffer(void *obj) {
+  struct unixcall_mtldevice_newicb *params = obj;
+  id<MTLDevice> device = (id<MTLDevice>)params->device;
+
+  struct WMTIndirectCommandBufferInfo *info = params->info.ptr;
+
+  MTLIndirectCommandBufferDescriptor *desc = [[MTLIndirectCommandBufferDescriptor alloc] init];
+
+  desc.commandTypes = (MTLIndirectCommandType)info->type;
+
+  desc.maxFragmentBufferBindCount = info->max_fragment_buffer_binding;
+  desc.maxKernelBufferBindCount = info->max_kernel_buffer_binding;
+  desc.maxKernelThreadgroupMemoryBindCount = info->max_kernel_threadgroup_memory_binding;
+  desc.maxMeshBufferBindCount = info->max_mesh_buffer_binding;
+  desc.maxObjectBufferBindCount = info->max_object_buffer_binding;
+  desc.maxObjectThreadgroupMemoryBindCount = info->max_object_threadgroup_memory_binding;
+  desc.maxVertexBufferBindCount = info->max_vertex_buffer_binding;
+
+  desc.inheritBuffers = info->inherit_buffers;
+  desc.inheritPipelineState = info->inherit_pso;
+  desc.supportDynamicAttributeStride = info->support_dynamic_attribute_stride;
+  desc.supportRayTracing = info->support_ray_tracing;
+
+#if 0 // needs macOS 26 SDK, and we don't really use it at the moment
+  desc.inheritCullMode = info->inherit_cull_mode;
+  desc.inheritDepthBias = info->inherit_depth_bias;
+  desc.inheritDepthClipMode = info->inherit_depth_clip_mode;
+  desc.inheritDepthStencilState = info->inherit_depth_stencil_state;
+  desc.inheritFrontFacingWinding = info->inherit_front_facing;
+  desc.inheritTriangleFillMode = info->inherit_fill_mode;
+  desc.supportColorAttachmentMapping = info->support_color_attachment_mapping;
+#endif
+
+  id<MTLIndirectCommandBuffer> icb =
+      [device newIndirectCommandBufferWithDescriptor:desc
+                                     maxCommandCount:params->max_count
+                                             options:(MTLResourceOptions)params->options];
+  params->ret = (obj_handle_t)icb;
+  info->gpu_resource_id = [icb gpuResourceID]._impl;
+  [desc release];
+  return STATUS_SUCCESS;
+}
+
 /*
  * Definition from cache.c
  */
@@ -3158,6 +3220,7 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLDevice_heapTextureSizeAndAlign,
     &_MTLHeap_newBuffer,
     &_MTLHeap_newTexture,
+    &_MTLDevice_newIndirectCommandBuffer,
 };
 
 #ifndef DXMT_NATIVE
@@ -3305,5 +3368,6 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLDevice_heapTextureSizeAndAlign,
     &_MTLHeap_newBuffer,
     &_MTLHeap_newTexture,
+    &_MTLDevice_newIndirectCommandBuffer,
 };
 #endif

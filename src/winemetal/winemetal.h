@@ -887,6 +887,7 @@ enum WMTBlitCommandType : uint16_t {
   WMTBlitCommandResolveCounters,
   WMTBlitCommandCopyFromBufferToTextureWithBlitOption,
   WMTBlitCommandCopyFromTextureToBufferWithBlitOption,
+  WMTBlitCommandResetCommandsInBuffer,
 };
 
 enum WMTBlitOption : uint16_t {
@@ -1031,6 +1032,15 @@ struct wmtcmd_blit_resolvecounters {
   uint64_t dst_offset;
 };
 
+struct wmtcmd_blit_resetcommands {
+  enum WMTBlitCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t indirect_command_buffer;
+  uint32_t location;
+  uint32_t length;
+};
+
 WINEMETAL_API void MTLBlitCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
 
 enum WMTComputeCommandType : uint16_t {
@@ -1047,6 +1057,7 @@ enum WMTComputeCommandType : uint16_t {
   WMTComputeCommandWaitForFence,
   WMTComputeCommandUpdateFence,
   WMTComputeCommandMemoryBarrier,
+  WMTComputeCommandExecuteCommandsInBuffer,
 };
 
 struct wmtcmd_compute_nop {
@@ -1146,6 +1157,15 @@ enum WMTComputeCommandType type;
   enum WMTBarrierScope scope;
 };
 
+struct wmtcmd_compute_executecommands {
+  enum WMTComputeCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t indirect_command_buffer;
+  uint32_t location;
+  uint32_t length;
+};
+
 WINEMETAL_API void MTLComputeCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
 
 enum WMTRenderCommandType : uint16_t {
@@ -1191,6 +1211,7 @@ enum WMTRenderCommandType : uint16_t {
   WMTRenderCommandDXMTTessellationMeshDrawIndirect,
   WMTRenderCommandDXMTTessellationMeshDrawIndexedIndirect,
   WMTRenderCommandDispatchThreadsPerTile,
+  WMTRenderCommandExecuteCommandsInBuffer,
 };
 
 struct wmtcmd_render_nop {
@@ -1566,6 +1587,15 @@ struct wmtcmd_render_dispatch_threads_per_tile {
   struct WMTMemoryPointer next;
   uint32_t width;
   uint32_t height;
+};
+
+struct wmtcmd_render_executecommands {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t indirect_command_buffer;
+  uint32_t location;
+  uint32_t length;
 };
 
 WINEMETAL_API void MTLRenderCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
@@ -2038,5 +2068,45 @@ MTLDevice_heapTextureSizeAndAlign(obj_handle_t device, struct WMTTextureInfo *in
 WINEMETAL_API obj_handle_t MTLHeap_newBuffer(obj_handle_t heap, struct WMTBufferInfo *info, uint64_t offset);
 
 WINEMETAL_API obj_handle_t MTLHeap_newTexture(obj_handle_t heap, struct WMTTextureInfo *info, uint64_t offset);
+
+enum WMTIndirectCommandType {
+  WMTIndirectCommandTypeDraw = (1 << 0),
+  WMTIndirectCommandTypeDrawIndexed = (1 << 1),
+  WMTIndirectCommandTypeDrawPatches = (1 << 2),
+  WMTIndirectCommandTypeDrawIndexedPatches = (1 << 3),
+  WMTIndirectCommandTypeConcurrentDispatch = (1 << 5),
+  WMTIndirectCommandTypeConcurrentDispatchThreads = (1 << 6),
+  WMTIndirectCommandTypeDrawMeshThreadgroups = (1 << 7),
+  WMTIndirectCommandTypeDrawMeshThreads = (1 << 8),
+};
+
+struct WMTIndirectCommandBufferInfo {
+  enum WMTIndirectCommandType type;
+  uint32_t inherit_buffers                  : 1;
+  uint32_t inherit_pso                      : 1;
+  uint32_t inherit_cull_mode                : 1;
+  uint32_t inherit_depth_bias               : 1;
+  uint32_t inherit_depth_clip_mode          : 1;
+  uint32_t inherit_depth_stencil_state      : 1;
+  uint32_t inherit_front_facing             : 1;
+  uint32_t inherit_fill_mode                : 1;
+  uint32_t support_ray_tracing              : 1;
+  uint32_t support_dynamic_attribute_stride : 1;
+  uint32_t support_color_attachment_mapping : 1;
+  uint32_t padding_bits                     : 21;
+  uint8_t max_vertex_buffer_binding;
+  uint8_t max_fragment_buffer_binding;
+  uint8_t max_kernel_buffer_binding;
+  uint8_t max_mesh_buffer_binding;
+  uint8_t max_object_buffer_binding;
+  uint8_t max_object_threadgroup_memory_binding;
+  uint8_t max_kernel_threadgroup_memory_binding;
+  uint8_t padding;
+  uint64_t gpu_resource_id; // out
+};
+
+WINEMETAL_API obj_handle_t MTLDevice_newIndirectCommandBuffer(
+    obj_handle_t device, struct WMTIndirectCommandBufferInfo *info, uint64_t max_count, enum WMTResourceOptions options
+);
 
 #endif

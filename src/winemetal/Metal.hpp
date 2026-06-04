@@ -753,6 +753,10 @@ public:
   }
 };
 
+class IndirectCommandBuffer : public Resource {
+public:
+};
+
 class Device : public Object {
 public:
   uint64_t
@@ -970,6 +974,11 @@ public:
   Reference<CounterSampleBuffer>
   newCounterSampleBuffer(uint32_t sample_count, bool shared = true) {
     return Reference<CounterSampleBuffer>(MTLCounterSampleBuffer_newTimestampBuffer(handle, sample_count, shared));
+  }
+
+  Reference<IndirectCommandBuffer>
+  newIndirectCommandBuffer(WMTIndirectCommandBufferInfo &info, uint64_t max_count, WMTResourceOptions options) {
+    return Reference<IndirectCommandBuffer>(MTLDevice_newIndirectCommandBuffer(handle, &info, max_count, options));
   }
 };
 

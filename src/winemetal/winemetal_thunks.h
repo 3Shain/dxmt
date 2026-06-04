@@ -419,6 +419,14 @@ struct unixcall_mtlheap_newtexture {
   obj_handle_t ret;
 };
 
+struct unixcall_mtldevice_newicb {
+  obj_handle_t device;
+  struct WMTMemoryPointer info;
+  uint64_t max_count;
+  uint64_t options;
+  obj_handle_t ret;
+};
+
 #pragma pack(pop)
 
 #endif
