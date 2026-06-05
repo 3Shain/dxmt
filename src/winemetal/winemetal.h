@@ -616,7 +616,7 @@ struct WMTComputePipelineInfo {
   obj_handle_t binary_archive_for_serialization;
   uint8_t num_binary_archives_for_lookup;
   bool fail_on_binary_archive_miss;
-  uint8_t padding;
+  bool support_indirect_command_buffers;
   bool tgsize_is_multiple_of_sgwidth;
   uint32_t immutable_buffers;
 };
@@ -827,7 +827,8 @@ struct WMTRenderPipelineInfo {
   struct WMTConstMemoryPointer binary_archives_for_lookup;
   uint8_t num_binary_archives_for_lookup;
   bool fail_on_binary_archive_miss;
-  uint8_t padding[6];
+  bool support_indirect_command_buffers;
+  uint8_t padding[5];
 };
 
 struct WMTMeshRenderPipelineInfo {
@@ -852,7 +853,8 @@ struct WMTMeshRenderPipelineInfo {
   struct WMTConstMemoryPointer binary_archives_for_lookup;
   uint8_t num_binary_archives_for_lookup;
   bool fail_on_binary_archive_miss;
-  uint8_t padding[6];
+  bool support_indirect_command_buffers;
+  uint8_t padding[5];
 };
 
 WINEMETAL_API obj_handle_t

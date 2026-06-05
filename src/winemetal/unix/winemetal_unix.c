@@ -377,6 +377,7 @@ _MTLDevice_newComputePipelineState(void *obj) {
   NSError *err = NULL;
   descriptor.computeFunction = (id<MTLFunction>)info->compute_function;
   descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = info->tgsize_is_multiple_of_sgwidth;
+  descriptor.supportIndirectCommandBuffers = info->support_indirect_command_buffers;
   for (unsigned i = 0; i < 31; i++) {
     if (info->immutable_buffers & (1 << i))
       descriptor.buffers[i].mutability = MTLMutabilityImmutable;
@@ -561,6 +562,7 @@ _MTLDevice_newRenderPipelineState(void *obj) {
 
   descriptor.vertexFunction = (id<MTLFunction>)info->vertex_function;
   descriptor.fragmentFunction = (id<MTLFunction>)info->fragment_function;
+  descriptor.supportIndirectCommandBuffers = info->support_indirect_command_buffers;
 
   if (info->num_binary_archives_for_lookup && info->binary_archives_for_lookup.ptr)
     descriptor.binaryArchives = [NSArray arrayWithObjects:(id<MTLBinaryArchive> *)info->binary_archives_for_lookup.ptr
@@ -627,6 +629,7 @@ _MTLDevice_newMeshRenderPipelineState(void *obj) {
 
   descriptor.meshThreadgroupSizeIsMultipleOfThreadExecutionWidth = info->mesh_tgsize_is_multiple_of_sgwidth;
   descriptor.objectThreadgroupSizeIsMultipleOfThreadExecutionWidth = info->object_tgsize_is_multiple_of_sgwidth;
+  descriptor.supportIndirectCommandBuffers = info->support_indirect_command_buffers;
 
   MTLPipelineOption options = MTLPipelineOptionNone;
 #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
