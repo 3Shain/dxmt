@@ -117,6 +117,14 @@ struct unixcall_mtldevice_newlibrary {
   obj_handle_t ret_library;
 };
 
+struct unixcall_mtldevice_newlibrarywithsource {
+  obj_handle_t device;
+  struct WMTConstMemoryPointer source;
+  uint64_t length;
+  obj_handle_t ret_error;
+  obj_handle_t ret_library;
+};
+
 struct unixcall_mtldevice_newcomputepso {
   obj_handle_t device;
   struct WMTConstMemoryPointer info;

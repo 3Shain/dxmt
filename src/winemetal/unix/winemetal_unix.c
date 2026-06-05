@@ -3066,6 +3066,19 @@ _MTLDevice_newIndirectCommandBuffer(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLDevice_newLibraryWithSource(void *obj) {
+  struct unixcall_mtldevice_newlibrarywithsource *params = obj;
+  id<MTLDevice> device = (id<MTLDevice>)params->device;
+  NSString *source =
+      [[NSString alloc] initWithBytes:params->source.ptr length:params->length encoding:NSASCIIStringEncoding];
+  NSError *err = NULL;
+  params->ret_library = (obj_handle_t)[device newLibraryWithSource:source options:nil error:&err];
+  params->ret_error = (obj_handle_t)err;
+  [source release];
+  return STATUS_SUCCESS;
+}
+
 /*
  * Definition from cache.c
  */
@@ -3221,6 +3234,7 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLHeap_newBuffer,
     &_MTLHeap_newTexture,
     &_MTLDevice_newIndirectCommandBuffer,
+    &_MTLDevice_newLibraryWithSource,
 };
 
 #ifndef DXMT_NATIVE
@@ -3369,5 +3383,6 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLHeap_newBuffer,
     &_MTLHeap_newTexture,
     &_MTLDevice_newIndirectCommandBuffer,
+    &_MTLDevice_newLibraryWithSource,
 };
 #endif

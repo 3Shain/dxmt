@@ -2109,4 +2109,7 @@ WINEMETAL_API obj_handle_t MTLDevice_newIndirectCommandBuffer(
     obj_handle_t device, struct WMTIndirectCommandBufferInfo *info, uint64_t max_count, enum WMTResourceOptions options
 );
 
+WINEMETAL_API obj_handle_t
+MTLDevice_newLibraryWithSource(obj_handle_t device, const char *source, uint64_t length, obj_handle_t *err_out);
+
 #endif

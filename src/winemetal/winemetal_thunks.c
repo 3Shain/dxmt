@@ -1299,3 +1299,17 @@ MTLDevice_newIndirectCommandBuffer(
   UNIX_CALL(143, &params);
   return params.ret;
 }
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newLibraryWithSource(obj_handle_t device, const char *source, uint64_t length, obj_handle_t *err_out) {
+  struct unixcall_mtldevice_newlibrarywithsource params;
+  params.device = device;
+  WMT_MEMPTR_SET(params.source, source);
+  params.length = length;
+  params.ret_error = 0;
+  params.ret_library = 0;
+  UNIX_CALL(144, &params);
+  if (err_out)
+    *err_out = params.ret_error;
+  return params.ret_library;
+}

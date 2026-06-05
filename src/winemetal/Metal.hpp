@@ -835,6 +835,11 @@ public:
     return Reference<Library>(MTLDevice_newLibrary(handle, data, &error.handle));
   }
 
+  Reference<Library>
+  newLibraryWithSource(std::string_view view, Error &error) {
+    return Reference<Library>(MTLDevice_newLibraryWithSource(handle, view.data(), view.length(), &error.handle));
+  }
+
   Reference<ComputePipelineState>
   newComputePipelineState(const Function &compute_function, Error &error) {
     WMTComputePipelineInfo info;
