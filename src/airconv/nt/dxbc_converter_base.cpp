@@ -40,8 +40,8 @@ Converter::LoadOperandIndex(const IndexByTempComponent &SrcOpIndex) {
   auto Comp = SrcOpIndex.component;
   SrcOperandTemp RelReg{
       ._ = {{Comp, Comp, Comp, Comp}, false, false, OperandDataType::Integer},
-      .phase = SrcOpIndex.phase,
       .regid = SrcOpIndex.regid,
+      .phase = SrcOpIndex.phase,
   };
   auto Rel = LoadOperand(RelReg, 0b1);
   return ir.CreateAdd(Rel, ir.getInt32(SrcOpIndex.offset));
@@ -52,9 +52,9 @@ Converter::LoadOperandIndex(const IndexByIndexableTempComponent &SrcOpIndex) {
   auto Comp = SrcOpIndex.component;
   SrcOperandIndexableTemp RelReg{
       ._ = {{Comp, Comp, Comp, Comp}, false, false, OperandDataType::Integer},
-      .phase = SrcOpIndex.phase,
-      .regindex = SrcOpIndex.regid,
       .regfile = SrcOpIndex.regfile,
+      .regindex = SrcOpIndex.regid,
+      .phase = SrcOpIndex.phase,
   };
   auto Rel = LoadOperand(RelReg, 0b1);
   return ir.CreateAdd(Rel, ir.getInt32(SrcOpIndex.offset));
