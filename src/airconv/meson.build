@@ -49,6 +49,11 @@ airconv_args = [
   '-D__STDC_LIMIT_MACROS',
 ]
 
+if clangpp.has_argument('-Wno-unnecessary-virtual-specifier')
+  # LLVM
+  airconv_args += ['-Wno-unnecessary-virtual-specifier']
+endif
+
 llvm_ld_flags = [
  '-L'+join_paths(meson.project_source_root(), 'toolchains/llvm/lib')
 ]
