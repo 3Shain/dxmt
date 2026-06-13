@@ -403,7 +403,7 @@ void handle_signature_ps(
     unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
     auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
     auto siv = Inst.m_InputPSDeclSIV.Name;
-    auto interpolation =
+    [[maybe_unused]] auto interpolation =
       to_air_interpolation(Inst.m_InputPSDeclSGV.InterpolationMode);
     uint32_t assigned_index;
     switch (siv) {
