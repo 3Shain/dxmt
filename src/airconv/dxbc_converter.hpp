@@ -294,6 +294,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
 
 constexpr air::MSLScalerOrVectorType to_msl_type(RegisterComponentType type) {
   switch (type) {
+  default:
   case RegisterComponentType::Unknown: {
     assert(0 && "unknown component type");
     break;
