@@ -146,10 +146,10 @@ enum MinPrecQuantizeFunctionIndex // Used by reference rasterizer (IHVs can
 class COperandBase {
 public:
   COperandBase() { Clear(); }
-  COperandBase(const COperandBase &Op) { memcpy(this, &Op, sizeof(*this)); }
+  COperandBase(const COperandBase &Op) { memcpy((void *)this, &Op, sizeof(*this)); }
   COperandBase &operator=(const COperandBase &Op) {
     if (this != &Op)
-      memcpy(this, &Op, sizeof(*this));
+      memcpy((void *)this, &Op, sizeof(*this));
     return *this;
   }
   D3D10_SB_OPERAND_TYPE OperandType() const { return m_Type; }
@@ -262,7 +262,7 @@ public:
   }
 
 public: // esp in the unions...it's just redundant to not directly access things
-  void Clear() { memset(this, 0, sizeof(*this)); }
+  void Clear() { memset((void *)this, 0, sizeof(*this)); }
   MinPrecQuantizeFunctionIndex
       m_MinPrecQuantizeFunctionIndex; // used by ref for low precision (IHVs can
                                       // ignore)
@@ -1277,7 +1277,7 @@ public:
     {
       ClearAllocations();
     }
-    memset(this, 0, sizeof(*this));
+    memset((void *)this, 0, sizeof(*this));
   }
   ~CInstruction() { ClearAllocations(); }
   const COperandBase &Operand(UINT Index) const { return m_Operands[Index]; }
