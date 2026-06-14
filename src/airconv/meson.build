@@ -35,6 +35,9 @@ llvm_deps = [
  '-lLLVMBinaryFormat', '-lLLVMSupport', '-lLLVMDemangle'
 ]
 
+# Extra libs a system LLVM may need (e.g. Homebrew llvm@15 links zstd).
+llvm_deps += get_option('llvm_extra_link_args')
+
 airconv_args = [
   '-Wno-extern-c-compat',
   # LLVM
