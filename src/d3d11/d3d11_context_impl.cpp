@@ -1884,7 +1884,26 @@ public:
   void
   STDMETHODCALLTYPE
   SwapDeviceContextState(ID3DDeviceContextState *pState, ID3DDeviceContextState **ppPreviousState) override {
-    UNIMPLEMENTED("SwapDeviceContextState");
+    // Callers (e.g. Direct2D interop) swap their own pipeline state in and the
+    // application's state out around a render pass. Save the current pipeline
+    // state into the returned previous-state token, then activate the incoming
+    // token's saved state.
+    if (!pState) {
+      if (ppPreviousState)
+        *ppPreviousState = nullptr;
+      return;
+    }
+    std::lock_guard<mutex_t> lock(mutex);
+    auto incoming = static_cast<MTLD3D11DeviceContextState *>(pState);
+    if (ppPreviousState) {
+      auto previous = new MTLD3D11DeviceContextState(device);
+      previous->saved_state = std::move(state_);
+      *ppPreviousState = ref(previous);
+    }
+    state_ = std::move(incoming->saved_state);
+    incoming->saved_state = {};
+    ResetEncodingContextState();
+    InvalidateRenderPipeline();
   }
 
   void
