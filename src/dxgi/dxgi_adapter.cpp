@@ -11,6 +11,11 @@
 
 namespace dxmt {
 
+const GUID kWineDXGIAdapterUUID = {0x17399d75,
+                                   0x964e,
+                                   0x4c03,
+                                   {0x99, 0xf8, 0x9d, 0x4f, 0xd1, 0x96, 0xdd, 0x62}};
+
 Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor, DxgiOptions &options);
 
 LUID GetAdapterLuid(WMT::Device device) {
@@ -53,6 +58,9 @@ public:
       *ppvObject = ref(this);
       return S_OK;
     }
+
+    if (riid == kWineDXGIAdapterUUID)
+      return E_NOINTERFACE;
 
     if (logQueryInterfaceError(__uuidof(IDXGIAdapter), riid)) {
       WARN("DXGIAdapter: Unknown interface query ", str::format(riid));
