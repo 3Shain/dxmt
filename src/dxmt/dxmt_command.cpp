@@ -234,7 +234,7 @@ ClearRenderTargetContext::clear(
   memcpy(temp, color.data(), sizeof(color));
   setcolor.bytes.set(temp);
   setcolor.length = sizeof(color);
-  setcolor.index = 0;
+  setcolor.index = kCustomBufferArgumentIndex0;
 
   auto &draw = ctx_.encodeRenderCommand<wmtcmd_render_draw>();
   draw.type = WMTRenderCommandDraw;
@@ -380,7 +380,7 @@ DepthStencilBlitContext::copyFromBuffer(
   auto &setbuf = ctx_.encodeRenderCommand<wmtcmd_render_setbuffer>();
   setbuf.type = WMTRenderCommandSetFragmentBuffer;
   setbuf.buffer = src_->buffer();
-  setbuf.index = 0;
+  setbuf.index = kCustomBufferArgumentIndex0;
   setbuf.offset = src_offset + src_sub_offset;
 
   linear_texture_desc desc{bytes_per_row, bytes_per_image};
@@ -390,7 +390,7 @@ DepthStencilBlitContext::copyFromBuffer(
   memcpy(temp, &desc, sizeof(desc));
   setdesc.bytes.set(temp);
   setdesc.length = sizeof(desc);
-  setdesc.index = 1;
+  setdesc.index = kCustomBufferArgumentIndex1;
 
   auto &draw = ctx_.encodeRenderCommand<wmtcmd_render_draw>();
   draw.type = WMTRenderCommandDraw;

@@ -2,6 +2,7 @@
 
 #include "Metal.hpp"
 #include "dxmt_buffer.hpp"
+#include "dxmt_command_constants.hpp"
 #include "dxmt_texture.hpp"
 #include "rc/util_rc_ptr.hpp"
 #include <array>
@@ -156,19 +157,17 @@ public:
   void
   MarshalGSDispatchArguments(WMT::RenderCommandEncoder encoder, WMT::Buffer commands, uint32_t commands_offset) {
     encoder.setRenderPipelineState(gs_draw_arguments_marshal);
-    encoder.setVertexBuffer(commands, commands_offset, 0);
+    encoder.setVertexBuffer(commands, commands_offset, kCustomBufferArgumentIndex0);
     encoder.drawPrimitives(WMTPrimitiveTypePoint, 0, 1);
-    encoder.setVertexBuffer({}, 0, 0);
-    encoder.setVertexBuffer({}, 0, 1);
+    encoder.setVertexBuffer({}, 0, kCustomBufferArgumentIndex0);
   }
 
   void
   MarshalTSDispatchArguments(WMT::RenderCommandEncoder encoder, WMT::Buffer commands, uint32_t commands_offset) {
     encoder.setRenderPipelineState(ts_draw_arguments_marshal);
-    encoder.setVertexBuffer(commands, commands_offset, 0);
+    encoder.setVertexBuffer(commands, commands_offset, kCustomBufferArgumentIndex0);
     encoder.drawPrimitives(WMTPrimitiveTypePoint, 0, 1);
-    encoder.setVertexBuffer({}, 0, 0);
-    encoder.setVertexBuffer({}, 0, 1);
+    encoder.setVertexBuffer({}, 0, kCustomBufferArgumentIndex0);
   }
 
 private:

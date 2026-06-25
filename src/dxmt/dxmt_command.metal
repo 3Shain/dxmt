@@ -20,8 +20,10 @@
 #include <metal_common>
 #include <metal_texture>
 #include <metal_math>
+#include "dxmt_command_constants.hpp"
 
 using namespace metal;
+using namespace dxmt;
 
 [[kernel]] void clear_texture_1d_uint(
     texture1d<uint, access::read_write> tex [[texture(0)]],
@@ -209,19 +211,19 @@ struct clear_data {
 }
 
 [[fragment]] float4 fs_clear_rt_float(
-  constant float4& clear_value [[buffer(0)]]
+  constant float4& clear_value [[buffer(kCustomBufferArgumentIndex0)]]
 ) {
   return clear_value;
 }
 
 [[fragment]] uint4 fs_clear_rt_uint(
-  constant float4& clear_value [[buffer(0)]]
+  constant float4& clear_value [[buffer(kCustomBufferArgumentIndex0)]]
 ) {
   return (uint4)clear_value;
 }
 
 [[fragment]] int4 fs_clear_rt_sint(
-  constant float4& clear_value [[buffer(0)]]
+  constant float4& clear_value [[buffer(kCustomBufferArgumentIndex0)]]
 ) {
   return (int4)clear_value;
 }
@@ -231,7 +233,7 @@ struct depth_out {
 };
 
 [[fragment]] depth_out fs_clear_rt_depth (
-  constant float4& clear_value [[buffer(0)]]
+  constant float4& clear_value [[buffer(kCustomBufferArgumentIndex0)]]
 ) {
   return {clear_value.x};
 }
@@ -393,7 +395,7 @@ struct DXMTTSDispatchMarshal {
 };
 
 [[vertex]] void ts_draw_arguments_marshal(
-    constant DXMTTSDispatchMarshal* tasks [[buffer(0)]]
+    constant DXMTTSDispatchMarshal* tasks [[buffer(kCustomBufferArgumentIndex0)]]
 ) {
   uint index = 0;
   for(;;) {
@@ -429,7 +431,7 @@ struct DXMTGSDispatchMarshal {
 };
 
 [[vertex]] void gs_draw_arguments_marshal(
-    constant DXMTGSDispatchMarshal* tasks [[buffer(0)]]
+    constant DXMTGSDispatchMarshal* tasks [[buffer(kCustomBufferArgumentIndex0)]]
 ) {
   uint index = 0;
   for(;;) {
@@ -473,8 +475,8 @@ struct linear_texture_desc {
 
 [[fragment]] depth_stencil_out fs_copy_from_buffer_d32s8(
   present_data input [[stage_in]],
-  device char* buffer [[buffer(0)]],
-  constant linear_texture_desc& desc [[buffer(1)]]
+  device char* buffer [[buffer(kCustomBufferArgumentIndex0)]],
+  constant linear_texture_desc& desc [[buffer(kCustomBufferArgumentIndex1)]]
 ) {
   depth_stencil_out result;
   uint2 pos = uint2(input.position.xy);
@@ -488,8 +490,8 @@ struct linear_texture_desc {
 
 [[fragment]] depth_stencil_out fs_copy_from_buffer_d24s8(
   present_data input [[stage_in]],
-  device char* buffer [[buffer(0)]],
-  constant linear_texture_desc& desc [[buffer(1)]]
+  device char* buffer [[buffer(kCustomBufferArgumentIndex0)]],
+  constant linear_texture_desc& desc [[buffer(kCustomBufferArgumentIndex1)]]
 ) {
   depth_stencil_out result;
   uint2 pos = uint2(input.position.xy);
