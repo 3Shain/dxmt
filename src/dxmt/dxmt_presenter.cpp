@@ -185,13 +185,6 @@ Presenter::encodeCommands(
   return drawable;
 }
 
-constexpr uint32_t kPresentFCIndex_BackbufferSizeMatched = 0x100;
-constexpr uint32_t kPresentFCIndex_HDRPQ = 0x101;
-constexpr uint32_t kPresentFCIndex_WithHDRMetadata = 0x102;
-constexpr uint32_t kPresentFCIndex_BackbufferIsSRGB = 0x103;
-constexpr uint32_t kPresentFCIndex_BackbufferIsMS = 0x104;
-constexpr uint32_t kPresentFCIndex_GammaEnabled = 0x105;
-
 void
 Presenter::buildRenderPipelineState(bool is_pq, bool with_hdr_metadata, bool is_ms, bool gamma_enable) {
   auto pool = WMT::MakeAutoreleasePool();

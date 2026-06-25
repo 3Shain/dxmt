@@ -296,13 +296,6 @@ float EETF(float E, float Lw, float Lb, float Lmax, float Lmin) {
   return E * pqdiff_LwLb + pq_Lb;
 }
 
-constexpr constant uint kPresentFCIndex_BackbufferSizeMatched = 0x100;
-constexpr constant uint kPresentFCIndex_BackbufferIsSRGB = 0x103;
-constexpr constant uint kPresentFCIndex_HDRPQ = 0x101;
-constexpr constant uint kPresentFCIndex_WithHDRMetadata = 0x102;
-constexpr constant uint kPresentFCIndex_BackbufferIsMS = 0x104;
-constexpr constant uint kPresentFCIndex_GammaEnabled = 0x105;
-
 constant bool present_backbuffer_size_matched [[function_constant(kPresentFCIndex_BackbufferSizeMatched)]];
 constant bool present_backbuffer_is_srgb [[function_constant(kPresentFCIndex_BackbufferIsSRGB)]];
 constant bool present_hdr_pq [[function_constant(kPresentFCIndex_HDRPQ)]];
