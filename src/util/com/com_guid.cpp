@@ -8,6 +8,7 @@
  * See <https://github.com/doitsujin/dxvk/blob/master/LICENSE>
  */
 
+#include <iomanip>
 #include <mutex>
 #include <unordered_set>
 
