@@ -213,4 +213,30 @@ public:
   }
 };
 
+/** On discard-map the backing rotates, so dirty only the stages that bind the
+ *  mapped resource — the rest would re-encode their tables for nothing. */
+inline void
+dirtyConstantBufferStages(D3D11StagesState<D3D11ShaderStageState> &stages, D3D11ResourceCommon *resource) {
+  for (auto &stage : stages) {
+    for (const auto &[slot, entry] : stage.ConstantBuffers) {
+      if (entry.Buffer.ptr() == resource) {
+        stage.ConstantBuffers.set_dirty();
+        break;
+      }
+    }
+  }
+}
+
+inline void
+dirtyShaderResourceStages(D3D11StagesState<D3D11ShaderStageState> &stages, D3D11ResourceCommon *resource) {
+  for (auto &stage : stages) {
+    for (const auto &[slot, entry] : stage.SRVs) {
+      if (entry.SRV->resource_.ptr() == resource) {
+        stage.SRVs.set_dirty();
+        break;
+      }
+    }
+  }
+}
+
 } // namespace dxmt

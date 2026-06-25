@@ -162,14 +162,10 @@ public:
           state_.InputAssembler.VertexBuffers.set_dirty();
         }
         if (bind_flag & D3D11_BIND_CONSTANT_BUFFER) {
-          for (auto &stage : state_.ShaderStages) {
-            stage.ConstantBuffers.set_dirty();
-          }
+          dirtyConstantBufferStages(state_.ShaderStages, GetResourceCommon(pResource));
         }
         if (bind_flag & D3D11_BIND_SHADER_RESOURCE) {
-          for (auto &stage : state_.ShaderStages) {
-            stage.SRVs.set_dirty();
-          }
+          dirtyShaderResourceStages(state_.ShaderStages, GetResourceCommon(pResource));
         }
 
         pMappedResource->pData = MapDynamicBuffer(dynamic);
@@ -201,9 +197,7 @@ public:
       case D3D11_MAP_READ_WRITE:
         return E_INVALIDARG;
       case D3D11_MAP_WRITE_DISCARD: {
-        for (auto &stage : state_.ShaderStages) {
-            stage.SRVs.set_dirty();
-        }
+        dirtyShaderResourceStages(state_.ShaderStages, GetResourceCommon(pResource));
         Rc<TextureAllocation> new_allocation = dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId());
         uint32_t id = ctx_state.current_cmdlist->used_dynamic_lineartextures.size();
         // track the current allocation in case of a following NO_OVERWRITE map
@@ -251,9 +245,7 @@ public:
       case D3D11_MAP_WRITE_NO_OVERWRITE:
         return E_INVALIDARG;
       case D3D11_MAP_WRITE_DISCARD: {
-        for (auto &stage : state_.ShaderStages) {
-            stage.SRVs.set_dirty();
-        }
+        dirtyShaderResourceStages(state_.ShaderStages, GetResourceCommon(pResource));
         pMappedResource->pData = MapDynamicBuffer(dynamic);
         pMappedResource->RowPitch = row_pitch;
         pMappedResource->DepthPitch = depth_pitch;
