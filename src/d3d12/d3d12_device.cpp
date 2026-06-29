@@ -74,7 +74,9 @@ public:
 
   HRESULT STDMETHODCALLTYPE
   CreateCommandQueue(const D3D12_COMMAND_QUEUE_DESC *pDesc, REFIID riid, void **ppCommandQueue) {
-    return E_NOTIMPL;
+    if (pDesc->Flags)
+      WARN("CreateCommandQueue: flags ignored: ", pDesc->Flags);
+    return dxmt::CreateCommandQueue(this, pDesc, riid, ppCommandQueue);
   };
 
   HRESULT STDMETHODCALLTYPE

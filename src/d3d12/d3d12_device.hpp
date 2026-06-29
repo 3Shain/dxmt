@@ -32,10 +32,17 @@
 
 namespace dxmt {
 
+class MTLD3D12CommandQueue : public ID3D12CommandQueue {
+public:
+};
+
 class MTLD3D12Device : public ID3D12Device1 {
 public:
 };
 
 HRESULT CreateD3D12Device(IMTLDXGIAdapter *adapter, REFIID riid, void **ppDevice);
+
+HRESULT
+CreateCommandQueue(MTLD3D12Device *pDevice, const D3D12_COMMAND_QUEUE_DESC *pDesc, REFIID riid, void **ppCommandQueue);
 
 } // namespace dxmt
