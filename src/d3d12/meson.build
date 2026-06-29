@@ -1,5 +1,6 @@
 d3d12_src = [
   'd3d12.cpp',
+  'd3d12_device.cpp',
   'd3d12_root_signature.cpp',
   '../d3d10/d3d10_blob.cpp',
 ]
