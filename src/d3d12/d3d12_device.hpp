@@ -32,6 +32,10 @@
 
 namespace dxmt {
 
+class MTLD3D12GraphicsCommandList : public ID3D12GraphicsCommandList {
+public:
+};
+
 class MTLD3D12CommandAllocator : public ID3D12CommandAllocator {
 public:
   virtual HRESULT STDMETHODCALLTYPE CreateCommandList(

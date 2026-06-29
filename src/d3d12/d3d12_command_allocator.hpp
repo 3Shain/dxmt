@@ -23,6 +23,7 @@
 namespace dxmt {
 
 class MTLD3D12CommandAllocatorImpl : public MTLD3D12Pageable<MTLD3D12CommandAllocator> {
+  friend class MTLD3D12GraphicsCommandListImpl;
 
   D3D12_COMMAND_LIST_TYPE type_;
 
