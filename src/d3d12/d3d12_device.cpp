@@ -138,7 +138,12 @@ public:
   CreateShaderResourceView(
       ID3D12Resource *pResource, const D3D12_SHADER_RESOURCE_VIEW_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor
   ) {
-    IMPLEMENT_ME
+    if (!pResource) {
+      // null descriptor
+      IMPLEMENT_ME
+    }
+    auto d3d12res = static_cast<MTLD3D12Resource *>(pResource);
+    d3d12res->CreateShaderResourceView(pDesc, Descriptor);
   };
 
   void STDMETHODCALLTYPE
@@ -146,21 +151,36 @@ public:
       ID3D12Resource *pResource, ID3D12Resource *pCounter, const D3D12_UNORDERED_ACCESS_VIEW_DESC *pDesc,
       D3D12_CPU_DESCRIPTOR_HANDLE Descriptor
   ) {
-    IMPLEMENT_ME
+    if (!pResource) {
+      // null descriptor
+      IMPLEMENT_ME
+    }
+    auto d3d12res = static_cast<MTLD3D12Resource *>(pResource);
+    d3d12res->CreateUnorderedAccessView(pCounter, pDesc, Descriptor);
   };
 
   void STDMETHODCALLTYPE
   CreateRenderTargetView(
       ID3D12Resource *pResource, const D3D12_RENDER_TARGET_VIEW_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor
   ) {
-    IMPLEMENT_ME
+    if (!pResource) {
+      // null descriptor
+      IMPLEMENT_ME
+    }
+    auto d3d12res = static_cast<MTLD3D12Resource *>(pResource);
+    d3d12res->CreateRenderTargetView(pDesc, Descriptor);
   };
 
   void STDMETHODCALLTYPE
   CreateDepthStencilView(
       ID3D12Resource *pResource, const D3D12_DEPTH_STENCIL_VIEW_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor
   ) {
-    IMPLEMENT_ME
+    if (!pResource) {
+      // null descriptor
+      IMPLEMENT_ME
+    }
+    auto d3d12res = static_cast<MTLD3D12Resource *>(pResource);
+    d3d12res->CreateDepthStencilView(pDesc, Descriptor);
   };
 
   void STDMETHODCALLTYPE CreateSampler(const D3D12_SAMPLER_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor) {
@@ -199,12 +219,26 @@ public:
       const D3D12_HEAP_PROPERTIES *pHeapProps, D3D12_HEAP_FLAGS HeapFlags, const D3D12_RESOURCE_DESC *pDesc,
       D3D12_RESOURCE_STATES InitialState, const D3D12_CLEAR_VALUE *OptimizedClearValue, REFIID riid, void **ppResource
   ) {
-    return E_NOTIMPL;
+    switch (pDesc->Dimension) {
+    case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
+    case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
+    case D3D12_RESOURCE_DIMENSION_TEXTURE3D:
+      return CreateCommittedTexture(
+          this, pHeapProps, HeapFlags, pDesc, InitialState, OptimizedClearValue, riid, ppResource
+      );
+    case D3D12_RESOURCE_DIMENSION_BUFFER:
+      return CreateCommittedBuffer(
+          this, pHeapProps, HeapFlags, pDesc, InitialState, OptimizedClearValue, riid, ppResource
+      );
+    default:
+      break;
+    }
+    return E_INVALIDARG;
   };
 
   HRESULT STDMETHODCALLTYPE
   CreateHeap(const D3D12_HEAP_DESC *pDesc, REFIID riid, void **ppHeap) {
-    return E_NOTIMPL;
+    return dxmt::CreateHeap(this, pDesc, riid, ppHeap);
   };
 
   HRESULT STDMETHODCALLTYPE
@@ -212,7 +246,20 @@ public:
       ID3D12Heap *pHeap, UINT64 Offset, const D3D12_RESOURCE_DESC *pDesc, D3D12_RESOURCE_STATES InitialState,
       const D3D12_CLEAR_VALUE *OptimizedClearValue, REFIID riid, void **ppResource
   ) {
-    return E_NOTIMPL;
+    if (!pHeap)
+      return E_INVALIDARG;
+    auto d3d12heap = static_cast<MTLD3D12Heap *>(pHeap);
+    switch (pDesc->Dimension) {
+    case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
+    case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
+    case D3D12_RESOURCE_DIMENSION_TEXTURE3D:
+      return CreatePlacedTexture(this, d3d12heap, pDesc, InitialState, OptimizedClearValue, riid, ppResource);
+    case D3D12_RESOURCE_DIMENSION_BUFFER:
+      return CreatePlacedBuffer(this, d3d12heap, pDesc, InitialState, OptimizedClearValue, riid, ppResource);
+    default:
+      break;
+    }
+    return E_INVALIDARG;
   };
 
   HRESULT STDMETHODCALLTYPE

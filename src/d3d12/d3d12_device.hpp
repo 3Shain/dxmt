@@ -48,6 +48,31 @@ class MTLD3D12CommandQueue : public ID3D12CommandQueue {
 public:
 };
 
+class MTLD3D12Resource : public ID3D12Resource {
+public:
+  virtual HRESULT STDMETHODCALLTYPE
+  CreateShaderResourceView(const D3D12_SHADER_RESOURCE_VIEW_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor) = 0;
+
+  virtual HRESULT STDMETHODCALLTYPE CreateUnorderedAccessView(
+      ID3D12Resource *pCounter, const D3D12_UNORDERED_ACCESS_VIEW_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor
+  ) = 0;
+
+  virtual HRESULT STDMETHODCALLTYPE
+  CreateRenderTargetView(const D3D12_RENDER_TARGET_VIEW_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor) = 0;
+
+  virtual HRESULT STDMETHODCALLTYPE
+  CreateDepthStencilView(const D3D12_DEPTH_STENCIL_VIEW_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor) = 0;
+
+  virtual void STDMETHODCALLTYPE GetResourceTiling(
+      UINT *TotalTileCount, D3D12_PACKED_MIP_INFO *PackedMipInfo, D3D12_TILE_SHAPE *StandardTileShape,
+      UINT *SubresourceTilingCount, UINT FirstSubresourceTiling, D3D12_SUBRESOURCE_TILING *SubresourceTilings
+  ) = 0;
+};
+
+class MTLD3D12Heap : public ID3D12Heap {
+public:
+};
+
 class MTLD3D12Device : public ID3D12Device1 {
 public:
 };
@@ -59,5 +84,32 @@ CreateCommandQueue(MTLD3D12Device *pDevice, const D3D12_COMMAND_QUEUE_DESC *pDes
 
 HRESULT
 CreateCommandAllocator(MTLD3D12Device *pDevice, D3D12_COMMAND_LIST_TYPE Type, REFIID riid, void **ppCommandAllocator);
+
+HRESULT CreateCommittedTexture(
+    MTLD3D12Device *pDevice, const D3D12_HEAP_PROPERTIES *pHeapProps, D3D12_HEAP_FLAGS HeapFlags,
+    const D3D12_RESOURCE_DESC *pDesc, D3D12_RESOURCE_STATES InitialState, const D3D12_CLEAR_VALUE *OptimizedClearValue,
+    REFIID riid, void **ppResource
+);
+
+HRESULT
+CreatePlacedTexture(
+    MTLD3D12Device *pDevice, MTLD3D12Heap *pHeap, const D3D12_RESOURCE_DESC *pDesc, D3D12_RESOURCE_STATES InitialState,
+    const D3D12_CLEAR_VALUE *OptimizedClearValue, REFIID riid, void **ppResource
+);
+
+HRESULT CreateCommittedBuffer(
+    MTLD3D12Device *pDevice, const D3D12_HEAP_PROPERTIES *pHeapProps, D3D12_HEAP_FLAGS HeapFlags,
+    const D3D12_RESOURCE_DESC *pDesc, D3D12_RESOURCE_STATES InitialState, const D3D12_CLEAR_VALUE *OptimizedClearValue,
+    REFIID riid, void **ppResource
+);
+
+HRESULT
+CreatePlacedBuffer(
+    MTLD3D12Device *pDevice, MTLD3D12Heap *pHeap, const D3D12_RESOURCE_DESC *pDesc, D3D12_RESOURCE_STATES InitialState,
+    const D3D12_CLEAR_VALUE *OptimizedClearValue, REFIID riid, void **ppResource
+);
+
+HRESULT
+CreateHeap(MTLD3D12Device *pDevice, const D3D12_HEAP_DESC *pDesc, REFIID riid, void **ppHeap);
 
 } // namespace dxmt
