@@ -75,6 +75,9 @@ public:
 
 class MTLD3D12Device : public ID3D12Device1 {
 public:
+  virtual WMT::Device GetMTLDevice() = 0;
+
+  virtual D3D_FEATURE_LEVEL GetFeatureLevel() = 0;
 };
 
 HRESULT CreateD3D12Device(IMTLDXGIAdapter *adapter, REFIID riid, void **ppDevice);
@@ -111,5 +114,12 @@ CreatePlacedBuffer(
 
 HRESULT
 CreateHeap(MTLD3D12Device *pDevice, const D3D12_HEAP_DESC *pDesc, REFIID riid, void **ppHeap);
+
+HRESULT
+CreateSwapChain(
+    IDXGIFactory1 *pFactory, MTLD3D12Device *pDevice, MTLD3D12CommandQueue *pQueue, HWND hWnd,
+    const DXGI_SWAP_CHAIN_DESC1 *pDesc, const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc,
+    IDXGISwapChain1 **ppSwapChain
+);
 
 } // namespace dxmt

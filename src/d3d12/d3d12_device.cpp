@@ -41,6 +41,16 @@ public:
     return S_OK;
   };
 
+  WMT::Device
+  GetMTLDevice() {
+    return adapter_->GetMTLDevice();
+  };
+
+  D3D_FEATURE_LEVEL
+  GetFeatureLevel() {
+    return D3D_FEATURE_LEVEL_11_0; // FIXME
+  };
+
   HRESULT
   GetAdapter(REFIID riid, void **ppAdapter) {
     return adapter_->QueryInterface(riid, ppAdapter);
