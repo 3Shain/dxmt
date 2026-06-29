@@ -81,7 +81,7 @@ public:
 
   HRESULT STDMETHODCALLTYPE
   CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE Type, REFIID riid, void **ppCommandAllocator) {
-    return E_NOTIMPL;
+    return dxmt::CreateCommandAllocator(this, Type, riid, ppCommandAllocator);
   };
 
   HRESULT STDMETHODCALLTYPE
@@ -101,7 +101,8 @@ public:
   ) {
     if (!pCommandAllocator)
       return E_INVALIDARG;
-    return E_NOTIMPL;
+    auto allocator = static_cast<MTLD3D12CommandAllocator *>(pCommandAllocator);
+    return allocator->CreateCommandList(NodeMask, Type, pInitialPipelineState, riid, ppCommandList);
   };
 
   HRESULT STDMETHODCALLTYPE

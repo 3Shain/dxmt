@@ -1,5 +1,7 @@
 d3d12_src = [
   'd3d12.cpp',
+  'd3d12_command_allocator.cpp',
+  'd3d12_command_list.cpp',
   'd3d12_command_queue.cpp',
   'd3d12_device.cpp',
   'd3d12_root_signature.cpp',

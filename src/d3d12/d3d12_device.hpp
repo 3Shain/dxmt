@@ -32,6 +32,14 @@
 
 namespace dxmt {
 
+class MTLD3D12CommandAllocator : public ID3D12CommandAllocator {
+public:
+  virtual HRESULT STDMETHODCALLTYPE CreateCommandList(
+      UINT NodeMask, D3D12_COMMAND_LIST_TYPE Type, ID3D12PipelineState *pInitialPipelineState, REFIID riid,
+      void **ppCommandList
+  ) = 0;
+};
+
 class MTLD3D12CommandQueue : public ID3D12CommandQueue {
 public:
 };
@@ -44,5 +52,8 @@ HRESULT CreateD3D12Device(IMTLDXGIAdapter *adapter, REFIID riid, void **ppDevice
 
 HRESULT
 CreateCommandQueue(MTLD3D12Device *pDevice, const D3D12_COMMAND_QUEUE_DESC *pDesc, REFIID riid, void **ppCommandQueue);
+
+HRESULT
+CreateCommandAllocator(MTLD3D12Device *pDevice, D3D12_COMMAND_LIST_TYPE Type, REFIID riid, void **ppCommandAllocator);
 
 } // namespace dxmt
