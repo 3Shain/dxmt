@@ -127,4 +127,7 @@ CreateSwapChain(
     IDXGISwapChain1 **ppSwapChain
 );
 
+template <typename VIEW_DESC>
+HRESULT ExtractEntireResourceViewDescription(const D3D12_RESOURCE_DESC &ResourceDesc, VIEW_DESC *pViewDescOut);
+
 } // namespace dxmt

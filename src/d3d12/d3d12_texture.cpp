@@ -112,12 +112,30 @@ public:
 
   virtual HRESULT STDMETHODCALLTYPE
   CreateRenderTargetView(const D3D12_RENDER_TARGET_VIEW_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor) {
+    HRESULT hr;
+    D3D12_RENDER_TARGET_VIEW_DESC ViewDesc;
+    if (!pDesc) {
+      hr = ExtractEntireResourceViewDescription(desc_, &ViewDesc);
+      if (FAILED(hr))
+        return hr;
+    } else {
+      ViewDesc = *pDesc;
+    }
     IMPLEMENT_ME
     return S_OK;
   };
 
   virtual HRESULT STDMETHODCALLTYPE
   CreateDepthStencilView(const D3D12_DEPTH_STENCIL_VIEW_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor) {
+    HRESULT hr;
+    D3D12_DEPTH_STENCIL_VIEW_DESC ViewDesc;
+    if (!pDesc) {
+      hr = ExtractEntireResourceViewDescription(desc_, &ViewDesc);
+      if (FAILED(hr))
+        return hr;
+    } else {
+      ViewDesc = *pDesc;
+    }
     IMPLEMENT_ME
     return S_OK;
   };
