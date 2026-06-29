@@ -9,8 +9,19 @@ HUDState::initialize(const std::string &heading) {
   using namespace WMT;
   auto pool = MakeAutoreleasePool();
   auto str_dxmt_version = MakeString("com.github.3shain.dxmt-version", WMTUTF8StringEncoding);
-  hud_.addLabel(str_dxmt_version, String::string("com.apple.hud-graph.default", WMTUTF8StringEncoding));
-  hud_.updateLabel(str_dxmt_version, String::string(heading.c_str(), WMTUTF8StringEncoding));
+  uint64_t macos_major_version = 0, macos_minor_version = 0;
+  WMTGetOSVersion(&macos_major_version, &macos_minor_version, nullptr);
+  if (macos_major_version >= 27) {
+    hud_.addMetric(
+        str_dxmt_version,
+        String::string(heading.c_str(), WMTUTF8StringEncoding),
+        String::string("", WMTUTF8StringEncoding),
+        0xFFFFFFFF, 0x00000000, 0x800, 0);
+    hud_.updateIntegerMetric(str_dxmt_version, 1);
+  } else {
+    hud_.addLabel(str_dxmt_version, String::string("com.apple.hud-graph.default", WMTUTF8StringEncoding));
+    hud_.updateLabel(str_dxmt_version, String::string(heading.c_str(), WMTUTF8StringEncoding));
+  }
   line_labels_.push_back(std::move(str_dxmt_version));
 }
 

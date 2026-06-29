@@ -652,6 +652,31 @@ DeveloperHUDProperties_updateLabel(obj_handle_t obj, obj_handle_t label, obj_han
 }
 
 WINEMETAL_API void
+DeveloperHUDProperties_addMetric(
+    obj_handle_t obj, obj_handle_t metric, obj_handle_t name, obj_handle_t unit,
+    uint32_t nameColor, uint32_t valueColor, uint32_t visualType, uint32_t options) {
+  struct unixcall_generic_obj_obj_obj_obj_uint_uint_uint_uint_noret params;
+  params.handle = obj;
+  params.arg0 = metric;
+  params.arg1 = name;
+  params.arg2 = unit;
+  params.arg3 = nameColor;
+  params.arg4 = valueColor;
+  params.arg5 = visualType;
+  params.arg6 = options;
+  UNIX_CALL(132, &params);
+}
+
+WINEMETAL_API void
+DeveloperHUDProperties_updateMetric(obj_handle_t obj, obj_handle_t metric, int64_t value) {
+  struct unixcall_generic_obj_obj_int64_noret params;
+  params.handle = obj;
+  params.arg0 = metric;
+  params.arg1 = value;
+  UNIX_CALL(133, &params);
+}
+
+WINEMETAL_API void
 DeveloperHUDProperties_remove(obj_handle_t obj, obj_handle_t label) {
   struct unixcall_generic_obj_obj_noret params;
   params.handle = obj;

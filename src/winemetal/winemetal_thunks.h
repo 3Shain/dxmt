@@ -165,6 +165,23 @@ struct unixcall_generic_obj_obj_obj_noret {
   obj_handle_t arg1;
 };
 
+struct unixcall_generic_obj_obj_obj_obj_uint_uint_uint_uint_noret {
+  obj_handle_t handle;
+  obj_handle_t arg0;
+  obj_handle_t arg1;
+  obj_handle_t arg2;
+  uint32_t arg3;
+  uint32_t arg4;
+  uint32_t arg5;
+  uint32_t arg6;
+};
+
+struct unixcall_generic_obj_obj_int64_noret {
+  obj_handle_t handle;
+  obj_handle_t arg0;
+  int64_t arg1;
+};
+
 struct unixcall_generic_obj_obj_obj_uint64_ret {
   obj_handle_t handle;
   obj_handle_t arg0;

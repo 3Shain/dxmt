@@ -1676,6 +1676,13 @@ WINEMETAL_API bool DeveloperHUDProperties_addLabel(obj_handle_t obj, obj_handle_
 
 WINEMETAL_API void DeveloperHUDProperties_updateLabel(obj_handle_t obj, obj_handle_t label, obj_handle_t value);
 
+WINEMETAL_API void
+DeveloperHUDProperties_addMetric(
+    obj_handle_t obj, obj_handle_t metric, obj_handle_t name, obj_handle_t unit,
+    uint32_t nameColor, uint32_t valueColor, uint32_t visualType, uint32_t options);
+
+WINEMETAL_API void DeveloperHUDProperties_updateMetric(obj_handle_t obj, obj_handle_t metric, int64_t value);
+
 WINEMETAL_API void DeveloperHUDProperties_remove(obj_handle_t obj, obj_handle_t label);
 
 WINEMETAL_API obj_handle_t MetalDrawable_texture(obj_handle_t drawable);

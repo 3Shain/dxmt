@@ -949,6 +949,16 @@ public:
   }
 
   void
+  addMetric(String metric, String name, String unit, uint32_t nameColor, uint32_t valueColor, uint32_t visualType, uint32_t options) {
+    DeveloperHUDProperties_addMetric(handle, metric, name, unit, nameColor, valueColor, visualType, options);
+  }
+
+  void
+  updateIntegerMetric(String metric, int64_t value) {
+    DeveloperHUDProperties_updateMetric(handle, metric, value);
+  }
+
+  void
   remove(String label) {
     DeveloperHUDProperties_remove(handle, label);
   }

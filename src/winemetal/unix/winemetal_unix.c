@@ -1498,6 +1498,25 @@ _DeveloperHUDProperties_updateLabel(void *obj) {
 }
 
 static NTSTATUS
+_DeveloperHUDProperties_addMetric(void *obj) {
+  struct unixcall_generic_obj_obj_obj_obj_uint_uint_uint_uint_noret *params = obj;
+  ((void (*)(id, SEL, id, id, id, NSUInteger, NSUInteger, NSUInteger, NSUInteger)
+  )objc_msgSend)(
+      (id)params->handle, @selector(addMetric:name:unit:nameColor:valueColor:visualType:options:),
+      (id)params->arg0, (id)params->arg1, (id)params->arg2, (NSUInteger)params->arg3,
+      (NSUInteger)params->arg4, (NSUInteger)params->arg5, (NSUInteger)params->arg6);
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_DeveloperHUDProperties_updateIntegerMetric(void *obj) {
+  struct unixcall_generic_obj_obj_int64_noret *params = obj;
+  ((void (*)(id, SEL, id, NSInteger)
+  )objc_msgSend)((id)params->handle, @selector(updateIntegerMetric:value:), (id)params->arg0, (NSInteger)params->arg1);
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
 _DeveloperHUDProperties_remove(void *obj) {
   struct unixcall_generic_obj_obj_noret *params = obj;
   ((void (*)(id, SEL, id))objc_msgSend)((id)params->handle, @selector(remove:), (id)params->arg);
@@ -2998,6 +3017,8 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLCommandBuffer_blitCommandEncoderWithSampleBuffers,
     &_MTLCommandBuffer_property,
     &_MTLDevice_newTileRenderPipelineState,
+    &_DeveloperHUDProperties_addMetric,
+    &_DeveloperHUDProperties_updateIntegerMetric,
 };
 
 #ifndef DXMT_NATIVE
@@ -3134,5 +3155,7 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLCommandBuffer_blitCommandEncoderWithSampleBuffers,
     &_MTLCommandBuffer_property,
     &_MTLDevice_newTileRenderPipelineState,
+    &_DeveloperHUDProperties_addMetric,
+    &_DeveloperHUDProperties_updateIntegerMetric,
 };
 #endif
