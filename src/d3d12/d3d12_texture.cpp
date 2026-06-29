@@ -18,9 +18,109 @@
 
 #include "d3d12_device.hpp"
 #include "d3d12_pageable.hpp"
+#include "dxmt_format.hpp"
 #include "com/com_pointer.hpp"
 
 namespace dxmt {
+
+HRESULT
+PopulateWMTTextureInfo(WMT::Device Device, WMTTextureInfo &InfoOut, const D3D12_RESOURCE_DESC &Desc) {
+  MTL_DXGI_FORMAT_DESC Format;
+  HRESULT hr = MTLQueryDXGIFormat(Device, Desc.Format, Format);
+  if (FAILED(hr))
+    return hr;
+
+  InfoOut.pixel_format = Format.PixelFormat;
+
+  if (Desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL) {
+    switch (Format.PixelFormat) {
+    case WMTPixelFormatR32Uint:
+    case WMTPixelFormatR32Sint:
+    case WMTPixelFormatR32Float:
+      InfoOut.pixel_format = WMTPixelFormatDepth32Float;
+      break;
+    case WMTPixelFormatR16Uint:
+    case WMTPixelFormatR16Sint:
+    case WMTPixelFormatR16Float:
+    case WMTPixelFormatR16Unorm:
+    case WMTPixelFormatR16Snorm:
+      InfoOut.pixel_format = WMTPixelFormatDepth16Unorm;
+      break;
+    default:
+      break;
+    }
+  }
+
+  switch (Desc.Dimension) {
+  default:
+    return E_INVALIDARG;
+  case D3D12_RESOURCE_DIMENSION_TEXTURE1D: {
+    if (Format.Flag & (MTL_DXGI_FORMAT_BC | MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER))
+      return E_INVALIDARG;
+    InfoOut.width = Desc.Width;
+    InfoOut.height = 1;
+    InfoOut.depth = 1;
+    InfoOut.array_length = Desc.DepthOrArraySize;
+    if (Desc.DepthOrArraySize > 1)
+      InfoOut.type = WMTTextureType2DArray;
+    else
+      InfoOut.type = WMTTextureType2D;
+    InfoOut.sample_count = 1;
+    break;
+  }
+  case D3D12_RESOURCE_DIMENSION_TEXTURE2D: {
+    InfoOut.width = Desc.Width;
+    InfoOut.height = Desc.Height;
+    InfoOut.depth = 1;
+    InfoOut.array_length = Desc.DepthOrArraySize;
+    if (Desc.SampleDesc.Count == 0)
+      return E_INVALIDARG;
+    if (Desc.SampleDesc.Count > 1) {
+      if (Desc.DepthOrArraySize > 1)
+        InfoOut.type = WMTTextureType2DMultisampleArray;
+      else
+        InfoOut.type = WMTTextureType2DMultisample;
+      InfoOut.sample_count = Desc.SampleDesc.Count;
+    } else {
+      if (Desc.DepthOrArraySize > 1)
+        InfoOut.type = WMTTextureType2DArray;
+      else
+        InfoOut.type = WMTTextureType2D;
+      InfoOut.sample_count = 1;
+    }
+    break;
+  }
+  case D3D12_RESOURCE_DIMENSION_TEXTURE3D: {
+    InfoOut.width = Desc.Width;
+    InfoOut.height = Desc.Height;
+    InfoOut.depth = Desc.DepthOrArraySize;
+    InfoOut.array_length = 1;
+    InfoOut.type = WMTTextureType3D;
+    InfoOut.sample_count = 1;
+    break;
+  }
+  }
+  if (Desc.MipLevels)
+    InfoOut.mipmap_level_count = Desc.MipLevels;
+  else
+    InfoOut.mipmap_level_count = 32 - __builtin_clz(InfoOut.width | InfoOut.height | InfoOut.depth);
+
+  WMTTextureUsage Usage = WMTTextureUsagePixelFormatView;
+  if (Desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
+    Usage |= WMTTextureUsageRenderTarget;
+  if (Desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)
+    Usage |= WMTTextureUsageRenderTarget;
+  if (Desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS)
+    Usage |= WMTTextureUsageShaderRead | WMTTextureUsageShaderWrite;
+  if (!(Desc.Flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE))
+    Usage |= WMTTextureUsageShaderRead;
+  InfoOut.usage = Usage;
+
+  // TODO: decide storage mode
+  InfoOut.options = WMTResourceHazardTrackingModeUntracked;
+
+  return S_OK;
+};
 
 class MTLD3D12Texture : public MTLD3D12Pageable<MTLD3D12Resource> {
   D3D12_RESOURCE_DESC desc_;
@@ -33,6 +133,28 @@ public:
       const D3D12_HEAP_PROPERTIES *pHeapProps, D3D12_HEAP_FLAGS HeapFlags, const D3D12_RESOURCE_DESC *pDesc,
       D3D12_RESOURCE_STATES InitialState, MTLD3D12Heap *pHeap
   ) {
+    // TODO: validate and normalize
+    desc_ = *pDesc;
+
+    switch (InitialState) {
+    case D3D12_RESOURCE_STATE_RENDER_TARGET: {
+      if (desc_.Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
+        break;
+      return E_INVALIDARG;
+    }
+    default:
+      break;
+    }
+
+    WMTTextureInfo texture_info;
+    HRESULT hr = PopulateWMTTextureInfo(device_->GetMTLDevice(), texture_info, desc_);
+    if (FAILED(hr))
+      return hr;
+
+    texture = new Texture(texture_info, device_->GetMTLDevice());
+    Flags<TextureAllocationFlag> flags = {};
+    texture->rename(texture->allocate(flags));
+
     return S_OK;
   };
 

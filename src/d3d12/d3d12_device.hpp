@@ -21,6 +21,7 @@
 #include "dxgi1_2.h"
 #include "dxgi_interfaces.h"
 #include "airconv_public.h"
+#include "dxmt_texture.hpp"
 #include "log/log.hpp"
 
 #define IMPLEMENT_ME                                                                                                   \
@@ -50,6 +51,8 @@ public:
 
 class MTLD3D12Resource : public ID3D12Resource {
 public:
+  Rc<Texture> texture;
+
   virtual HRESULT STDMETHODCALLTYPE
   CreateShaderResourceView(const D3D12_SHADER_RESOURCE_VIEW_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor) = 0;
 
