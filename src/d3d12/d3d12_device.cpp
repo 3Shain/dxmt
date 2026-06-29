@@ -123,7 +123,7 @@ public:
 
   HRESULT STDMETHODCALLTYPE
   CreateDescriptorHeap(const D3D12_DESCRIPTOR_HEAP_DESC *pDesc, REFIID riid, void **ppDescriptorHeap) {
-    return E_NOTIMPL;
+    return dxmt::CreateDescriptorHeap(this, pDesc, riid, ppDescriptorHeap);
   };
 
   UINT STDMETHODCALLTYPE
