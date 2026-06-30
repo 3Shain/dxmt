@@ -7,6 +7,7 @@ d3d12_src = [
   'd3d12_descriptor_heap.cpp',
   'd3d12_device.cpp',
   'd3d12_heap.cpp',
+  'd3d12_pipeline_graphics.cpp',
   'd3d12_resource_helper.cpp',
   'd3d12_root_signature.cpp',
   'd3d12_swapchain.cpp',

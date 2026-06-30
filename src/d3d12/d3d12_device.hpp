@@ -80,6 +80,15 @@ class MTLD3D12RootSignature : public ID3D12RootSignature {
 public:
 };
 
+class MTLD3D12PipelineState : public ID3D12PipelineState {
+public:
+  UINT IsComputePipelineState;
+};
+
+class MTLD3D12GraphicsPipelineState : public MTLD3D12PipelineState {
+public:
+};
+
 class MTLD3D12Device : public ID3D12Device1 {
 public:
   virtual WMT::Device GetMTLDevice() = 0;
@@ -131,6 +140,11 @@ HRESULT
 CreateRootSignature(
     MTLD3D12Device *pDevice, UINT NodeMask, const void *pBytecode, SIZE_T BytecodeLength, REFIID riid,
     void **ppRootSignature
+);
+
+HRESULT
+CreateGraphicsPipelineState(
+    MTLD3D12Device *pDevice, const D3D12_GRAPHICS_PIPELINE_STATE_DESC *pDesc, REFIID riid, void **ppPipelineState
 );
 
 HRESULT
