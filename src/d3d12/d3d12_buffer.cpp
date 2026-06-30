@@ -24,6 +24,8 @@ namespace dxmt {
 
 class MTLD3D12Buffer : public MTLD3D12Pageable<MTLD3D12Resource> {
   D3D12_RESOURCE_DESC desc_;
+  D3D12_HEAP_PROPERTIES heap_props_;
+  D3D12_HEAP_FLAGS heap_flags_;
 
 public:
   MTLD3D12Buffer(MTLD3D12Device *pDevice) : MTLD3D12Pageable<MTLD3D12Resource>(pDevice) {}
@@ -35,6 +37,17 @@ public:
   ) {
     if (OptimizedClearValue)
       return E_INVALIDARG;
+
+    // TODO: validate and normalize
+    desc_ = *pDesc;
+    heap_props_ = *pHeapProps;
+    heap_flags_ = HeapFlags;
+
+    buffer = new Buffer(desc_.Width, device_->GetMTLDevice());
+
+    Flags<BufferAllocationFlag> flags;
+    buffer->rename(buffer->allocate(flags));
+
     return S_OK;
   };
 
@@ -63,10 +76,20 @@ public:
 
   virtual HRESULT STDMETHODCALLTYPE
   Map(UINT Subresource, const D3D12_RANGE *pReadRange, void **ppData) {
-    return E_NOTIMPL;
+    if (Subresource)
+      return E_INVALIDARG;
+    if (heap_props_.Type == D3D12_HEAP_TYPE_DEFAULT)
+      return E_INVALIDARG;
+    if (pReadRange && pReadRange->Begin != 0)
+      IMPLEMENT_ME
+    if (ppData)
+      *ppData = buffer->current()->mappedMemory(0);
+    return S_OK;
   };
 
-  virtual void STDMETHODCALLTYPE Unmap(UINT Subresource, const D3D12_RANGE *pWrittenRange) {};
+  virtual void STDMETHODCALLTYPE Unmap(UINT Subresource, const D3D12_RANGE *pWrittenRange) {
+    // no-op
+  };
 
   virtual D3D12_RESOURCE_DESC *STDMETHODCALLTYPE
   GetDesc(D3D12_RESOURCE_DESC *__ret) {
@@ -76,7 +99,7 @@ public:
 
   virtual D3D12_GPU_VIRTUAL_ADDRESS STDMETHODCALLTYPE
   GetGPUVirtualAddress() {
-    return 0;
+    return buffer->current()->gpuAddress();
   };
 
   virtual HRESULT STDMETHODCALLTYPE
@@ -95,7 +118,11 @@ public:
 
   virtual HRESULT STDMETHODCALLTYPE
   GetHeapProperties(D3D12_HEAP_PROPERTIES *pHeapProps, D3D12_HEAP_FLAGS *pFlags) {
-    return E_NOTIMPL;
+    if (pHeapProps)
+      *pHeapProps = heap_props_;
+    if (pFlags)
+      *pFlags = heap_flags_;
+    return S_OK;
   };
 
   virtual HRESULT STDMETHODCALLTYPE
