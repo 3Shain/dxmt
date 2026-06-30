@@ -21,6 +21,7 @@ dxmt_src = [
   'dxmt_subresource.cpp',
   'dxmt_deptrack.cpp',
   'dxmt_counter.cpp',
+  'dxmt_fence.cpp',
 ]
 
 dxmt_shaders = [
