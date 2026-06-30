@@ -22,6 +22,10 @@
 
 namespace dxmt {
 
+enum class DirtyState {
+  VertexBuffer,
+};
+
 enum class DrawCallStatus {
   Invalid,
   Ordinary,
@@ -101,6 +105,10 @@ class MTLD3D12GraphicsCommandListImpl : public MTLD3D12DeviceChild<MTLD3D12Graph
 
   /* state */
 
+  Flags<DirtyState> dirty_state_;
+
+  std::array<D3D12_VERTEX_BUFFER_VIEW, D3D12_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT> vertex_buffers_;
+
   UINT num_rtvs;
   D3D12_CPU_DESCRIPTOR_HANDLE rtvs[8];
   D3D12_CPU_DESCRIPTOR_HANDLE dsv;
@@ -132,6 +140,10 @@ public:
     dsv = {};
 
     topology_ = {};
+
+    memset(vertex_buffers_.data(), 0, sizeof(vertex_buffers_));
+
+    dirty_state_.clrAll();
 
     encoder_count = std::numeric_limits<size_t>::max();
     return allocator_->StartRecord(&entry);
@@ -178,6 +190,49 @@ public:
   };
 
   void STDMETHODCALLTYPE ClearState(ID3D12PipelineState *pPipelineState) { IMPLEMENT_ME };
+
+  std::tuple<uint64_t, uint64_t>
+  PopulateVertexBufferTable(uint32_t Count) {
+    auto slot_mask = pso_graphics_ ? pso_graphics_->slot_mask : 0;
+    if (!slot_mask)
+      return {0, 0};
+    uint32_t max_slot = 32 - __builtin_clz(slot_mask);
+    struct VERTEX_BUFFER_ENTRY {
+      uint64_t buffer_handle;
+      uint32_t stride;
+      uint32_t length;
+    };
+    auto stride = align(sizeof(VERTEX_BUFFER_ENTRY) * max_slot, 16);
+
+    auto [mapped, offset] = allocator_->AllocateGPUHeap(stride * Count, 16);
+
+    for (unsigned i = 0; i < Count; i++) {
+      VERTEX_BUFFER_ENTRY *entries = (VERTEX_BUFFER_ENTRY *)(reinterpret_cast<char *>(mapped) + i * stride);
+      for (unsigned slot = 0, index = 0; slot < max_slot; slot++) {
+        if (!(slot_mask & (1 << slot)))
+          continue;
+        auto &state = vertex_buffers_[slot];
+        entries[index].buffer_handle = state.BufferLocation;
+        entries[index].stride = state.StrideInBytes;
+        entries[index++].length = state.SizeInBytes;
+      };
+    }
+
+    return {offset, stride};
+  }
+
+  void
+  EncodeVertexBuffers() {
+    auto [Offset, Stride] = PopulateVertexBufferTable(1);
+    if (!Stride)
+      return;
+
+    auto &cmd = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+    cmd.type = WMTRenderCommandSetVertexBuffer;
+    cmd.buffer = allocator_->gpu_heap_buffer_;
+    cmd.offset = Offset;
+    cmd.index = SM50_BINDING_INDEX_VERTEX_BUFFER;
+  }
 
   DrawCallStatus
   PreDraw() {
@@ -251,6 +306,11 @@ public:
       if (pso_graphics_) {
         UpdateGraphicsPSO(pso_graphics_.ptr());
       }
+      dirty_state_.set(DirtyState::VertexBuffer);
+    }
+    if (dirty_state_.test(DirtyState::VertexBuffer)) {
+      EncodeVertexBuffers();
+      dirty_state_.clr(DirtyState::VertexBuffer);
     }
     return DrawCallStatus::Ordinary;
   }
@@ -399,8 +459,12 @@ public:
 
   void STDMETHODCALLTYPE IASetIndexBuffer(const D3D12_INDEX_BUFFER_VIEW *pView) { IMPLEMENT_ME };
 
-  void STDMETHODCALLTYPE IASetVertexBuffers(UINT StartSlot, UINT Count, const D3D12_VERTEX_BUFFER_VIEW *Views) {
-    IMPLEMENT_ME
+  void STDMETHODCALLTYPE
+  IASetVertexBuffers(UINT StartSlot, UINT Count, const D3D12_VERTEX_BUFFER_VIEW *Views) {
+    for (unsigned Slot = StartSlot; Slot < StartSlot + Count; Slot++) {
+      vertex_buffers_[Slot] = Views ? Views[Slot - StartSlot] : D3D12_VERTEX_BUFFER_VIEW{};
+    }
+    dirty_state_.set(DirtyState::VertexBuffer);
   };
 
   void STDMETHODCALLTYPE SOSetTargets(UINT StartSlot, UINT Count, const D3D12_STREAM_OUTPUT_BUFFER_VIEW *Views) {
