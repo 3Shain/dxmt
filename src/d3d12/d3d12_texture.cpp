@@ -154,11 +154,14 @@ public:
     texture = new Texture(texture_info, device_->GetMTLDevice());
     Flags<TextureAllocationFlag> flags = {};
     texture->rename(texture->allocate(flags));
+    device_->RegisterResidency(texture->current()->texture());
 
     return S_OK;
   };
 
-  ~MTLD3D12Texture() {}
+  ~MTLD3D12Texture() {
+    device_->UnregisterResidency(texture->current()->texture());
+  }
 
   HRESULT
   STDMETHODCALLTYPE

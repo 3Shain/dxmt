@@ -48,6 +48,7 @@ public:
     queue_ = metal_device.newCommandQueue(kCommandQueueSize);
     if (!queue_)
       return E_FAIL;
+    queue_.addResidencySet(device_->GetGlobalResidencySet());
 
     fence_ = metal_device.newFence();
 

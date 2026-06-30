@@ -31,6 +31,9 @@ class MTLD3D12DeviceImpl : public MTLD3D12Object<ComObject<MTLD3D12Device>> {
 
   Com<IMTLDXGIAdapter> adapter_;
 
+  dxmt::mutex residency_lock_;
+  WMT::Reference<WMT::ResidencySet> residency_set_;
+
 public:
   MTLD3D12DeviceImpl(IMTLDXGIAdapter *adapter) : adapter_(adapter) {}
 
@@ -38,6 +41,12 @@ public:
 
   HRESULT
   Initialize() {
+    WMT::Reference<WMT::Error> err;
+    residency_set_ = adapter_->GetMTLDevice().newResidencySet(0, err);
+    if (!residency_set_) {
+      ERR("Failed to create MTLResidencySet: ", err.description().getUTF8String());
+      return E_FAIL;
+    }
     return S_OK;
   };
 
@@ -381,6 +390,27 @@ public:
   SetResidencyPriority(UINT ObjectCount, ID3D12Pageable *const *pObjects, const D3D12_RESIDENCY_PRIORITY *pPriorities) {
     return E_NOTIMPL;
   };
+
+  WMT::ResidencySet
+  GetGlobalResidencySet() {
+    return residency_set_;
+  };
+
+  HRESULT
+  RegisterResidency(WMT::Allocation allocation) {
+    std::unique_lock<dxmt::mutex> lock(residency_lock_);
+    residency_set_.addAllocations(&allocation, 1);
+    residency_set_.commit();
+    return S_OK;
+  }
+
+  HRESULT
+  UnregisterResidency(WMT::Allocation allocation) {
+    std::unique_lock<dxmt::mutex> lock(residency_lock_);
+    residency_set_.removeAllocations(&allocation, 1);
+    residency_set_.commit();
+    return S_OK;
+  }
 };
 
 HRESULT

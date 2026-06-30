@@ -47,11 +47,14 @@ public:
 
     Flags<BufferAllocationFlag> flags;
     buffer->rename(buffer->allocate(flags));
+    device_->RegisterResidency(buffer->current()->buffer());
 
     return S_OK;
   };
 
-  ~MTLD3D12Buffer() {}
+  ~MTLD3D12Buffer() {
+    device_->UnregisterResidency(buffer->current()->buffer());
+  }
 
   HRESULT
   STDMETHODCALLTYPE

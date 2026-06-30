@@ -124,6 +124,12 @@ public:
 
   virtual D3D_FEATURE_LEVEL GetFeatureLevel() = 0;
 
+  virtual WMT::ResidencySet GetGlobalResidencySet() = 0;
+
+  virtual HRESULT RegisterResidency(WMT::Allocation allocation) = 0;
+
+  virtual HRESULT UnregisterResidency(WMT::Allocation allocation) = 0;
+
   EventListener event_listener;
 };
 
