@@ -119,6 +119,18 @@ public:
     encoder_current = p;
     return p;
   };
+
+  template <typename cmd_struct>
+  cmd_struct &
+  EncodeRenderCommand() {
+    assert(encoder_current->type == EncoderType::Render);
+    auto encoder = static_cast<RenderEncoderData *>(encoder_current);
+    auto storage = (cmd_struct *)AllocateCPUHeap(sizeof(cmd_struct), 16);
+    encoder->cmd_tail->next.set(storage);
+    encoder->cmd_tail = (wmtcmd_base *)storage;
+    storage->next.set(nullptr);
+    return *storage;
+  }
 };
 
 } // namespace dxmt

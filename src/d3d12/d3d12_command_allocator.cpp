@@ -94,6 +94,9 @@ MTLD3D12CommandAllocatorImpl::Reset() {
       case EncoderType::Clear:
         reinterpret_cast<ClearEncoderData *>(next)->~ClearEncoderData();
         break;
+      case EncoderType::Render:
+        reinterpret_cast<RenderEncoderData *>(next)->~RenderEncoderData();
+        break;
       }
       next = next->next;
     }

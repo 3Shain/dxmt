@@ -26,6 +26,7 @@ namespace dxmt {
 enum class EncoderType {
   Null,
   Clear,
+  Render,
 };
 
 struct EncoderData {
@@ -46,6 +47,58 @@ struct ClearEncoderData : EncoderData {
   unsigned height;
 
   ClearEncoderData() {}
+};
+
+struct RenderEncoderColorAttachmentData {
+  TextureViewRef attachment;
+  enum WMTLoadAction load_action;
+  enum WMTStoreAction store_action;
+  uint16_t level;
+  uint16_t slice;
+  uint32_t depth_plane;
+  struct WMTClearColor clear_color;
+  TextureViewRef resolve_attachment;
+  uint16_t resolve_level;
+  uint16_t resolve_slice;
+  uint32_t resolve_depth_plane;
+};
+
+struct RenderEncoderDepthAttachmentData {
+  TextureViewRef attachment;
+  enum WMTLoadAction load_action;
+  enum WMTStoreAction store_action;
+  uint16_t level;
+  uint16_t slice;
+  uint32_t depth_plane;
+  float clear_depth;
+};
+
+struct RenderEncoderStencilAttachmentData {
+  TextureViewRef attachment;
+  enum WMTLoadAction load_action;
+  enum WMTStoreAction store_action;
+  uint16_t level;
+  uint16_t slice;
+  uint32_t depth_plane;
+  uint8_t clear_stencil;
+};
+
+struct RenderEncoderData : EncoderData {
+  std::array<RenderEncoderColorAttachmentData, 8> colors;
+  RenderEncoderDepthAttachmentData depth;
+  RenderEncoderStencilAttachmentData stencil;
+  uint8_t default_raster_sample_count;
+  uint16_t render_target_array_length;
+  uint32_t render_target_height;
+  uint32_t render_target_width;
+  wmtcmd_render_nop cmd_head;
+  wmtcmd_base *cmd_tail;
+  uint8_t dsv_planar_flags;
+  uint8_t dsv_readonly_flags;
+  uint8_t render_target_count;
+  bool use_visibility_result = 0;
+  bool use_tessellation = 0;
+  bool use_geometry = 0;
 };
 
 }; // namespace dxmt

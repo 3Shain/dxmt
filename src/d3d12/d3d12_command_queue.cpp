@@ -144,6 +144,62 @@ public:
           }
           break;
         }
+        case EncoderType::Render: {
+          auto data = static_cast<RenderEncoderData *>(current);
+          WMTRenderPassInfo render_pass_info;
+          WMT::InitializeRenderPassInfo(render_pass_info);
+          {
+            for (unsigned i = 0; i < std::size(render_pass_info.colors); i++) {
+              auto &color_data = data->colors[i];
+              if (!color_data.attachment)
+                continue;
+              auto &color_info = render_pass_info.colors[i];
+              color_info.texture = color_data.attachment.texture();
+              color_info.load_action = color_data.load_action;
+              color_info.store_action = color_data.store_action;
+              color_info.level = color_data.level;
+              color_info.slice = color_data.slice;
+              color_info.depth_plane = color_data.depth_plane;
+              color_info.clear_color = color_data.clear_color;
+              color_info.resolve_texture = color_data.resolve_attachment.texture();
+              color_info.resolve_level = color_data.resolve_level;
+              color_info.resolve_slice = color_data.resolve_slice;
+              color_info.resolve_depth_plane = color_data.resolve_depth_plane;
+            }
+            if (data->depth.attachment) {
+              auto &depth_info = render_pass_info.depth;
+              auto &depth_data = data->depth;
+              depth_info.texture = depth_data.attachment.texture();
+              depth_info.load_action = depth_data.load_action;
+              depth_info.store_action = depth_data.store_action;
+              depth_info.level = depth_data.level;
+              depth_info.slice = depth_data.slice;
+              depth_info.depth_plane = depth_data.depth_plane;
+              depth_info.clear_depth = depth_data.clear_depth;
+            }
+            if (data->stencil.attachment) {
+              auto &stencil_info = render_pass_info.stencil;
+              auto &stencil_data = data->stencil;
+              stencil_info.texture = stencil_data.attachment.texture();
+              stencil_info.load_action = stencil_data.load_action;
+              stencil_info.store_action = stencil_data.store_action;
+              stencil_info.level = stencil_data.level;
+              stencil_info.slice = stencil_data.slice;
+              stencil_info.depth_plane = stencil_data.depth_plane;
+              stencil_info.clear_stencil = stencil_data.clear_stencil;
+            }
+            render_pass_info.default_raster_sample_count = data->default_raster_sample_count;
+            render_pass_info.render_target_array_length = data->render_target_array_length;
+            render_pass_info.render_target_width = data->render_target_width;
+            render_pass_info.render_target_height = data->render_target_height;
+          }
+          auto encoder = cmdbuf.renderCommandEncoder(render_pass_info);
+          encoder.waitForFence(fence_, WMTRenderStageVertex);
+          encoder.encodeCommands(&data->cmd_head);
+          encoder.updateFence(fence_, WMTRenderStageFragment);
+          encoder.endEncoding();
+          break;
+        }
         }
         current = current->next;
       }
