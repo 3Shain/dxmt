@@ -32,6 +32,7 @@ class MTLD3D12CommandQueueImpl : public MTLD3D12Pageable<MTLD3D12CommandQueue, I
   D3D12_COMMAND_QUEUE_DESC desc_;
 
   WMT::Reference<WMT::CommandQueue> queue_;
+  WMT::Reference<WMT::Fence> fence_;
 
 public:
   MTLD3D12CommandQueueImpl(MTLD3D12Device *pDevice) :
@@ -47,6 +48,8 @@ public:
     queue_ = metal_device.newCommandQueue(kCommandQueueSize);
     if (!queue_)
       return E_FAIL;
+
+    fence_ = metal_device.newFence();
 
     return S_OK;
   }
@@ -164,6 +167,33 @@ public:
       const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc, IDXGISwapChain1 **ppSwapChain
   ) {
     return dxmt::CreateSwapChain(pFactory, device_, this, hWnd, pDesc, pFullscreenDesc, ppSwapChain);
+  }
+
+  HRESULT
+  Present(Presenter *presenter, ID3D12Resource *backbuffer, HANDLE hLantecyWaitable) {
+    auto pool = WMT::MakeAutoreleasePool();
+    auto cmdbuf = queue_.commandBuffer();
+
+    auto g = reinterpret_cast<MTLD3D12Resource *>(backbuffer);
+    auto &view = g->texture->view(g->texture->fullView);
+
+    auto state = presenter->synchronizeLayerProperties();
+    auto drawable = presenter->encodeCommands(
+        cmdbuf, view.texture, state.metadata,
+        [&](auto encoder) { encoder.waitForFence(fence_, WMTRenderStageFragment); },
+        [&](auto encoder) { encoder.updateFence(fence_, WMTRenderStageFragment); }
+    );
+
+    cmdbuf.presentDrawable(drawable);
+    cmdbuf.commit();
+
+    {
+      // temporary workaround
+      cmdbuf.waitUntilCompleted();
+      ReleaseSemaphore(hLantecyWaitable, 1, nullptr);
+    }
+
+    return S_OK;
   }
 };
 

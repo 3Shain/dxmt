@@ -430,10 +430,19 @@ public:
   HRESULT
   STDMETHODCALLTYPE
   Present1(UINT SyncInterval, UINT PresentFlags, const DXGI_PRESENT_PARAMETERS *pPresentParameters) final {
-    // temporary workaround
-    presentation_count_++;
-    ReleaseSemaphore(present_semaphore_, 1, nullptr);
-    return E_NOTIMPL;
+    HRESULT hr = S_OK;
+    if (desc_.Width == 0 || desc_.Height == 0)
+      hr = DXGI_STATUS_OCCLUDED;
+    if (PresentFlags & DXGI_PRESENT_TEST)
+      return hr;
+
+    auto &backbuffer = backbuffers_[presentation_count_ % backbuffers_.size()];
+    // TODO(d3d12): flush command queue and present
+    hr = queue_->Present(this->presenter.ptr(), backbuffer.ptr(), present_semaphore_);
+
+    presentation_count_ += 1;
+
+    return hr;
   };
 
   BOOL STDMETHODCALLTYPE
