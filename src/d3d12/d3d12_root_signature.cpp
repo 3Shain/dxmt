@@ -20,6 +20,8 @@
 #include "DXBCParser/DXBCUtils.h"
 #include "com/com_object.hpp"
 #include "com/com_pointer.hpp"
+#include "d3d12_device.hpp"
+#include "d3d12_device_child.hpp"
 #include "util_math.hpp"
 #include "util_md5.hpp"
 #include <cstring>
@@ -335,5 +337,51 @@ D3D12CreateRootSignatureDeserializer(const void *pBytecode, SIZE_T DataSize, REF
 }
 
 #pragma endregion
+
+class MTLD3D12RootSignatureImpl : public MTLD3D12DeviceChild<MTLD3D12RootSignature> {
+public:
+  MTLD3D12RootSignatureImpl(MTLD3D12Device *pDevice, const void *pBytecode, SIZE_T BytecodeLength) :
+      MTLD3D12DeviceChild<MTLD3D12RootSignature>(pDevice) {}
+
+  HRESULT
+  Initialize() {
+    return S_OK;
+  }
+
+  HRESULT
+  STDMETHODCALLTYPE
+  QueryInterface(REFIID riid, void **ppvObject) {
+    if (ppvObject == nullptr)
+      return E_POINTER;
+
+    *ppvObject = nullptr;
+
+    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D12Object) || riid == __uuidof(ID3D12DeviceChild) ||
+        riid == __uuidof(ID3D12RootSignature)) {
+      *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    if (logQueryInterfaceError(__uuidof(ID3D12RootSignature), riid)) {
+      WARN("D3D12RootSignature: Unknown interface query ", str::format(riid));
+    }
+
+    return E_NOINTERFACE;
+  }
+};
+
+HRESULT
+CreateRootSignature(
+    MTLD3D12Device *pDevice, UINT NodeMask, const void *pBytecode, SIZE_T BytecodeLength, REFIID riid,
+    void **ppRootSignature
+) {
+  InitReturnPtr(ppRootSignature);
+
+  auto root_sig = Com(new MTLD3D12RootSignatureImpl(pDevice, pBytecode, BytecodeLength));
+  HRESULT hr = root_sig->Initialize();
+  if (FAILED(hr))
+    return hr;
+  return root_sig->QueryInterface(riid, ppRootSignature);
+}
 
 } // namespace dxmt

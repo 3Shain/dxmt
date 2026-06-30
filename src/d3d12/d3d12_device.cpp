@@ -144,7 +144,7 @@ public:
   CreateRootSignature(
       UINT NodeMask, const void *pBytecode, SIZE_T BytecodeLength, REFIID riid, void **ppRootSignature
   ) {
-    return E_NOTIMPL;
+    return dxmt::CreateRootSignature(this, NodeMask, pBytecode, BytecodeLength, riid, ppRootSignature);
   };
 
   void STDMETHODCALLTYPE

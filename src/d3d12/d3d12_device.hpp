@@ -76,6 +76,10 @@ class MTLD3D12Heap : public ID3D12Heap {
 public:
 };
 
+class MTLD3D12RootSignature : public ID3D12RootSignature {
+public:
+};
+
 class MTLD3D12Device : public ID3D12Device1 {
 public:
   virtual WMT::Device GetMTLDevice() = 0;
@@ -122,6 +126,12 @@ CreatePlacedBuffer(
 
 HRESULT
 CreateHeap(MTLD3D12Device *pDevice, const D3D12_HEAP_DESC *pDesc, REFIID riid, void **ppHeap);
+
+HRESULT
+CreateRootSignature(
+    MTLD3D12Device *pDevice, UINT NodeMask, const void *pBytecode, SIZE_T BytecodeLength, REFIID riid,
+    void **ppRootSignature
+);
 
 HRESULT
 CreateSwapChain(
