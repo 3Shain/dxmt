@@ -22,10 +22,27 @@
 
 namespace dxmt {
 
+constexpr auto kCPUHeapSize = 0x400000u;
+
+inline std::size_t
+align_forward_adjustment(const void *const ptr, const std::size_t &alignment) noexcept {
+  const auto iptr = reinterpret_cast<std::uintptr_t>(ptr);
+  const auto aligned = (iptr - 1u + alignment) & -alignment;
+  return aligned - iptr;
+}
+
+inline void *
+ptr_add(const void *const p, const std::uintptr_t &amount) noexcept {
+  return reinterpret_cast<void *>(reinterpret_cast<std::uintptr_t>(p) + amount);
+}
+
 class MTLD3D12CommandAllocatorImpl : public MTLD3D12Pageable<MTLD3D12CommandAllocator> {
   friend class MTLD3D12GraphicsCommandListImpl;
 
   D3D12_COMMAND_LIST_TYPE type_;
+  
+  void *cpu_heap_ = nullptr;
+  size_t cpu_heap_offset_;
 
   EncoderData *encoder_last;
   EncoderData *encoder_current;
@@ -36,7 +53,10 @@ class MTLD3D12CommandAllocatorImpl : public MTLD3D12Pageable<MTLD3D12CommandAllo
 public:
   MTLD3D12CommandAllocatorImpl(MTLD3D12Device *pDevice, D3D12_COMMAND_LIST_TYPE Type);
 
-  ~MTLD3D12CommandAllocatorImpl() {}
+  ~MTLD3D12CommandAllocatorImpl() {
+    free(cpu_heap_);
+    cpu_heap_ = nullptr;
+  }
 
   HRESULT
   Initialize();
@@ -82,6 +102,23 @@ public:
     encoder_count_ = 0;
     return S_OK;
   }
+
+  void *
+  AllocateCPUHeap(size_t Length, size_t Alignment) {
+    std::size_t adjustment = align_forward_adjustment((void *)cpu_heap_offset_, Alignment);
+    auto aligned = cpu_heap_offset_ + adjustment;
+    cpu_heap_offset_ = aligned + Length;
+    assert(cpu_heap_offset_ < kCPUHeapSize);
+    return ptr_add(cpu_heap_, aligned);
+  }
+
+  template <typename T>
+  T *
+  AllocatePass() {
+    auto p = (new (AllocateCPUHeap(sizeof(T), alignof(T))) T());
+    encoder_current = p;
+    return p;
+  };
 };
 
 } // namespace dxmt

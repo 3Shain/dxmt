@@ -18,6 +18,7 @@
 
 #include "d3d12_command_allocator.hpp"
 #include "com/com_pointer.hpp"
+#include "dxmt_format.hpp"
 
 namespace dxmt {
 
@@ -204,17 +205,58 @@ public:
     IMPLEMENT_ME
   };
 
-  void STDMETHODCALLTYPE ClearDepthStencilView(
+  void STDMETHODCALLTYPE
+  ClearDepthStencilView(
       D3D12_CPU_DESCRIPTOR_HANDLE DSV, D3D12_CLEAR_FLAGS Flags, FLOAT Depth, UINT8 Stencil, UINT RectCount,
       const D3D12_RECT *Rects
   ) {
-    IMPLEMENT_ME
+    if (Rects || RectCount > 1) {
+      ERR("ClearDepthStencilView: unhandled parameter Rects=", Rects, " RectCount=", RectCount);
+      return;
+    }
+    if ((Flags & 3) == 0)
+      return;
+    auto [Heap, Index] = GetRenderTargetHeap(device_, DSV);
+    auto AttachmentDesc = Heap->GetRenderTarget(Index);
+    if (!AttachmentDesc.Texture)
+      return;
+    allocator_->InvalidateCurrentPass();
+    auto encoder_info = allocator_->AllocatePass<ClearEncoderData>();
+    encoder_info->type = EncoderType::Clear;
+    encoder_info->clear_dsv = Flags & 3;
+    encoder_info->depth_stencil = {Depth, Stencil};
+    encoder_info->attachment = AttachmentDesc.Texture->view(AttachmentDesc.View);
+    encoder_info->array_length = AttachmentDesc.RenderTargetArrayLength;
+    encoder_info->width = AttachmentDesc.Width;
+    encoder_info->height = AttachmentDesc.Height;
+
+    allocator_->InvalidateCurrentPass();
   };
 
-  void STDMETHODCALLTYPE ClearRenderTargetView(
+  void STDMETHODCALLTYPE
+  ClearRenderTargetView(
       D3D12_CPU_DESCRIPTOR_HANDLE RTV, const FLOAT Color[4], UINT RectCount, const D3D12_RECT *Rects
   ) {
-    IMPLEMENT_ME
+    if (Rects || RectCount > 1) {
+      ERR("ClearRenderTargetView: unhandled parameter Rects=", Rects, " RectCount=", RectCount);
+      return;
+    }
+    auto [Heap, Index] = GetRenderTargetHeap(device_, RTV);
+    auto AttachmentDesc = Heap->GetRenderTarget(Index);
+    if (!AttachmentDesc.Texture)
+      return;
+    allocator_->InvalidateCurrentPass();
+    auto encoder_info = allocator_->AllocatePass<ClearEncoderData>();
+    encoder_info->type = EncoderType::Clear;
+    encoder_info->clear_dsv = 0;
+    encoder_info->color = {Color[0], Color[1], Color[2], Color[3]};
+    SanitizeRTVClearColor(AttachmentDesc.Texture->pixelFormat(AttachmentDesc.View), encoder_info->color);
+    encoder_info->attachment = AttachmentDesc.Texture->view(AttachmentDesc.View);
+    encoder_info->array_length = AttachmentDesc.RenderTargetArrayLength;
+    encoder_info->width = AttachmentDesc.Width;
+    encoder_info->height = AttachmentDesc.Height;
+
+    allocator_->InvalidateCurrentPass();
   };
 
   void STDMETHODCALLTYPE ClearUnorderedAccessViewUint(

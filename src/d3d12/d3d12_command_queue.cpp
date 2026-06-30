@@ -109,6 +109,41 @@ public:
         switch (current->type) {
         case EncoderType::Null:
           break;
+        case EncoderType::Clear: {
+          auto data = static_cast<ClearEncoderData *>(current);
+          {
+            WMTRenderPassInfo info;
+            WMT::InitializeRenderPassInfo(info);
+            if (data->clear_dsv) {
+              if (data->clear_dsv & 1) {
+                info.depth.clear_depth = data->depth_stencil.first;
+                info.depth.texture = data->attachment.texture();
+                info.depth.load_action = WMTLoadActionClear;
+                info.depth.store_action = WMTStoreActionStore;
+              }
+              if (data->clear_dsv & 2) {
+                info.stencil.clear_stencil = data->depth_stencil.second;
+                info.stencil.texture = data->attachment.texture();
+                info.stencil.load_action = WMTLoadActionClear;
+                info.stencil.store_action = WMTStoreActionStore;
+              }
+              info.render_target_width = data->width;
+              info.render_target_height = data->height;
+            } else {
+              info.colors[0].clear_color = data->color;
+              info.colors[0].texture = data->attachment.texture();
+              info.colors[0].load_action = WMTLoadActionClear;
+              info.colors[0].store_action = WMTStoreActionStore;
+            }
+            info.render_target_array_length = data->array_length;
+            auto encoder = cmdbuf.renderCommandEncoder(info);
+            encoder.setLabel(WMT::String::string("ClearPass", WMTUTF8StringEncoding));
+            encoder.waitForFence(fence_, WMTRenderStageFragment);
+            encoder.updateFence(fence_, WMTRenderStageFragment);
+            encoder.endEncoding();
+          }
+          break;
+        }
         }
         current = current->next;
       }

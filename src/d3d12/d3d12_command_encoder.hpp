@@ -18,18 +18,34 @@
 
 #pragma once
 
+#include "dxmt_texture.hpp"
 #include <cstdint>
 
 namespace dxmt {
 
 enum class EncoderType {
   Null,
+  Clear,
 };
 
 struct EncoderData {
   EncoderType type;
   EncoderData *next = nullptr;
   uint64_t id;
+};
+
+struct ClearEncoderData : EncoderData {
+  union {
+    WMTClearColor color;
+    std::pair<float, uint8_t> depth_stencil;
+  };
+  TextureViewRef attachment;
+  unsigned clear_dsv;
+  unsigned array_length;
+  unsigned width;
+  unsigned height;
+
+  ClearEncoderData() {}
 };
 
 }; // namespace dxmt

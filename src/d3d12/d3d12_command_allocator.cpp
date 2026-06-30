@@ -46,6 +46,12 @@ CreateCommandAllocator(MTLD3D12Device *pDevice, D3D12_COMMAND_LIST_TYPE Type, RE
 HRESULT
 MTLD3D12CommandAllocatorImpl::Initialize() {
 
+  if (!cpu_heap_)
+    cpu_heap_ = malloc(kCPUHeapSize);
+  if (!cpu_heap_)
+    return E_OUTOFMEMORY;
+  cpu_heap_offset_ = 0;
+
   encoder_current = nullptr;
   encoder_last = nullptr;
   encoder_count_ = 0;
@@ -84,6 +90,9 @@ MTLD3D12CommandAllocatorImpl::Reset() {
     while (next) {
       switch (next->type) {
       case EncoderType::Null:
+        break;
+      case EncoderType::Clear:
+        reinterpret_cast<ClearEncoderData *>(next)->~ClearEncoderData();
         break;
       }
       next = next->next;
