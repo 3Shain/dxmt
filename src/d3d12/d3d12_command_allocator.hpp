@@ -23,6 +23,7 @@
 namespace dxmt {
 
 constexpr auto kCPUHeapSize = 0x400000u;
+constexpr auto kGPUHeapSize = 0x400000u;
 
 inline std::size_t
 align_forward_adjustment(const void *const ptr, const std::size_t &alignment) noexcept {
@@ -44,6 +45,11 @@ class MTLD3D12CommandAllocatorImpl : public MTLD3D12Pageable<MTLD3D12CommandAllo
   void *cpu_heap_ = nullptr;
   size_t cpu_heap_offset_;
 
+  WMT::Reference<WMT::Buffer> gpu_heap_buffer_;
+  void *gpu_heap_ = nullptr;
+  size_t gpu_heap_offset_;
+  uint64_t gpu_heap_buffer_address_;
+
   EncoderData *encoder_last;
   EncoderData *encoder_current;
   size_t encoder_count_;
@@ -56,6 +62,9 @@ public:
   ~MTLD3D12CommandAllocatorImpl() {
     free(cpu_heap_);
     cpu_heap_ = nullptr;
+    gpu_heap_buffer_ = {};
+    free(gpu_heap_);
+    gpu_heap_ = nullptr;
   }
 
   HRESULT
@@ -130,6 +139,17 @@ public:
     encoder->cmd_tail = (wmtcmd_base *)storage;
     storage->next.set(nullptr);
     return *storage;
+  }
+
+  std::tuple<void *, size_t>
+  AllocateGPUHeap(size_t Length, size_t Alignment) {
+    if (!Length)
+      return {nullptr, 0};
+    std::size_t adjustment = align_forward_adjustment((void *)gpu_heap_offset_, Alignment);
+    auto aligned = gpu_heap_offset_ + adjustment;
+    gpu_heap_offset_ = aligned + Length;
+    assert(gpu_heap_offset_ < kGPUHeapSize);
+    return {ptr_add(gpu_heap_, aligned), aligned};
   }
 };
 

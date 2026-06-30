@@ -52,6 +52,24 @@ MTLD3D12CommandAllocatorImpl::Initialize() {
     return E_OUTOFMEMORY;
   cpu_heap_offset_ = 0;
 
+  if (!gpu_heap_)
+    gpu_heap_ = malloc(kGPUHeapSize);
+  if (!gpu_heap_)
+    return E_OUTOFMEMORY;
+  gpu_heap_offset_ = 0;
+
+  WMTBufferInfo buffer_info;
+  buffer_info.memory.set(gpu_heap_);
+  buffer_info.length = kGPUHeapSize;
+  buffer_info.options = WMTResourceHazardTrackingModeUntracked;
+  gpu_heap_buffer_ = device_->GetMTLDevice().newBuffer(buffer_info);
+
+  if (!gpu_heap_buffer_) {
+    ERR("CommandAllocator: failed to allocate gpu buffer");
+    return E_FAIL;
+  }
+  gpu_heap_buffer_address_ = buffer_info.gpu_address;
+
   encoder_current = nullptr;
   encoder_last = nullptr;
   encoder_count_ = 0;
