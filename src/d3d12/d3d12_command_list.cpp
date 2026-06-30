@@ -22,6 +22,78 @@
 
 namespace dxmt {
 
+enum class DrawCallStatus {
+  Invalid,
+  Ordinary,
+};
+
+inline bool
+to_metal_primitive_type(D3D12_PRIMITIVE_TOPOLOGY topo, WMTPrimitiveType &primitive, uint32_t &control_point_num) {
+  control_point_num = 0;
+  switch (topo) {
+  case D3D_PRIMITIVE_TOPOLOGY_POINTLIST:
+    primitive = WMTPrimitiveTypePoint;
+    break;
+  case D3D_PRIMITIVE_TOPOLOGY_LINELIST:
+    primitive = WMTPrimitiveTypeLine;
+    break;
+  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP:
+    primitive = WMTPrimitiveTypeLineStrip;
+    break;
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST:
+    primitive = WMTPrimitiveTypeTriangle;
+    break;
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
+    primitive = WMTPrimitiveTypeTriangleStrip;
+    break;
+  case D3D_PRIMITIVE_TOPOLOGY_LINELIST_ADJ:
+  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ:
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
+    // geometry
+    primitive = WMTPrimitiveTypePoint;
+    break;
+  case D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_2_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_5_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_6_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_7_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_8_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_9_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_10_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_11_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_12_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_13_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_14_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_15_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_16_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_17_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_18_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_19_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_20_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_21_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_22_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_23_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_24_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_25_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_26_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_27_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_28_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_29_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_30_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_31_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_32_CONTROL_POINT_PATCHLIST:
+    primitive = WMTPrimitiveTypePoint;
+    control_point_num = topo - 32;
+    break;
+  default:
+    return false;
+  }
+  return true;
+}
+
 // `Graphics`CommandList is a really confusing name
 class MTLD3D12GraphicsCommandListImpl : public MTLD3D12DeviceChild<MTLD3D12GraphicsCommandList> {
 
@@ -49,6 +121,7 @@ public:
     if (allocator_ != allocator)
       allocator_ = allocator;
 
+    pso_graphics_ = nullptr;
     if (auto pso = static_cast<MTLD3D12PipelineState *>(pInitialPipelineState)) {
       if (!pso->IsComputePipelineState)
         pso_graphics_ = static_cast<MTLD3D12GraphicsPipelineState *>(pInitialPipelineState);
@@ -106,9 +179,99 @@ public:
 
   void STDMETHODCALLTYPE ClearState(ID3D12PipelineState *pPipelineState) { IMPLEMENT_ME };
 
+  DrawCallStatus
+  PreDraw() {
+    if (!allocator_->encoder_current || allocator_->encoder_current->type != EncoderType::Render) {
+
+      allocator_->InvalidateCurrentPass();
+      auto render = allocator_->AllocatePass<RenderEncoderData>();
+      render->type = EncoderType::Render;
+      render->cmd_head.type = WMTRenderCommandNop;
+      render->cmd_head.next.set(0);
+      render->cmd_tail = (wmtcmd_base *)&render->cmd_head;
+      render->dsv_planar_flags = 0;
+      render->dsv_readonly_flags = 0;
+      render->render_target_count = num_rtvs;
+
+      unsigned render_target_width = 16384, render_target_height = 16384, render_target_array_length = 0;
+
+      unsigned effective_rtvs = 0;
+      for (unsigned i = 0; i < num_rtvs; i++) {
+        if (!rtvs[i].ptr)
+          continue;
+        effective_rtvs++;
+        auto [Heap, Index] = GetRenderTargetHeap(device_, rtvs[i]);
+        auto AttachmentDesc = Heap->GetRenderTarget(Index);
+        if (!AttachmentDesc.Texture)
+          continue;
+        auto &rt = render->colors[i];
+        rt.attachment = AttachmentDesc.Texture->view(AttachmentDesc.View);
+        rt.depth_plane = AttachmentDesc.DepthPlane;
+        rt.load_action = WMTLoadActionLoad;
+        rt.store_action = WMTStoreActionStore;
+        render_target_width = std::min(render_target_width, AttachmentDesc.Width);
+        render_target_height = std::min(render_target_height, AttachmentDesc.Height);
+        render_target_array_length = std::max(render_target_array_length, AttachmentDesc.RenderTargetArrayLength);
+      }
+      while (dsv.ptr) {
+        effective_rtvs++;
+        auto [Heap, Index] = GetRenderTargetHeap(device_, dsv);
+        auto AttachmentDesc = Heap->GetRenderTarget(Index);
+        if (!AttachmentDesc.Texture)
+          continue;
+        auto dsv_planar_flags = DepthStencilPlanarFlags(AttachmentDesc.Texture->pixelFormat(AttachmentDesc.View));
+        if (dsv_planar_flags & 1) {
+          auto &rt = render->depth;
+          rt.attachment = AttachmentDesc.Texture->view(AttachmentDesc.View);
+          rt.depth_plane = 0;
+          rt.load_action = WMTLoadActionLoad;
+          rt.store_action = WMTStoreActionStore;
+        }
+        if (dsv_planar_flags & 2) {
+          auto &rt = render->stencil;
+          rt.attachment = AttachmentDesc.Texture->view(AttachmentDesc.View);
+          rt.depth_plane = AttachmentDesc.DepthPlane;
+          rt.load_action = WMTLoadActionLoad;
+          rt.store_action = WMTStoreActionStore;
+        }
+        render->dsv_planar_flags = dsv_planar_flags;
+        render_target_width = std::min(render_target_width, AttachmentDesc.Width);
+        render_target_height = std::min(render_target_height, AttachmentDesc.Height);
+        render_target_array_length = std::max(render_target_array_length, AttachmentDesc.RenderTargetArrayLength);
+        break;
+      }
+      render->render_target_width = render_target_width;
+      render->render_target_height = render_target_height;
+      render->render_target_array_length = render_target_array_length;
+      if (effective_rtvs == 0) {
+        IMPLEMENT_ME
+        // render->default_raster_sample_count = std::max(1u, forced_sample_count);
+      }
+
+      if (pso_graphics_) {
+        UpdateGraphicsPSO(pso_graphics_.ptr());
+      }
+    }
+    return DrawCallStatus::Ordinary;
+  }
+
   void STDMETHODCALLTYPE
   DrawInstanced(UINT VertexCountPerInstance, UINT InstanceCount, UINT StartVertexLocation, UINT StartInstanceLocation) {
-    IMPLEMENT_ME
+    WMTPrimitiveType primitive_type;
+    uint32_t cp_count;
+    if (!to_metal_primitive_type(topology_, primitive_type, cp_count))
+      return;
+    DrawCallStatus status = PreDraw();
+    if (status == DrawCallStatus::Invalid)
+      return;
+
+    auto &cmd_draw = allocator_->EncodeRenderCommand<wmtcmd_render_draw>();
+    cmd_draw.type = WMTRenderCommandDraw;
+    cmd_draw.primitive_type = primitive_type;
+    cmd_draw.base_instance = StartInstanceLocation;
+    cmd_draw.instance_count = InstanceCount;
+    cmd_draw.vertex_start = StartVertexLocation;
+    cmd_draw.vertex_count = VertexCountPerInstance;
   };
 
   void STDMETHODCALLTYPE DrawIndexedInstanced(
@@ -162,6 +325,28 @@ public:
   void STDMETHODCALLTYPE OMSetBlendFactor(const FLOAT BlendFactors[4]) { IMPLEMENT_ME };
 
   void STDMETHODCALLTYPE OMSetStencilRef(UINT StencilRef) { IMPLEMENT_ME };
+
+  void
+  UpdateGraphicsPSO(MTLD3D12GraphicsPipelineState *pso_graphics) {
+    auto &cmd_setpso = allocator_->EncodeRenderCommand<wmtcmd_render_setpso>();
+    cmd_setpso.type = WMTRenderCommandSetPSO;
+    cmd_setpso.pso = pso_graphics->pso;
+
+    auto &cmd_setdsso = allocator_->EncodeRenderCommand<wmtcmd_render_setdsso>();
+    cmd_setdsso.type = WMTRenderCommandSetDSSO;
+    cmd_setdsso.dsso = pso_graphics->dsso;
+    cmd_setdsso.stencil_ref = 0; /* FIXME */
+
+    auto &cmd_setrs = allocator_->EncodeRenderCommand<wmtcmd_render_setrasterizerstate>();
+    cmd_setrs.type = WMTRenderCommandSetRasterizerState;
+    cmd_setrs.cull_mode = pso_graphics->cull_mode;
+    cmd_setrs.depth_clip_mode = pso_graphics->depth_clip_mode;
+    cmd_setrs.fill_mode = pso_graphics->fill_mode;
+    cmd_setrs.depth_bias = pso_graphics->depth_bias;
+    cmd_setrs.depth_bias_clamp = pso_graphics->depth_bias_clamp;
+    cmd_setrs.scole_scale = pso_graphics->scole_scale;
+    cmd_setrs.winding = pso_graphics->winding;
+  }
 
   void STDMETHODCALLTYPE SetPipelineState(ID3D12PipelineState *pPSO) { IMPLEMENT_ME };
 
