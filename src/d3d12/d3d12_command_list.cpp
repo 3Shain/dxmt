@@ -35,6 +35,8 @@ class MTLD3D12GraphicsCommandListImpl : public MTLD3D12DeviceChild<MTLD3D12Graph
 
   D3D12_PRIMITIVE_TOPOLOGY topology_;
 
+  Com<MTLD3D12GraphicsPipelineState, false> pso_graphics_;
+
 public:
   MTLD3D12GraphicsCommandListImpl(MTLD3D12Device *pDevice) : MTLD3D12DeviceChild<MTLD3D12GraphicsCommandList>(pDevice) {}
 
@@ -46,6 +48,11 @@ public:
 
     if (allocator_ != allocator)
       allocator_ = allocator;
+
+    if (auto pso = static_cast<MTLD3D12PipelineState *>(pInitialPipelineState)) {
+      if (!pso->IsComputePipelineState)
+        pso_graphics_ = static_cast<MTLD3D12GraphicsPipelineState *>(pInitialPipelineState);
+    }
 
     num_rtvs = {};
     memset(rtvs, 0, sizeof(rtvs));

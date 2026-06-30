@@ -92,6 +92,7 @@ public:
 
 class MTLD3D12RootSignature : public ID3D12RootSignature {
 public:
+  virtual UINT GetBlob(const void **ppBlob) = 0;
 };
 
 class MTLD3D12PipelineState : public ID3D12PipelineState {
@@ -101,6 +102,20 @@ public:
 
 class MTLD3D12GraphicsPipelineState : public MTLD3D12PipelineState {
 public:
+  WMT::Reference<WMT::RenderPipelineState> pso;
+  WMT::Reference<WMT::DepthStencilState> dsso;
+  uint32_t slot_mask = 0;
+  enum WMTTriangleFillMode fill_mode;
+  enum WMTCullMode cull_mode;
+  enum WMTDepthClipMode depth_clip_mode;
+  enum WMTWinding winding;
+  float depth_bias;
+  float scole_scale;
+  float depth_bias_clamp;
+  uint32_t forced_sample_count;
+
+  virtual void AddRefPrivate() = 0;
+  virtual void ReleasePrivate() = 0;
 };
 
 class MTLD3D12Device : public ID3D12Device1 {

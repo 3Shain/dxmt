@@ -339,9 +339,15 @@ D3D12CreateRootSignatureDeserializer(const void *pBytecode, SIZE_T DataSize, REF
 #pragma endregion
 
 class MTLD3D12RootSignatureImpl : public MTLD3D12DeviceChild<MTLD3D12RootSignature> {
+
+  std::vector<uint8_t> blob_;
+
 public:
   MTLD3D12RootSignatureImpl(MTLD3D12Device *pDevice, const void *pBytecode, SIZE_T BytecodeLength) :
-      MTLD3D12DeviceChild<MTLD3D12RootSignature>(pDevice) {}
+      MTLD3D12DeviceChild<MTLD3D12RootSignature>(pDevice) {
+    blob_.resize(BytecodeLength);
+    memcpy(blob_.data(), pBytecode, BytecodeLength);
+  }
 
   HRESULT
   Initialize() {
@@ -367,6 +373,12 @@ public:
     }
 
     return E_NOINTERFACE;
+  }
+
+  UINT
+  GetBlob(const void **ppBlob) {
+    *ppBlob = blob_.data();
+    return blob_.size();
   }
 };
 
