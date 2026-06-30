@@ -33,6 +33,8 @@ public:
 
   HRESULT
   Initialize(UINT64 InitialValue) {
+    fence = new Fence(device_->GetMTLDevice());
+    fence->signal(InitialValue);
     return S_OK;
   }
 
@@ -59,19 +61,28 @@ public:
 
   UINT64 STDMETHODCALLTYPE
   GetCompletedValue() {
-    return 0;
+    return fence->completedValue();
   }
 
   HRESULT STDMETHODCALLTYPE
   SetEventOnCompletion(UINT64 Value, HANDLE Event) {
-    IMPLEMENT_ME
-    return E_NOTIMPL;
+    if (GetCompletedValue() >= Value) {
+      if (Event)
+        SetEvent(Event);
+      return S_OK;
+    }
+    if (!Event) {
+      fence->wait(Value);
+      return S_OK;
+    }
+    device_->event_listener.setEventOnValue(fence.ptr(), Event, Value);
+    return S_OK;
   }
 
   HRESULT STDMETHODCALLTYPE
   Signal(UINT64 Value) {
-    IMPLEMENT_ME
-    return E_NOTIMPL;
+    fence->signal(Value);
+    return S_OK;
   }
 
   D3D12_FENCE_FLAGS STDMETHODCALLTYPE

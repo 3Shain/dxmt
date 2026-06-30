@@ -24,6 +24,7 @@
 #include "dxgi_interfaces.h"
 #include "airconv_public.h"
 #include "dxmt_buffer.hpp"
+#include "dxmt_fence.hpp"
 #include "dxmt_texture.hpp"
 #include "log/log.hpp"
 
@@ -84,6 +85,7 @@ public:
 
 class MTLD3D12Fence : public ID3D12Fence1 {
 public:
+  Rc<Fence> fence;
 };
 
 class MTLD3D12RootSignature : public ID3D12RootSignature {
@@ -104,6 +106,8 @@ public:
   virtual WMT::Device GetMTLDevice() = 0;
 
   virtual D3D_FEATURE_LEVEL GetFeatureLevel() = 0;
+
+  EventListener event_listener;
 };
 
 HRESULT CreateD3D12Device(IMTLDXGIAdapter *adapter, REFIID riid, void **ppDevice);

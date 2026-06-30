@@ -123,12 +123,20 @@ public:
 
   HRESULT STDMETHODCALLTYPE
   Signal(ID3D12Fence *pFence, UINT64 Value) {
-    return E_NOTIMPL;
+    auto pool = WMT::MakeAutoreleasePool();
+    auto cmdbuf = queue_.commandBuffer();
+    static_cast<MTLD3D12Fence *>(pFence)->fence->signal(cmdbuf, Value);
+    cmdbuf.commit();
+    return S_OK;
   };
 
   HRESULT STDMETHODCALLTYPE
   Wait(ID3D12Fence *pFence, UINT64 Value) {
-    return E_NOTIMPL;
+    auto pool = WMT::MakeAutoreleasePool();
+    auto cmdbuf = queue_.commandBuffer();
+    static_cast<MTLD3D12Fence *>(pFence)->fence->wait(cmdbuf, Value);
+    cmdbuf.commit();
+    return S_OK;
   };
 
   HRESULT STDMETHODCALLTYPE
