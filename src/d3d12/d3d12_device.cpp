@@ -128,7 +128,15 @@ public:
 
   UINT STDMETHODCALLTYPE
   GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE DescriptorHeapType) {
-    IMPLEMENT_ME
+    switch (DescriptorHeapType) {
+    case D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV:
+    case D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER:
+    case D3D12_DESCRIPTOR_HEAP_TYPE_RTV:
+    case D3D12_DESCRIPTOR_HEAP_TYPE_DSV:
+      return 32;
+    default:
+      break;
+    }
     return 0;
   };
 
