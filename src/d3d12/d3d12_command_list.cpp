@@ -27,6 +27,12 @@ class MTLD3D12GraphicsCommandListImpl : public MTLD3D12DeviceChild<MTLD3D12Graph
 
   Com<MTLD3D12CommandAllocatorImpl, false> allocator_;
 
+  /* state */
+
+  UINT num_rtvs;
+  D3D12_CPU_DESCRIPTOR_HANDLE rtvs[8];
+  D3D12_CPU_DESCRIPTOR_HANDLE dsv;
+
 public:
   MTLD3D12GraphicsCommandListImpl(MTLD3D12Device *pDevice) : MTLD3D12DeviceChild<MTLD3D12GraphicsCommandList>(pDevice) {}
 
@@ -38,6 +44,10 @@ public:
 
     if (allocator_ != allocator)
       allocator_ = allocator;
+
+    num_rtvs = {};
+    memset(rtvs, 0, sizeof(rtvs));
+    dsv = {};
 
     encoder_count = std::numeric_limits<size_t>::max();
     return allocator_->StartRecord(&entry);
@@ -198,11 +208,20 @@ public:
     IMPLEMENT_ME
   };
 
-  void STDMETHODCALLTYPE OMSetRenderTargets(
+  void STDMETHODCALLTYPE
+  OMSetRenderTargets(
       UINT NumRTV, const D3D12_CPU_DESCRIPTOR_HANDLE *RTVs, WINBOOL SingleDescriptor,
       const D3D12_CPU_DESCRIPTOR_HANDLE *DSV
   ) {
-    IMPLEMENT_ME
+    allocator_->InvalidateCurrentPass();
+
+    num_rtvs = NumRTV;
+    for (unsigned i = 0; i < NumRTV; i++) {
+      auto RTV = SingleDescriptor ? D3D12_CPU_DESCRIPTOR_HANDLE{RTVs[0].ptr + i * 32 /* kRTVDSVHeapIncrementalSize */}
+                                  : RTVs[i];
+      rtvs[i] = RTV;
+    }
+    dsv = DSV ? *DSV : D3D12_CPU_DESCRIPTOR_HANDLE();
   };
 
   void STDMETHODCALLTYPE
