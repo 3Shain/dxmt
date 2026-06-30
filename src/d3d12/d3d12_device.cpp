@@ -317,7 +317,7 @@ public:
 
   HRESULT STDMETHODCALLTYPE
   CreateFence(UINT64 InitialValue, D3D12_FENCE_FLAGS Flags, REFIID riid, void **ppFence) {
-    return E_NOTIMPL;
+    return dxmt::CreateFence(this, InitialValue, Flags, riid, ppFence);
   };
 
   HRESULT STDMETHODCALLTYPE

@@ -78,6 +78,10 @@ class MTLD3D12Heap : public ID3D12Heap {
 public:
 };
 
+class MTLD3D12Fence : public ID3D12Fence1 {
+public:
+};
+
 class MTLD3D12RootSignature : public ID3D12RootSignature {
 public:
 };
@@ -155,6 +159,9 @@ CreateSwapChain(
     const DXGI_SWAP_CHAIN_DESC1 *pDesc, const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc,
     IDXGISwapChain1 **ppSwapChain
 );
+
+HRESULT
+CreateFence(MTLD3D12Device *pDevice, UINT64 InitialValue, D3D12_FENCE_FLAGS Flags, REFIID riid, void **ppFence);
 
 template <typename VIEW_DESC>
 HRESULT ExtractEntireResourceViewDescription(const D3D12_RESOURCE_DESC &ResourceDesc, VIEW_DESC *pViewDescOut);
