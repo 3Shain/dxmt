@@ -18,6 +18,7 @@
 
 #pragma once
 #include "d3d12.h"
+#include "d3d12_descriptor_heap.hpp"
 #include "dxgi1_2.h"
 #include "dxgi_interfaces.h"
 #include "airconv_public.h"
@@ -162,6 +163,27 @@ CreateSwapChain(
 
 HRESULT
 CreateFence(MTLD3D12Device *pDevice, UINT64 InitialValue, D3D12_FENCE_FLAGS Flags, REFIID riid, void **ppFence);
+
+inline std::tuple<MTLD3D12RenderTargetDescriptorHeap *, UINT>
+GetRenderTargetHeap(MTLD3D12Device *pDevice, D3D12_CPU_DESCRIPTOR_HANDLE Handle) {
+#ifdef DXMT_USE_EMBEDDED_HEAP_POINTER
+  EMBEDDED_DESCRIPTOR_HANDLE impl(Handle);
+  return {impl.extract<MTLD3D12RenderTargetDescriptorHeap>(), (UINT)impl.Descriptor};
+#else
+  IMPLEMENT_ME
+  return {};
+#endif
+}
+
+inline D3D12_CPU_DESCRIPTOR_HANDLE
+GetRenderTargetDescriptor(MTLD3D12RenderTargetDescriptorHeap *pHeap, UINT Index) {
+#ifdef DXMT_USE_EMBEDDED_HEAP_POINTER
+  return EMBEDDED_DESCRIPTOR_HANDLE(pHeap, Index);
+#else
+  IMPLEMENT_ME
+  return {};
+#endif
+}
 
 template <typename VIEW_DESC>
 HRESULT ExtractEntireResourceViewDescription(const D3D12_RESOURCE_DESC &ResourceDesc, VIEW_DESC *pViewDescOut);

@@ -92,6 +92,8 @@ class MTLD3D12RenderTargetDescriptorHeapImpl : public MTLD3D12Pageable<MTLD3D12R
 
   D3D12_DESCRIPTOR_HEAP_DESC desc_;
 
+  std::vector<MTL_RENDER_TARGET_DESC> render_targets_;
+
 public:
   MTLD3D12RenderTargetDescriptorHeapImpl(MTLD3D12Device *pDevice) :
       MTLD3D12Pageable<MTLD3D12RenderTargetDescriptorHeap>(pDevice) {}
@@ -106,6 +108,7 @@ public:
     case D3D12_DESCRIPTOR_HEAP_TYPE_RTV: {
       if (pDesc->Flags & D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE)
         return E_INVALIDARG;
+      render_targets_.resize(pDesc->NumDescriptors);
       break;
     }
     default:
@@ -143,7 +146,7 @@ public:
 
   virtual D3D12_CPU_DESCRIPTOR_HANDLE *STDMETHODCALLTYPE
   GetCPUDescriptorHandleForHeapStart(D3D12_CPU_DESCRIPTOR_HANDLE *__ret) {
-    *__ret = {};
+    *__ret = GetRenderTargetDescriptor(this, 0);
     return __ret;
   }
 
@@ -151,6 +154,22 @@ public:
   GetGPUDescriptorHandleForHeapStart(D3D12_GPU_DESCRIPTOR_HANDLE *__ret) {
     __ret->ptr = 0;
     return __ret;
+  }
+
+  virtual HRESULT
+  AddRenderTarget(UINT Index, MTL_RENDER_TARGET_DESC const *pDesc) {
+    if (Index >= render_targets_.size())
+      return E_INVALIDARG;
+    if (pDesc)
+      render_targets_[Index] = *pDesc;
+    else
+      render_targets_[Index] = {};
+    return S_OK;
+  }
+
+  virtual MTL_RENDER_TARGET_DESC
+  GetRenderTarget(UINT Index) {
+    return render_targets_[Index];
   }
 };
 

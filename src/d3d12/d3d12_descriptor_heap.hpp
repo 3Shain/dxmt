@@ -18,6 +18,7 @@
 
 #pragma once
 #include "d3d12.h"
+#include "dxmt_texture.hpp"
 #include <cstdint>
 
 #if UINTPTR_MAX == 0xffffffffffffffffULL
@@ -81,8 +82,20 @@ class MTLD3D12SamplerDescriptorHeap : public ID3D12DescriptorHeap {
 public:
 };
 
+struct MTL_RENDER_TARGET_DESC {
+  Texture *Texture;
+  TextureViewKey View;
+  UINT Width;
+  UINT Height;
+  UINT DepthPlane;
+  UINT RenderTargetArrayLength;
+  UINT Flags;
+};
+
 class MTLD3D12RenderTargetDescriptorHeap : public ID3D12DescriptorHeap {
 public:
+  virtual HRESULT AddRenderTarget(UINT Index, MTL_RENDER_TARGET_DESC const *pDesc) = 0;
+  virtual MTL_RENDER_TARGET_DESC GetRenderTarget(UINT Index) = 0;
 };
 
 } // namespace dxmt
