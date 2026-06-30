@@ -18,6 +18,7 @@
 
 #pragma once
 #include "d3d12.h"
+#include "d3d12_command_encoder.hpp"
 #include "d3d12_descriptor_heap.hpp"
 #include "dxgi1_2.h"
 #include "dxgi_interfaces.h"
@@ -37,6 +38,8 @@ namespace dxmt {
 
 class MTLD3D12GraphicsCommandList : public ID3D12GraphicsCommandList {
 public:
+  EncoderData *entry;
+  size_t encoder_count;
 };
 
 class MTLD3D12CommandAllocator : public ID3D12CommandAllocator {

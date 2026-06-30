@@ -25,9 +25,13 @@
 
 namespace dxmt {
 
+constexpr auto kCommandQueueSize = 32u;
+
 class MTLD3D12CommandQueueImpl : public MTLD3D12Pageable<MTLD3D12CommandQueue, IMTLSwapChainFactory> {
 
   D3D12_COMMAND_QUEUE_DESC desc_;
+
+  WMT::Reference<WMT::CommandQueue> queue_;
 
 public:
   MTLD3D12CommandQueueImpl(MTLD3D12Device *pDevice) :
@@ -38,6 +42,12 @@ public:
     // TODO: validate and normalize
     desc_ = *pDesc;
     desc_.NodeMask = 1; // typically 1 GPU only
+
+    auto metal_device = device_->GetMTLDevice();
+    queue_ = metal_device.newCommandQueue(kCommandQueueSize);
+    if (!queue_)
+      return E_FAIL;
+
     return S_OK;
   }
 
@@ -84,7 +94,26 @@ public:
     IMPLEMENT_ME
   };
 
-  void STDMETHODCALLTYPE ExecuteCommandLists(UINT Count, ID3D12CommandList *const *ppCommandLists) { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE
+  ExecuteCommandLists(UINT Count, ID3D12CommandList *const *ppCommandLists) {
+    auto pool = WMT::MakeAutoreleasePool();
+
+    auto cmdbuf = queue_.commandBuffer();
+    for (unsigned i = 0; i < Count; i++) {
+      auto pCommandList = static_cast<MTLD3D12GraphicsCommandList *>(ppCommandLists[i]);
+      EncoderData *current = pCommandList->entry;
+      while (current) {
+        switch (current->type) {
+        case EncoderType::Null:
+          break;
+        }
+        current = current->next;
+      }
+    }
+    cmdbuf.commit();
+    // temporary workaround
+    cmdbuf.waitUntilCompleted();
+  };
 
   void STDMETHODCALLTYPE SetMarker(UINT metadata, const void *data, UINT size) {};
 

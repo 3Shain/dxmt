@@ -27,6 +27,12 @@ class MTLD3D12CommandAllocatorImpl : public MTLD3D12Pageable<MTLD3D12CommandAllo
 
   D3D12_COMMAND_LIST_TYPE type_;
 
+  EncoderData *encoder_last;
+  EncoderData *encoder_current;
+  size_t encoder_count_;
+
+  small_vector<EncoderData, 64> encoder_lists_;
+
 public:
   MTLD3D12CommandAllocatorImpl(MTLD3D12Device *pDevice, D3D12_COMMAND_LIST_TYPE Type);
 
@@ -45,6 +51,37 @@ public:
       UINT NodeMask, D3D12_COMMAND_LIST_TYPE Type, ID3D12PipelineState *pInitialPipelineState, REFIID riid,
       void **ppCommandList
   );
+
+  void
+  InvalidateCurrentPass() {
+    if (!encoder_current)
+      return;
+    encoder_last->next = encoder_current;
+    encoder_last = encoder_current;
+
+    encoder_current = nullptr;
+    encoder_count_++;
+  }
+
+  HRESULT
+  StartRecord(EncoderData **pStartEncoder) {
+    if (encoder_last)
+      return E_INVALIDARG;
+    *pStartEncoder = encoder_last = &encoder_lists_.emplace_back(EncoderType::Null, nullptr);
+    return S_OK;
+  }
+
+  HRESULT
+  EndRecord(size_t *pEncoderCount) {
+    if (!encoder_last)
+      return E_FAIL;
+    if (encoder_current)
+      InvalidateCurrentPass();
+    encoder_last = nullptr;
+    *pEncoderCount = encoder_count_;
+    encoder_count_ = 0;
+    return S_OK;
+  }
 };
 
 } // namespace dxmt

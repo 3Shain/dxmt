@@ -45,6 +45,11 @@ CreateCommandAllocator(MTLD3D12Device *pDevice, D3D12_COMMAND_LIST_TYPE Type, RE
 
 HRESULT
 MTLD3D12CommandAllocatorImpl::Initialize() {
+
+  encoder_current = nullptr;
+  encoder_last = nullptr;
+  encoder_count_ = 0;
+
   return S_OK;
 }
 
@@ -71,6 +76,21 @@ MTLD3D12CommandAllocatorImpl::QueryInterface(REFIID riid, void **ppvObject) {
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D12CommandAllocatorImpl::Reset() {
+  if (encoder_last)
+    return E_FAIL;
+
+  for (auto &encoder_list : encoder_lists_) {
+    EncoderData *next = encoder_list.next;
+    while (next) {
+      switch (next->type) {
+      case EncoderType::Null:
+        break;
+      }
+      next = next->next;
+    }
+  }
+  encoder_lists_.clear();
+
   return Initialize();
 };
 

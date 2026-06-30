@@ -23,6 +23,9 @@ namespace dxmt {
 
 // `Graphics`CommandList is a really confusing name
 class MTLD3D12GraphicsCommandListImpl : public MTLD3D12DeviceChild<MTLD3D12GraphicsCommandList> {
+
+  Com<MTLD3D12CommandAllocatorImpl, false> allocator_;
+
 public:
   MTLD3D12GraphicsCommandListImpl(MTLD3D12Device *pDevice) : MTLD3D12DeviceChild<MTLD3D12GraphicsCommandList>(pDevice) {}
 
@@ -30,7 +33,13 @@ public:
 
   HRESULT
   Initialize(ID3D12CommandAllocator *pAllocator, ID3D12PipelineState *pInitialPipelineState) {
-    return S_OK;
+    auto allocator = static_cast<MTLD3D12CommandAllocatorImpl *>(pAllocator);
+
+    if (allocator_ != allocator)
+      allocator_ = allocator;
+
+    encoder_count = std::numeric_limits<size_t>::max();
+    return allocator_->StartRecord(&entry);
   }
 
   HRESULT
@@ -61,11 +70,15 @@ public:
 
   HRESULT STDMETHODCALLTYPE
   Close() {
-    return S_OK;
+    if (encoder_count < std::numeric_limits<size_t>::max())
+      return E_FAIL;
+    return allocator_->EndRecord(&encoder_count);
   };
 
   HRESULT STDMETHODCALLTYPE
   Reset(ID3D12CommandAllocator *pAllocator, ID3D12PipelineState *pInitialState) {
+    if (encoder_count == std::numeric_limits<size_t>::max())
+      return E_FAIL;
     return Initialize(pAllocator, pInitialState);
   };
 
