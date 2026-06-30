@@ -33,6 +33,8 @@ class MTLD3D12GraphicsCommandListImpl : public MTLD3D12DeviceChild<MTLD3D12Graph
   D3D12_CPU_DESCRIPTOR_HANDLE rtvs[8];
   D3D12_CPU_DESCRIPTOR_HANDLE dsv;
 
+  D3D12_PRIMITIVE_TOPOLOGY topology_;
+
 public:
   MTLD3D12GraphicsCommandListImpl(MTLD3D12Device *pDevice) : MTLD3D12DeviceChild<MTLD3D12GraphicsCommandList>(pDevice) {}
 
@@ -48,6 +50,8 @@ public:
     num_rtvs = {};
     memset(rtvs, 0, sizeof(rtvs));
     dsv = {};
+
+    topology_ = {};
 
     encoder_count = std::numeric_limits<size_t>::max();
     return allocator_->StartRecord(&entry);
@@ -139,7 +143,10 @@ public:
     IMPLEMENT_ME
   };
 
-  void STDMETHODCALLTYPE IASetPrimitiveTopology(D3D12_PRIMITIVE_TOPOLOGY Topology) { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE
+  IASetPrimitiveTopology(D3D12_PRIMITIVE_TOPOLOGY Topology) {
+    topology_ = Topology;
+  };
 
   void STDMETHODCALLTYPE RSSetViewports(UINT NumViewports, const D3D12_VIEWPORT *pViewports) { IMPLEMENT_ME };
 
