@@ -93,6 +93,13 @@ public:
 class MTLD3D12RootSignature : public ID3D12RootSignature {
 public:
   virtual UINT GetBlob(const void **ppBlob) = 0;
+
+  virtual void AddRefPrivate() = 0;
+  virtual void ReleasePrivate() = 0;
+
+  uint32_t UploadQwords;
+  uint32_t ParameterSlots;
+  uint32_t const *SlotQwordOffsets;
 };
 
 class MTLD3D12PipelineState : public ID3D12PipelineState {

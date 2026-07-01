@@ -338,9 +338,37 @@ D3D12CreateRootSignatureDeserializer(const void *pBytecode, SIZE_T DataSize, REF
 
 #pragma endregion
 
+inline std::pair<std::vector<uint32_t>, uint32_t>
+CalculateRootSignatureQwordOffsets(const D3D12_ROOT_SIGNATURE_DESC1 &Desc) {
+  uint32_t current_offset = 0;
+  std::vector<uint32_t> out;
+
+  for (unsigned i = 0; i < Desc.NumParameters; i++) {
+    auto &Parameter = Desc.pParameters[i];
+
+    switch (Parameter.ParameterType) {
+    case D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE:
+      out.push_back(current_offset++);
+      break;
+    case D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS:
+      out.push_back(current_offset);
+      current_offset += (Parameter.Constants.Num32BitValues / 2) + (Parameter.Constants.Num32BitValues & 1);
+      break;
+    case D3D12_ROOT_PARAMETER_TYPE_CBV:
+    case D3D12_ROOT_PARAMETER_TYPE_SRV:
+    case D3D12_ROOT_PARAMETER_TYPE_UAV:
+      out.push_back(current_offset++);
+      break;
+    }
+  }
+
+  return {out, current_offset};
+}
+
 class MTLD3D12RootSignatureImpl : public MTLD3D12DeviceChild<MTLD3D12RootSignature> {
 
   std::vector<uint8_t> blob_;
+  std::vector<uint32_t> qword_offsets_;
 
 public:
   MTLD3D12RootSignatureImpl(MTLD3D12Device *pDevice, const void *pBytecode, SIZE_T BytecodeLength) :
@@ -351,6 +379,25 @@ public:
 
   HRESULT
   Initialize() {
+    const void *pRawRootSig;
+    UINT RawRootSigSize;
+    HRESULT hr = microsoft::DXBCGetRootSignature(blob_.data(), &pRawRootSig, &RawRootSigSize);
+    if (FAILED(hr))
+      return hr;
+
+    RootSignatureDeserializer deserializer;
+    hr = deserializer.Deserialize(pRawRootSig, RawRootSigSize);
+    if (FAILED(hr))
+      return hr;
+
+    auto &desc = deserializer.desc_1_1_.Desc_1_1;
+
+    auto [offsets, total_qwords] = CalculateRootSignatureQwordOffsets(desc);
+    qword_offsets_ = offsets;
+    UploadQwords = total_qwords;
+    ParameterSlots = qword_offsets_.size();
+    SlotQwordOffsets = qword_offsets_.data();
+
     return S_OK;
   }
 
