@@ -344,11 +344,28 @@ public:
     cmd_draw.vertex_count = VertexCountPerInstance;
   };
 
-  void STDMETHODCALLTYPE DrawIndexedInstanced(
+  void STDMETHODCALLTYPE
+  DrawIndexedInstanced(
       UINT IndexCountPerInstance, UINT InstanceCount, UINT StartVertexLocation, INT BaseVertexLocation,
       UINT StartInstanceLocation
   ) {
-    IMPLEMENT_ME
+    WMTPrimitiveType primitive_type;
+    uint32_t cp_count;
+    if (!to_metal_primitive_type(topology_, primitive_type, cp_count))
+      return;
+    DrawCallStatus status = PreDraw();
+    if (status == DrawCallStatus::Invalid)
+      return;
+    auto &cmd_draw = allocator_->EncodeRenderCommand<wmtcmd_render_draw_indexed>();
+    cmd_draw.type = WMTRenderCommandDrawIndexed;
+    cmd_draw.primitive_type = primitive_type;
+    cmd_draw.index_type = index_type;
+    cmd_draw.index_count = IndexCountPerInstance;
+    cmd_draw.index_buffer = index_buffer;
+    cmd_draw.index_buffer_offset = index_offset + StartVertexLocation * (index_type == WMTIndexTypeUInt32 ? 4 : 2);
+    cmd_draw.instance_count = InstanceCount;
+    cmd_draw.base_vertex = BaseVertexLocation;
+    cmd_draw.base_instance = StartInstanceLocation;
   };
 
   void STDMETHODCALLTYPE Dispatch(UINT X, UINT Y, UINT Z) { IMPLEMENT_ME };
