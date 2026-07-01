@@ -435,7 +435,22 @@ public:
     cmd_setrs.winding = pso_graphics->winding;
   }
 
-  void STDMETHODCALLTYPE SetPipelineState(ID3D12PipelineState *pPSO) { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE
+  SetPipelineState(ID3D12PipelineState *pPSO) {
+    if (!pPSO) {
+      pso_graphics_ = nullptr;
+      return;
+    }
+    auto graphics_pso = static_cast<MTLD3D12GraphicsPipelineState *>(pPSO);
+    if (pso_graphics_.ptr() == graphics_pso)
+      return;
+    pso_graphics_ = graphics_pso;
+    if (!allocator_->encoder_current || allocator_->encoder_current->type != EncoderType::Render)
+      return;
+
+    UpdateGraphicsPSO(graphics_pso);
+    dirty_state_.set(DirtyState::VertexBuffer);
+  };
 
   void STDMETHODCALLTYPE ResourceBarrier(UINT Count, const D3D12_RESOURCE_BARRIER *barriers) {
     // TODO: in the initial implementation, we force synchronize everything and ignore barriers (which can be used as
