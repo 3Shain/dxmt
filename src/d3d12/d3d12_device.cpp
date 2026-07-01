@@ -33,6 +33,7 @@ class MTLD3D12DeviceImpl : public MTLD3D12Object<ComObject<MTLD3D12Device>> {
 
   dxmt::mutex residency_lock_;
   WMT::Reference<WMT::ResidencySet> residency_set_;
+  std::map<uint64_t, BufferAllocation *> interval_map_;
 
 public:
   MTLD3D12DeviceImpl(IMTLDXGIAdapter *adapter) : adapter_(adapter) {}
@@ -410,6 +411,39 @@ public:
     residency_set_.removeAllocations(&allocation, 1);
     residency_set_.commit();
     return S_OK;
+  }
+
+  HRESULT
+  RegisterResidencyAndVA(BufferAllocation *allocation) {
+    std::unique_lock<dxmt::mutex> lock(residency_lock_);
+    interval_map_.emplace(allocation->gpuAddress(), allocation);
+    auto buffer = allocation->buffer();
+    residency_set_.addAllocations(&buffer, 1);
+    residency_set_.commit();
+    return S_OK;
+  }
+
+  HRESULT
+  UnregisterResidencyAndVA(BufferAllocation *allocation) {
+    std::unique_lock<dxmt::mutex> lock(residency_lock_);
+    interval_map_.erase(allocation->gpuAddress());
+    auto buffer = allocation->buffer();
+    residency_set_.removeAllocations(&buffer, 1);
+    residency_set_.commit();
+    return S_OK;
+  }
+
+  BufferAllocation *
+  LookupBufferByVA(D3D12_GPU_VIRTUAL_ADDRESS VA, uint64_t *pOffset) {
+    std::unique_lock<dxmt::mutex> lock(residency_lock_);
+    auto iter = interval_map_.upper_bound(VA);
+    if (iter == interval_map_.begin()) {
+      *pOffset = 0;
+      return {};
+    }
+    --iter;
+    *pOffset = VA - iter->first;
+    return iter->second;
   }
 };
 

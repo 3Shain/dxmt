@@ -130,6 +130,12 @@ public:
 
   virtual HRESULT UnregisterResidency(WMT::Allocation allocation) = 0;
 
+  virtual HRESULT RegisterResidencyAndVA(BufferAllocation *allocation) = 0;
+
+  virtual HRESULT UnregisterResidencyAndVA(BufferAllocation *allocation) = 0;
+
+  virtual BufferAllocation *LookupBufferByVA(D3D12_GPU_VIRTUAL_ADDRESS VA, uint64_t *pOffset) = 0;
+
   EventListener event_listener;
 };
 
