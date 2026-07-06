@@ -100,6 +100,9 @@ public:
   uint32_t UploadQwords;
   uint32_t ParameterSlots;
   uint32_t const *SlotQwordOffsets;
+
+  size_t NumStaticSamplers;
+  uint64_t const *EncodedStaticSamplers;
 };
 
 class MTLD3D12PipelineState : public ID3D12PipelineState {

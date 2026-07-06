@@ -22,6 +22,7 @@
 #include "com/com_pointer.hpp"
 #include "d3d12_device.hpp"
 #include "d3d12_device_child.hpp"
+#include "dxmt_sampler.hpp"
 #include "util_math.hpp"
 #include "util_md5.hpp"
 #include <cstring>
@@ -370,6 +371,15 @@ class MTLD3D12RootSignatureImpl : public MTLD3D12DeviceChild<MTLD3D12RootSignatu
   std::vector<uint8_t> blob_;
   std::vector<uint32_t> qword_offsets_;
 
+  std::vector<Rc<Sampler>> static_samplers_; // which is not really "static"
+  /**
+  It's supposed to be implemented by `constexpr sampler` in Metal shader, but
+  for unknown reason it lacks of `mirrored_clamp_to_edge` address mode.
+  We may lower that with an extra `abs()` to sample coord though...
+  Let's do it in the simple way
+  */
+  std::vector<uint64_t> static_samplers_encoded_;
+
 public:
   MTLD3D12RootSignatureImpl(MTLD3D12Device *pDevice, const void *pBytecode, SIZE_T BytecodeLength) :
       MTLD3D12DeviceChild<MTLD3D12RootSignature>(pDevice) {
@@ -391,6 +401,23 @@ public:
       return hr;
 
     auto &desc = deserializer.desc_1_1_.Desc_1_1;
+
+    NumStaticSamplers = desc.NumStaticSamplers;
+    if (NumStaticSamplers) {
+      for (unsigned i = 0; i < desc.NumStaticSamplers; i++) {
+        WMTSamplerInfo info;
+        PopulateWMTSamplerInfo(device_->GetMTLDevice(), info, desc.pStaticSamplers[i]);
+
+        auto sampler = Sampler::createSampler(device_->GetMTLDevice(), info, desc.pStaticSamplers[i].MipLODBias);
+        static_samplers_encoded_.push_back(sampler->sampler_state_handle);
+        static_samplers_encoded_.push_back(sampler->sampler_state_cube_handle);
+        static_samplers_encoded_.push_back((uint64_t)std::bit_cast<uint32_t>(sampler->lod_bias));
+        static_samplers_encoded_.push_back(0 /* padding */);
+
+        static_samplers_.emplace_back(std::move(sampler));
+      }
+      EncodedStaticSamplers = static_samplers_encoded_.data();
+    }
 
     auto [offsets, total_qwords] = CalculateRootSignatureQwordOffsets(desc);
     qword_offsets_ = offsets;

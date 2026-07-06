@@ -25,6 +25,7 @@ namespace dxmt {
 enum class DirtyState {
   VertexBuffer,
   GraphicsRootArguments,
+  GraphicsRootSignature,
 };
 
 enum class DrawCallStatus {
@@ -322,7 +323,7 @@ public:
       if (pso_graphics_) {
         UpdateGraphicsPSO(pso_graphics_.ptr());
       }
-      dirty_state_.set(DirtyState::VertexBuffer, DirtyState::GraphicsRootArguments);
+      dirty_state_.set(DirtyState::VertexBuffer, DirtyState::GraphicsRootArguments, DirtyState::GraphicsRootSignature);
     }
     if (dirty_state_.test(DirtyState::VertexBuffer)) {
       EncodeVertexBuffers();
@@ -337,14 +338,33 @@ public:
         cmd_vsargbuf.type = WMTRenderCommandSetVertexBuffer;
         cmd_vsargbuf.buffer = allocator_->gpu_heap_buffer_;
         cmd_vsargbuf.offset = Offset;
-        cmd_vsargbuf.index = 0;
+        cmd_vsargbuf.index = SM50_BINDING_INDEX_ROOT_ARGUMENTS;
         auto &cmd_fsargbuf = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
         cmd_fsargbuf.type = WMTRenderCommandSetFragmentBuffer;
         cmd_fsargbuf.buffer = allocator_->gpu_heap_buffer_;
         cmd_fsargbuf.offset = Offset;
-        cmd_fsargbuf.index = 0;
+        cmd_fsargbuf.index = SM50_BINDING_INDEX_ROOT_ARGUMENTS;
       }
       dirty_state_.clr(DirtyState::GraphicsRootArguments);
+    }
+
+    if (dirty_state_.test(DirtyState::GraphicsRootSignature)) {
+      if (rootsig_graphics_) {
+        auto static_sampler_encode_size = sizeof(uint64_t) * rootsig_graphics_->NumStaticSamplers * 4;
+        auto [Ptr, Offset] = allocator_->AllocateGPUHeap(static_sampler_encode_size, 64);
+        memcpy(Ptr, rootsig_graphics_->EncodedStaticSamplers, static_sampler_encode_size);
+        auto &cmd_vsargbuf = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+        cmd_vsargbuf.type = WMTRenderCommandSetVertexBuffer;
+        cmd_vsargbuf.buffer = allocator_->gpu_heap_buffer_;
+        cmd_vsargbuf.offset = Offset;
+        cmd_vsargbuf.index = SM50_BINDING_INDEX_STATIC_SAMPLERS;
+        auto &cmd_fsargbuf = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+        cmd_fsargbuf.type = WMTRenderCommandSetFragmentBuffer;
+        cmd_fsargbuf.buffer = allocator_->gpu_heap_buffer_;
+        cmd_fsargbuf.offset = Offset;
+        cmd_fsargbuf.index = SM50_BINDING_INDEX_STATIC_SAMPLERS;
+      }
+      dirty_state_.clr(DirtyState::GraphicsRootSignature);
     }
     return DrawCallStatus::Ordinary;
   }
@@ -522,7 +542,7 @@ public:
     } else {
       rootsig_graphics_ = nullptr;
     }
-    dirty_state_.set(DirtyState::GraphicsRootArguments);
+    dirty_state_.set(DirtyState::GraphicsRootArguments, DirtyState::GraphicsRootSignature);
   };
 
   void STDMETHODCALLTYPE SetComputeRootDescriptorTable(UINT Index, D3D12_GPU_DESCRIPTOR_HANDLE BaseDescriptor) {
