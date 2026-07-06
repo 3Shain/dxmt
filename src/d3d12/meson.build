@@ -11,6 +11,7 @@ d3d12_src = [
   'd3d12_pipeline_graphics.cpp',
   'd3d12_resource_helper.cpp',
   'd3d12_root_signature.cpp',
+  'd3d12_sampler.cpp',
   'd3d12_swapchain.cpp',
   'd3d12_texture.cpp',
   '../d3d10/d3d10_blob.cpp',
