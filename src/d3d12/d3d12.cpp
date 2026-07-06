@@ -50,6 +50,8 @@ D3D12CreateDevice(IUnknown *pAdapter, D3D_FEATURE_LEVEL MinimumFeatureLevel, REF
       ERR("D3D12CreateDevice: No default adapter available");
       return hr;
     }
+  } else {
+    dxgi_adapter = com_cast<IDXGIAdapter>(pAdapter);
   }
 
   if (FAILED(hr = dxgi_adapter->QueryInterface(IID_PPV_ARGS(&dxgi_adapter_mtl)))) {
