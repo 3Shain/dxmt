@@ -394,10 +394,35 @@ public:
 
   void STDMETHODCALLTYPE Dispatch(UINT X, UINT Y, UINT Z) { IMPLEMENT_ME };
 
-  void STDMETHODCALLTYPE CopyBufferRegion(
+  bool
+  PreBlit() {
+    if (!allocator_->encoder_current || allocator_->encoder_current->type != EncoderType::Blit) {
+      allocator_->InvalidateCurrentPass();
+      auto render = allocator_->AllocatePass<BlitEncoderData>();
+      render->type = EncoderType::Blit;
+      render->cmd_head.type = WMTBlitCommandNop;
+      render->cmd_head.next.set(0);
+      render->cmd_tail = (wmtcmd_base *)&render->cmd_head;
+    }
+    return true;
+  }
+
+  void STDMETHODCALLTYPE
+  CopyBufferRegion(
       ID3D12Resource *pDstBuffer, UINT64 DstOffset, ID3D12Resource *pSrcBuffer, UINT64 SrcOffset, UINT64 ByteCount
   ) {
-    IMPLEMENT_ME
+    if (!pDstBuffer || !pSrcBuffer)
+      return;
+    if (!PreBlit())
+      return;
+
+    auto &cmd_cp = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
+    cmd_cp.type = WMTBlitCommandCopyFromBufferToBuffer;
+    cmd_cp.src = static_cast<MTLD3D12Resource *>(pSrcBuffer)->buffer->current()->buffer();
+    cmd_cp.dst = static_cast<MTLD3D12Resource *>(pDstBuffer)->buffer->current()->buffer();
+    cmd_cp.src_offset = SrcOffset;
+    cmd_cp.dst_offset = DstOffset;
+    cmd_cp.copy_length = ByteCount;
   };
 
   void STDMETHODCALLTYPE CopyTextureRegion(
