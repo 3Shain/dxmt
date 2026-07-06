@@ -201,6 +201,15 @@ public:
           encoder.endEncoding();
           break;
         }
+        case EncoderType::Blit: {
+          auto data = static_cast<BlitEncoderData *>(current);
+          auto encoder = cmdbuf.blitCommandEncoder();
+          encoder.waitForFence(fence_);
+          encoder.encodeCommands(&data->cmd_head);
+          encoder.updateFence(fence_);
+          encoder.endEncoding();
+          break;
+        }
         }
         current = current->next;
       }

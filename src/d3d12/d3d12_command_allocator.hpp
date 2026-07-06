@@ -141,6 +141,18 @@ public:
     return *storage;
   }
 
+  template <typename cmd_struct>
+  cmd_struct &
+  EncodeBlitCommand() {
+    assert(encoder_current->type == EncoderType::Blit);
+    auto encoder = static_cast<BlitEncoderData *>(encoder_current);
+    auto storage = (cmd_struct *)AllocateCPUHeap(sizeof(cmd_struct), 16);
+    encoder->cmd_tail->next.set(storage);
+    encoder->cmd_tail = (wmtcmd_base *)storage;
+    storage->next.set(nullptr);
+    return *storage;
+  }
+
   std::tuple<void *, size_t>
   AllocateGPUHeap(size_t Length, size_t Alignment) {
     if (!Length)

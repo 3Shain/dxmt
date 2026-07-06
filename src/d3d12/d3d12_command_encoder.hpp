@@ -27,6 +27,7 @@ enum class EncoderType {
   Null,
   Clear,
   Render,
+  Blit,
 };
 
 struct EncoderData {
@@ -99,6 +100,11 @@ struct RenderEncoderData : EncoderData {
   bool use_visibility_result = 0;
   bool use_tessellation = 0;
   bool use_geometry = 0;
+};
+
+struct BlitEncoderData : EncoderData {
+  wmtcmd_blit_nop cmd_head;
+  wmtcmd_base *cmd_tail;
 };
 
 }; // namespace dxmt
