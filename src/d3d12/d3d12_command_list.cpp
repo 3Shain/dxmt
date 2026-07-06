@@ -26,6 +26,8 @@ enum class DirtyState {
   VertexBuffer,
   GraphicsRootArguments,
   GraphicsRootSignature,
+  Viewport,
+  ScissorRect,
 };
 
 enum class DrawCallStatus {
@@ -122,6 +124,14 @@ class MTLD3D12GraphicsCommandListImpl : public MTLD3D12DeviceChild<MTLD3D12Graph
 
   D3D12_PRIMITIVE_TOPOLOGY topology_;
 
+  UINT num_viewports;
+  D3D12_VIEWPORT
+  viewports[D3D12_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE] = {{}};
+
+  UINT num_scissors;
+  D3D12_RECT
+  scissors[D3D12_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE] = {{}};
+
   Com<MTLD3D12GraphicsPipelineState, false> pso_graphics_;
   Com<MTLD3D12RootSignature, false> rootsig_graphics_;
   uint64_t rootarg_graphics_staging_[64];
@@ -149,6 +159,12 @@ public:
     dsv = {};
 
     topology_ = {};
+
+    num_viewports = {};
+    memset(viewports, 0, sizeof(viewports));
+
+    num_scissors = {};
+    memset(scissors, 0, sizeof(scissors));
 
     rootsig_graphics_ = nullptr;
     memset(rootarg_graphics_staging_, 0, sizeof(rootarg_graphics_staging_));
@@ -324,6 +340,7 @@ public:
         UpdateGraphicsPSO(pso_graphics_.ptr());
       }
       dirty_state_.set(DirtyState::VertexBuffer, DirtyState::GraphicsRootArguments, DirtyState::GraphicsRootSignature);
+      dirty_state_.set(DirtyState::Viewport, DirtyState::ScissorRect);
     }
     if (dirty_state_.test(DirtyState::VertexBuffer)) {
       EncodeVertexBuffers();
@@ -365,6 +382,41 @@ public:
         cmd_fsargbuf.index = SM50_BINDING_INDEX_STATIC_SAMPLERS;
       }
       dirty_state_.clr(DirtyState::GraphicsRootSignature);
+    }
+
+    if (dirty_state_.test(DirtyState::Viewport)) {
+      auto metal_viewport = allocator_->AllocateCommandData<WMTViewport>(num_viewports);
+      for (auto i = 0u; i < num_viewports; i++) {
+        auto &viewport = viewports[i];
+        metal_viewport[i] = {viewport.TopLeftX, viewport.TopLeftY, viewport.Width,
+                             viewport.Height,   viewport.MinDepth, viewport.MaxDepth};
+      }
+      auto &cmd = allocator_->EncodeRenderCommand<wmtcmd_render_setviewports>();
+      cmd.type = WMTRenderCommandSetViewports;
+      cmd.viewports.set(metal_viewport);
+      cmd.viewport_count = num_viewports;
+      dirty_state_.clr(DirtyState::Viewport);
+    }
+
+    if (dirty_state_.test(DirtyState::ScissorRect)) {
+      auto metal_scissors = allocator_->AllocateCommandData<WMTScissorRect>(num_viewports /* yes */);
+      for (auto i = 0u; i < num_viewports; i++) {
+        if (i < num_scissors) {
+          auto &d3d_rect = scissors[i];
+          LONG left = std::clamp(d3d_rect.left, (LONG)0, (LONG)16384);
+          LONG top = std::clamp(d3d_rect.top, (LONG)0, (LONG)16384);
+          LONG right = std::clamp(d3d_rect.right, left, (LONG)16384);
+          LONG bottom = std::clamp(d3d_rect.bottom, top, (LONG)16384);
+          metal_scissors[i] = {uint32_t(left), uint32_t(top), uint32_t(right - left), uint32_t(bottom - top)};
+        } else {
+          metal_scissors[i] = {0, 0, 16384, 16384};
+        }
+      }
+      auto &cmd = allocator_->EncodeRenderCommand<wmtcmd_render_setscissorrects>();
+      cmd.type = WMTRenderCommandSetScissorRects;
+      cmd.scissor_rects.set(metal_scissors);
+      cmd.rect_count = num_viewports;
+      dirty_state_.clr(DirtyState::ScissorRect);
     }
     return DrawCallStatus::Ordinary;
   }
@@ -474,9 +526,27 @@ public:
     topology_ = Topology;
   };
 
-  void STDMETHODCALLTYPE RSSetViewports(UINT NumViewports, const D3D12_VIEWPORT *pViewports) { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE
+  RSSetViewports(UINT NumViewports, const D3D12_VIEWPORT *pViewports) {
+    if (NumViewports > D3D12_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE)
+      return;
+    num_viewports = NumViewports;
+    for (auto i = 0u; i < NumViewports; i++) {
+      viewports[i] = pViewports[i];
+    }
+    dirty_state_.set(DirtyState::Viewport);
+  };
 
-  void STDMETHODCALLTYPE RSSetScissorRects(UINT NumRects, const D3D12_RECT *rects) { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE
+  RSSetScissorRects(UINT NumRects, const D3D12_RECT *rects) {
+    if (NumRects > D3D12_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE)
+      return;
+    num_scissors = NumRects;
+    for (auto i = 0u; i < NumRects; i++) {
+      scissors[i] = rects[i];
+    }
+    dirty_state_.set(DirtyState::ScissorRect);
+  };
 
   void STDMETHODCALLTYPE OMSetBlendFactor(const FLOAT BlendFactors[4]) { IMPLEMENT_ME };
 

@@ -129,6 +129,12 @@ public:
     return p;
   };
 
+  template <typename T>
+  T *
+  AllocateCommandData(size_t Count) {
+    return (T *)AllocateCPUHeap(sizeof(T) * Count, alignof(T));
+  };
+
   template <typename cmd_struct>
   cmd_struct &
   EncodeRenderCommand() {
