@@ -181,6 +181,22 @@ public:
       }
       return S_OK;
     }
+    case D3D12_FEATURE_ROOT_SIGNATURE: {
+      if (DataSize != sizeof(D3D12_FEATURE_DATA_ROOT_SIGNATURE))
+        return E_INVALIDARG;
+      auto *out = reinterpret_cast<D3D12_FEATURE_DATA_ROOT_SIGNATURE *>(pFeatureData);
+      switch (out->HighestVersion) {
+      default:
+        return E_INVALIDARG;
+      case D3D_ROOT_SIGNATURE_VERSION_1:
+        out->HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1;
+        break;
+      case D3D_ROOT_SIGNATURE_VERSION_1_1:
+        out->HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
+        break;
+      }
+      return S_OK;
+    }
     default:
       break;
     }
