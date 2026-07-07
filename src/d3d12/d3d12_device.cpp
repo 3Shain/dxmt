@@ -128,6 +128,33 @@ public:
 
   HRESULT STDMETHODCALLTYPE
   CheckFeatureSupport(D3D12_FEATURE Feature, void *pFeatureData, UINT DataSize) {
+    switch (Feature) {
+    case D3D12_FEATURE_ARCHITECTURE: {
+      if (DataSize != sizeof(D3D12_FEATURE_DATA_ARCHITECTURE))
+        return E_INVALIDARG;
+      auto *out = reinterpret_cast<D3D12_FEATURE_DATA_ARCHITECTURE *>(pFeatureData);
+      if (out->NodeIndex > 0)
+        return E_INVALIDARG;
+      out->CacheCoherentUMA = FALSE;
+      out->TileBasedRenderer = TRUE;
+      out->UMA = TRUE;
+      return S_OK;
+    }
+    case D3D12_FEATURE_ARCHITECTURE1: {
+      if (DataSize != sizeof(D3D12_FEATURE_DATA_ARCHITECTURE1))
+        return E_INVALIDARG;
+      auto *out = reinterpret_cast<D3D12_FEATURE_DATA_ARCHITECTURE1 *>(pFeatureData);
+      if (out->NodeIndex > 0)
+        return E_INVALIDARG;
+      out->CacheCoherentUMA = FALSE;
+      out->TileBasedRenderer = TRUE;
+      out->UMA = TRUE;
+      out->IsolatedMMU = FALSE;
+      return S_OK;
+    }
+    default:
+      break;
+    }
     ERR("CheckFeatureSupport: unhandled feature ", Feature);
     return E_NOTIMPL;
   };
