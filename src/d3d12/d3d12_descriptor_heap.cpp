@@ -24,9 +24,35 @@
 
 namespace dxmt {
 
+struct SRVTextureGPUStorage {
+  uint64_t resource_id;
+  uint64_t metadata;
+  uint64_t padding[2];
+};
+
+struct ShaderVisibleDescriptorGPUStorage {
+  union {
+    SRVTextureGPUStorage SRVTexture;
+  };
+
+  ShaderVisibleDescriptorGPUStorage();
+};
+
+static_assert(sizeof(ShaderVisibleDescriptorGPUStorage) == 32);
+
+inline uint64_t
+TextureMetadata(uint32_t array_length, float min_lod) {
+  return ((uint64_t)array_length << 32) | (uint64_t)std::bit_cast<uint32_t>(min_lod);
+}
+
 class MTLD3D12DescriptorHeapImpl : public MTLD3D12Pageable<MTLD3D12DescriptorHeap> {
 
   D3D12_DESCRIPTOR_HEAP_DESC desc_;
+
+  std::vector<ShaderVisibleDescriptorCPUStorage> descriptors_;
+  Rc<Buffer> buffer_;
+  ShaderVisibleDescriptorGPUStorage *mapped_argument_buffer_ = nullptr;
+  uint64_t argument_buffer_gpu_address_ = 0;
 
 public:
   MTLD3D12DescriptorHeapImpl(MTLD3D12Device *pDevice) : MTLD3D12Pageable<MTLD3D12DescriptorHeap>(pDevice) {}
@@ -43,10 +69,36 @@ public:
     default:
       return E_INVALIDARG;
     }
+    descriptors_.resize(pDesc->NumDescriptors);
+
+    if (pDesc->Flags & D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE) {
+      buffer_ = new Buffer(descriptors_.size() * sizeof(ShaderVisibleDescriptorGPUStorage), device_->GetMTLDevice());
+
+      Flags<BufferAllocationFlag> flags;
+#ifdef __i386__
+      IMPLEMENT_ME
+#endif
+      buffer_->rename(buffer_->allocate(flags));
+      mapped_argument_buffer_ =
+          reinterpret_cast<ShaderVisibleDescriptorGPUStorage *>(buffer_->current()->mappedMemory(0));
+      argument_buffer_gpu_address_ = buffer_->current()->gpuAddress();
+      device_->RegisterResidencyAndVA(buffer_->current());
+    } else {
+      mapped_argument_buffer_ = reinterpret_cast<ShaderVisibleDescriptorGPUStorage *>(
+          malloc(descriptors_.size() * sizeof(ShaderVisibleDescriptorGPUStorage))
+      );
+    }
+
     return S_OK;
   };
 
-  ~MTLD3D12DescriptorHeapImpl() {}
+  ~MTLD3D12DescriptorHeapImpl() {
+    if (buffer_) {
+      device_->UnregisterResidencyAndVA(buffer_->current());
+    } else {
+      free(mapped_argument_buffer_);
+    }
+  }
 
   HRESULT
   STDMETHODCALLTYPE
@@ -77,14 +129,31 @@ public:
 
   virtual D3D12_CPU_DESCRIPTOR_HANDLE *STDMETHODCALLTYPE
   GetCPUDescriptorHandleForHeapStart(D3D12_CPU_DESCRIPTOR_HANDLE *__ret) {
-    *__ret = {};
+    *__ret = GetShaderVisibleDescriptor(this, 0);
     return __ret;
   }
 
   virtual D3D12_GPU_DESCRIPTOR_HANDLE *STDMETHODCALLTYPE
   GetGPUDescriptorHandleForHeapStart(D3D12_GPU_DESCRIPTOR_HANDLE *__ret) {
-    __ret->ptr = 0;
+    __ret->ptr = argument_buffer_gpu_address_;
     return __ret;
+  }
+
+  virtual HRESULT
+  AddShaderResourceView(UINT Index, Texture *Texture, TextureViewKey View, FLOAT ResourceMinLODClamp) {
+    if (Index >= descriptors_.size())
+      return E_INVALIDARG;
+    auto &cpu_storage = descriptors_[Index];
+    cpu_storage.type = ShaderVisibleDescriptorType::SRVTexture;
+    cpu_storage.SRVTexture.texture = Texture;
+    cpu_storage.SRVTexture.view = View;
+    if (mapped_argument_buffer_) {
+      auto &texture_view = Texture->view(View);
+      auto &gpu_storage = mapped_argument_buffer_[Index];
+      gpu_storage.SRVTexture.resource_id = texture_view.gpuResourceID;
+      gpu_storage.SRVTexture.metadata = TextureMetadata(Texture->arrayLength(View), ResourceMinLODClamp);
+    }
+    return S_OK;
   }
 };
 

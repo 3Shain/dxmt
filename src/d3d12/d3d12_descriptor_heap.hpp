@@ -74,8 +74,29 @@ struct EMBEDDED_DESCRIPTOR_HANDLE {
 
 static_assert(sizeof(EMBEDDED_DESCRIPTOR_HANDLE) == sizeof(D3D12_CPU_DESCRIPTOR_HANDLE));
 
+enum class ShaderVisibleDescriptorType {
+  Null,
+  SRVTexture,
+};
+
+struct SRVTextureCPUStorage {
+  Texture *texture = nullptr;
+  TextureViewKey view{};
+};
+
+struct ShaderVisibleDescriptorCPUStorage {
+  ShaderVisibleDescriptorType type;
+  union {
+    SRVTextureCPUStorage SRVTexture;
+  };
+
+  ShaderVisibleDescriptorCPUStorage() : type(ShaderVisibleDescriptorType::Null) {}
+};
+
 class MTLD3D12DescriptorHeap : public ID3D12DescriptorHeap {
 public:
+  virtual HRESULT
+  AddShaderResourceView(UINT Index, Texture *Texture, TextureViewKey View, FLOAT ResourceMinLODClamp) = 0;
 };
 
 class MTLD3D12SamplerDescriptorHeap : public ID3D12DescriptorHeap {

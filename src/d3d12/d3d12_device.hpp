@@ -235,7 +235,31 @@ GetRenderTargetDescriptor(MTLD3D12RenderTargetDescriptorHeap *pHeap, UINT Index)
 #endif
 }
 
+inline std::tuple<MTLD3D12DescriptorHeap *, UINT>
+GetShaderVisibleDescriptorHeap(MTLD3D12Device *pDevice, D3D12_CPU_DESCRIPTOR_HANDLE Handle) {
+#ifdef DXMT_USE_EMBEDDED_HEAP_POINTER
+  EMBEDDED_DESCRIPTOR_HANDLE impl(Handle);
+  return {impl.extract<MTLD3D12DescriptorHeap>(), (UINT)impl.Descriptor};
+#else
+  IMPLEMENT_ME
+  return {};
+#endif
+}
+
+inline D3D12_CPU_DESCRIPTOR_HANDLE
+GetShaderVisibleDescriptor(MTLD3D12DescriptorHeap *pHeap, UINT Index) {
+#ifdef DXMT_USE_EMBEDDED_HEAP_POINTER
+  return EMBEDDED_DESCRIPTOR_HANDLE(pHeap, Index);
+#else
+  IMPLEMENT_ME
+  return {};
+#endif
+  // 
+}
+
 template <typename VIEW_DESC>
 HRESULT ExtractEntireResourceViewDescription(const D3D12_RESOURCE_DESC &ResourceDesc, VIEW_DESC *pViewDescOut);
+
+constexpr auto kDefaultShader4Component = 0b1'011'010'001'000;
 
 } // namespace dxmt
