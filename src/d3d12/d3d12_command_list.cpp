@@ -905,7 +905,7 @@ public:
   };
 
   void STDMETHODCALLTYPE DiscardResource(ID3D12Resource *pResource, const D3D12_DISCARD_REGION *pRegion) {
-    IMPLEMENT_ME
+    // do nothing for now
   };
 
   void STDMETHODCALLTYPE
