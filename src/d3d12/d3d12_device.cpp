@@ -22,6 +22,7 @@
 #include "com/com_pointer.hpp"
 #include "com/com_object.hpp"
 #include "dxgi_interfaces.h"
+#include "dxmt_format.hpp"
 #include "log/log.hpp"
 #include <map>
 
@@ -339,7 +340,95 @@ public:
       const D3D12_RESOURCE_DESC *pDesc, UINT FirstSubresource, UINT SubresourceCount, UINT64 BaseOffset,
       D3D12_PLACED_SUBRESOURCE_FOOTPRINT *pLayouts, UINT *pNumRows, UINT64 *pRowSizeInBytes, UINT64 *pTotalBytes
   ) {
-    IMPLEMENT_ME
+    UINT64 TotalBytes = 0;
+    UINT64 Offset = 0;
+    UINT BlockWidth = 1;
+    do {
+      if (!pDesc)
+        break;
+
+      MTL_DXGI_FORMAT_DESC FormatDesc;
+
+      if (pDesc->Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
+        if (pDesc->Format != DXGI_FORMAT_UNKNOWN)
+          break;
+        FormatDesc.PixelFormat = WMTPixelFormatInvalid;
+        FormatDesc.BytesPerTexel = 1;
+      } else {
+        if (FAILED(MTLQueryDXGIFormat(GetMTLDevice(), pDesc->Format, FormatDesc)))
+          break;
+
+        if (FormatDesc.Flag & MTL_DXGI_FORMAT_BC)
+          BlockWidth = 4;
+        if (FormatDesc.Flag & MTL_DXGI_FORMAT_DEPTH_PLANER)
+          IMPLEMENT_ME
+        if (FormatDesc.Flag & MTL_DXGI_FORMAT_STENCIL_PLANER)
+          IMPLEMENT_ME
+        if (FormatDesc.BytesPerTexel == 0)
+          IMPLEMENT_ME
+      }
+
+      for (unsigned i = 0; i < SubresourceCount; i++) {
+        auto Subresource = FirstSubresource + i;
+        auto MipLevel = Subresource % pDesc->MipLevels;
+        auto Width = std::max(1u, (UINT)pDesc->Width >> MipLevel);
+        Width = align(Width, BlockWidth);
+        auto Height = 1u;
+        switch (pDesc->Dimension) {
+        case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
+        case D3D12_RESOURCE_DIMENSION_TEXTURE3D: {
+          Height = std::max(1u, pDesc->Height >> MipLevel);
+          break;
+        }
+        default:
+          break;
+        }
+        Height = align(Height, BlockWidth);
+        auto RowCount = Height / BlockWidth;
+        auto Depth = 1u;
+        if (pDesc->Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D)
+          Depth = std::max(1u, (UINT)pDesc->DepthOrArraySize >> MipLevel);
+        auto RowSize = (Width / BlockWidth) * FormatDesc.BytesPerTexel;
+        auto RowPitch = align(RowSize, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
+        if (pLayouts) {
+          pLayouts[i].Offset = BaseOffset + Offset;
+          pLayouts[i].Footprint.Format = pDesc->Format;
+          pLayouts[i].Footprint.Width = Width;
+          pLayouts[i].Footprint.Height = Height;
+          pLayouts[i].Footprint.Depth = Depth;
+          pLayouts[i].Footprint.RowPitch = RowPitch;
+        }
+        if (pNumRows)
+          pNumRows[i] = RowCount;
+        if (pRowSizeInBytes)
+          pRowSizeInBytes[i] = RowSize;
+
+        auto SubresourceSize = RowPitch * (RowCount - 1) + RowSize;
+        SubresourceSize = align(SubresourceSize, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT) * (Depth - 1) + SubresourceSize;
+
+        TotalBytes = Offset + SubresourceSize;
+        Offset = align(TotalBytes, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
+      }
+      if (pTotalBytes)
+        *pTotalBytes = TotalBytes;
+      return;
+    } while (0);
+    for (unsigned i = 0; i < SubresourceCount; i++) {
+      if (pLayouts) {
+        pLayouts[i].Offset = ~0ull;
+        pLayouts[i].Footprint.Format = ~(DXGI_FORMAT)0u;
+        pLayouts[i].Footprint.Width = ~0u;
+        pLayouts[i].Footprint.Height = ~0u;
+        pLayouts[i].Footprint.Depth = ~0u;
+        pLayouts[i].Footprint.RowPitch = ~0u;
+      }
+      if (pNumRows)
+        pNumRows[i] = ~0u;
+      if (pRowSizeInBytes)
+        pRowSizeInBytes[i] = ~0ull;
+    }
+    if (pTotalBytes)
+      *pTotalBytes = UINT64_MAX;
   };
 
   HRESULT STDMETHODCALLTYPE
