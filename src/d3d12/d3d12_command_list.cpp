@@ -102,6 +102,9 @@ to_metal_primitive_type(D3D12_PRIMITIVE_TOPOLOGY topo, WMTPrimitiveType &primiti
   return true;
 }
 
+/* FIXME: it's not *public* */
+unsigned getPlanarCount(WMTPixelFormat format);
+
 // `Graphics`CommandList is a really confusing name
 class MTLD3D12GraphicsCommandListImpl : public MTLD3D12DeviceChild<MTLD3D12GraphicsCommandList> {
 
@@ -497,11 +500,103 @@ public:
     cmd_cp.copy_length = ByteCount;
   };
 
-  void STDMETHODCALLTYPE CopyTextureRegion(
+  void STDMETHODCALLTYPE
+  CopyTextureRegion(
       const D3D12_TEXTURE_COPY_LOCATION *pDst, UINT DstX, UINT DstY, UINT DstZ, const D3D12_TEXTURE_COPY_LOCATION *pSrc,
       const D3D12_BOX *pSrcBox
   ) {
-    IMPLEMENT_ME
+    if (!pDst || !pSrc)
+      return;
+    if (!PreBlit())
+      return;
+
+    if (pDst->Type == D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX) {
+      auto &dst = static_cast<MTLD3D12Resource *>(pDst->pResource)->texture;
+      if (!dst)
+        return;
+
+      auto dst_planar_count = getPlanarCount(dst->pixelFormat());
+
+      if (pSrc->Type == D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT) {
+        auto &src = static_cast<MTLD3D12Resource *>(pSrc->pResource)->buffer;
+        if (!src)
+          return;
+        if (pSrcBox)
+          IMPLEMENT_ME
+
+        auto &cmd_cp = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture_withblitoption>();
+        cmd_cp.type = WMTBlitCommandCopyFromBufferToTexture;
+        cmd_cp.src = src->current()->buffer();
+        cmd_cp.src_offset = pSrc->PlacedFootprint.Offset;
+        cmd_cp.bytes_per_row = pSrc->PlacedFootprint.Footprint.RowPitch;
+        cmd_cp.bytes_per_image = 0;
+        cmd_cp.size = {
+            pSrc->PlacedFootprint.Footprint.Width, pSrc->PlacedFootprint.Footprint.Height,
+            pSrc->PlacedFootprint.Footprint.Depth
+        };
+        cmd_cp.dst = dst->current()->texture();
+        cmd_cp.level = pDst->SubresourceIndex % dst->miplevelCount();
+        cmd_cp.slice = pDst->SubresourceIndex / dst->miplevelCount();
+        cmd_cp.options = dst_planar_count ? (pSrc->SubresourceIndex ? WMTBlitOptionStencilFromDepthStencil
+                                                                    : WMTBlitOptionDepthFromDepthStencil)
+                                          : WMTBlitOptionNone;
+        cmd_cp.origin = {DstX, DstY, DstZ};
+      } else {
+        auto &src = static_cast<MTLD3D12Resource *>(pSrc->pResource)->texture;
+        if (!src)
+          return;
+        auto src_planar_count = getPlanarCount(src->pixelFormat());
+        if (!pSrcBox)
+          IMPLEMENT_ME
+
+        // copy between depth-stencil texture is tricky
+        if (dst_planar_count > 1 || src_planar_count > 1)
+          IMPLEMENT_ME
+
+        auto &cmd_cp = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_texture_to_texture>();
+        cmd_cp.type = WMTBlitCommandCopyFromTextureToTexture;
+        cmd_cp.src = src->current()->texture();
+        cmd_cp.src_level = pSrc->SubresourceIndex % src->miplevelCount();
+        cmd_cp.src_slice = pSrc->SubresourceIndex / src->miplevelCount();
+        cmd_cp.src_origin = {pSrcBox->left, pSrcBox->top, pSrcBox->front};
+        cmd_cp.src_size = {
+            pSrcBox->right - pSrcBox->left, pSrcBox->bottom - pSrcBox->top, pSrcBox->back - pSrcBox->front
+        };
+        cmd_cp.dst = dst->current()->texture();
+        cmd_cp.dst_level = pDst->SubresourceIndex % dst->miplevelCount();
+        cmd_cp.dst_slice = pDst->SubresourceIndex / dst->miplevelCount();
+        cmd_cp.dst_origin = {DstX, DstY, DstZ};
+      }
+    } else if (pDst->Type == D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT) {
+      auto &dst = static_cast<MTLD3D12Resource *>(pDst->pResource)->buffer;
+      if (!dst)
+        return;
+      if (pSrcBox)
+        IMPLEMENT_ME
+      if (pSrc->Type == D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX) {
+        auto &src = static_cast<MTLD3D12Resource *>(pSrc->pResource)->texture;
+        if (!src)
+          return;
+
+        auto &cmd_cp = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer>();
+        cmd_cp.type = WMTBlitCommandCopyFromTextureToBuffer;
+        cmd_cp.src = src->current()->texture();
+        cmd_cp.level = pSrc->SubresourceIndex % src->miplevelCount();
+        cmd_cp.slice = pSrc->SubresourceIndex / src->miplevelCount();
+        cmd_cp.origin = {0, 0, 0};
+        cmd_cp.size = {
+            pDst->PlacedFootprint.Footprint.Width, pDst->PlacedFootprint.Footprint.Height,
+            pDst->PlacedFootprint.Footprint.Depth
+        };
+        cmd_cp.dst = dst->current()->buffer();
+        cmd_cp.offset = pDst->PlacedFootprint.Offset;
+        cmd_cp.bytes_per_row = pDst->PlacedFootprint.Footprint.RowPitch;
+        cmd_cp.bytes_per_image = 0;
+      } else {
+        // so it is buffer to buffer copy?
+        IMPLEMENT_ME
+      }
+    }
   };
 
   void STDMETHODCALLTYPE CopyResource(ID3D12Resource *pDstResource, ID3D12Resource *pSrcResource) { IMPLEMENT_ME };
