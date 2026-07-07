@@ -128,6 +128,7 @@ public:
 
   HRESULT STDMETHODCALLTYPE
   CheckFeatureSupport(D3D12_FEATURE Feature, void *pFeatureData, UINT DataSize) {
+    auto metal = GetMTLDevice();
     switch (Feature) {
     case D3D12_FEATURE_ARCHITECTURE: {
       if (DataSize != sizeof(D3D12_FEATURE_DATA_ARCHITECTURE))
@@ -150,6 +151,34 @@ public:
       out->TileBasedRenderer = TRUE;
       out->UMA = TRUE;
       out->IsolatedMMU = FALSE;
+      return S_OK;
+    }
+    case D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS: {
+      if (DataSize != sizeof(D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS))
+        return E_INVALIDARG;
+      auto *out = reinterpret_cast<D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS *>(pFeatureData);
+
+      if (out->SampleCount == 0) {
+        out->Flags = D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE;
+        out->NumQualityLevels = 0;
+        return E_FAIL;
+      }
+
+      if (out->Format == DXGI_FORMAT_UNKNOWN) {
+        out->NumQualityLevels = out->SampleCount == 0 ? 1 : 0;
+        return S_OK;
+      }
+
+      MTL_DXGI_FORMAT_DESC format_desc;
+      HRESULT hr = MTLQueryDXGIFormat(metal, out->Format, format_desc);
+      if (SUCCEEDED(hr) && out->SampleCount) {
+        out->Flags = D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE;
+        out->NumQualityLevels = metal.supportsTextureSampleCount(out->SampleCount) ? 1 : 0;
+      } else {
+        out->Flags = D3D12_MULTISAMPLE_QUALITY_LEVELS_FLAG_NONE;
+        out->NumQualityLevels = 0;
+        return E_FAIL;
+      }
       return S_OK;
     }
     default:
