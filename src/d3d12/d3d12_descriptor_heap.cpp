@@ -33,6 +33,7 @@ struct SRVTextureGPUStorage {
 struct ShaderVisibleDescriptorGPUStorage {
   union {
     SRVTextureGPUStorage SRVTexture;
+    CBVCommonStorage ConstantBuffer;
   };
 
   ShaderVisibleDescriptorGPUStorage();
@@ -155,6 +156,22 @@ public:
     }
     return S_OK;
   }
+    virtual HRESULT
+  AddConstantBufferView(UINT Index, UINT64 VA, UINT32 SizeInBytes) {
+    if (Index >= descriptors_.size())
+      return E_INVALIDARG;
+    auto &cpu_storage = descriptors_[Index];
+    cpu_storage.type = ShaderVisibleDescriptorType::ConstantBuffer;
+    cpu_storage.ConstantBuffer.address = VA;
+    cpu_storage.ConstantBuffer.size = SizeInBytes;
+    if (mapped_argument_buffer_) {
+      auto &gpu_storage = mapped_argument_buffer_[Index];
+      gpu_storage.ConstantBuffer.address = VA;
+      gpu_storage.ConstantBuffer.size = SizeInBytes;
+    }
+    return S_OK;
+  }
+
 };
 
 class MTLD3D12RenderTargetDescriptorHeapImpl : public MTLD3D12Pageable<MTLD3D12RenderTargetDescriptorHeap> {

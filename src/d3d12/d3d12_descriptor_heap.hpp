@@ -77,6 +77,7 @@ static_assert(sizeof(EMBEDDED_DESCRIPTOR_HANDLE) == sizeof(D3D12_CPU_DESCRIPTOR_
 enum class ShaderVisibleDescriptorType {
   Null,
   SRVTexture,
+  ConstantBuffer,
 };
 
 struct SRVTextureCPUStorage {
@@ -84,10 +85,16 @@ struct SRVTextureCPUStorage {
   TextureViewKey view{};
 };
 
+struct CBVCommonStorage {
+  uint64_t address = 0;
+  uint64_t size = 0;
+};
+
 struct ShaderVisibleDescriptorCPUStorage {
   ShaderVisibleDescriptorType type;
   union {
     SRVTextureCPUStorage SRVTexture;
+    CBVCommonStorage ConstantBuffer;
   };
 
   ShaderVisibleDescriptorCPUStorage() : type(ShaderVisibleDescriptorType::Null) {}
@@ -97,6 +104,8 @@ class MTLD3D12DescriptorHeap : public ID3D12DescriptorHeap {
 public:
   virtual HRESULT
   AddShaderResourceView(UINT Index, Texture *Texture, TextureViewKey View, FLOAT ResourceMinLODClamp) = 0;
+
+  virtual HRESULT AddConstantBufferView(UINT Index, UINT64 VA, UINT32 SizeInBytes) = 0;
 };
 
 class MTLD3D12SamplerDescriptorHeap : public ID3D12DescriptorHeap {
