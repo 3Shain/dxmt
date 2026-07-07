@@ -105,6 +105,10 @@ public:
   uint64_t const *EncodedStaticSamplers;
 };
 
+class MTLD3D12QueryHeap : public ID3D12QueryHeap {
+public:
+};
+
 class MTLD3D12PipelineState : public ID3D12PipelineState {
 public:
   UINT IsComputePipelineState;
@@ -161,6 +165,9 @@ HRESULT
 CreateDescriptorHeap(
     MTLD3D12Device *pDevice, const D3D12_DESCRIPTOR_HEAP_DESC *pDesc, REFIID riid, void **ppDescriptorHeap
 );
+
+HRESULT
+CreateQueryHeap(MTLD3D12Device *pDevice, const D3D12_QUERY_HEAP_DESC *pDesc, REFIID riid, void **ppQueryHeap);
 
 HRESULT CreateCommittedTexture(
     MTLD3D12Device *pDevice, const D3D12_HEAP_PROPERTIES *pHeapProps, D3D12_HEAP_FLAGS HeapFlags,
@@ -254,7 +261,7 @@ GetShaderVisibleDescriptor(MTLD3D12DescriptorHeap *pHeap, UINT Index) {
   IMPLEMENT_ME
   return {};
 #endif
-  // 
+  //
 }
 
 template <typename VIEW_DESC>

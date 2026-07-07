@@ -433,7 +433,7 @@ public:
 
   HRESULT STDMETHODCALLTYPE
   CreateQueryHeap(const D3D12_QUERY_HEAP_DESC *pDesc, REFIID riid, void **ppHeap) {
-    return E_NOTIMPL;
+    return dxmt::CreateQueryHeap(this, pDesc, riid, ppHeap);
   };
 
   HRESULT STDMETHODCALLTYPE

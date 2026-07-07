@@ -908,15 +908,22 @@ public:
     IMPLEMENT_ME
   };
 
-  void STDMETHODCALLTYPE BeginQuery(ID3D12QueryHeap *pHeap, D3D12_QUERY_TYPE Type, UINT Index) { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE
+  BeginQuery(ID3D12QueryHeap *pHeap, D3D12_QUERY_TYPE Type, UINT Index) {
+    DEBUG("BeginQuery");
+  };
 
-  void STDMETHODCALLTYPE EndQuery(ID3D12QueryHeap *pHeap, D3D12_QUERY_TYPE Type, UINT Index) { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE
+  EndQuery(ID3D12QueryHeap *pHeap, D3D12_QUERY_TYPE Type, UINT Index) {
+    DEBUG("EndQuery");
+  };
 
-  void STDMETHODCALLTYPE ResolveQueryData(
+  void STDMETHODCALLTYPE
+  ResolveQueryData(
       ID3D12QueryHeap *pHeap, D3D12_QUERY_TYPE Type, UINT StartIndex, UINT QueryCount, ID3D12Resource *pDstBuffer,
       UINT64 AlignedDstBufferOffset
   ) {
-    IMPLEMENT_ME
+    DEBUG("ResolveQueryData");
   };
 
   void STDMETHODCALLTYPE SetPredication(ID3D12Resource *pBuffer, UINT64 AlignedBufferOffset, D3D12_PREDICATION_OP Op) {
