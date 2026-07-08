@@ -233,6 +233,12 @@ public:
       out->MaxGPUVirtualAddressBitsPerResource = 48;
       return S_OK;
     }
+    case D3D12_FEATURE_SHADER_MODEL: {
+      if (DataSize != sizeof(D3D12_FEATURE_DATA_SHADER_MODEL))
+        return E_INVALIDARG;
+      reinterpret_cast<D3D12_FEATURE_DATA_SHADER_MODEL *>(pFeatureData)->HighestShaderModel = D3D_SHADER_MODEL_5_1;
+      return S_OK;
+    }
     default:
       break;
     }
