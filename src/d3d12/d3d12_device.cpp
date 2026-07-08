@@ -225,6 +225,14 @@ public:
       out->PlaneCount = format_desc.PlanarCount;
       return S_OK;
     }
+    case D3D12_FEATURE_GPU_VIRTUAL_ADDRESS_SUPPORT: {
+      if (DataSize != sizeof(D3D12_FEATURE_DATA_GPU_VIRTUAL_ADDRESS_SUPPORT))
+        return E_INVALIDARG;
+      auto *out = reinterpret_cast<D3D12_FEATURE_DATA_GPU_VIRTUAL_ADDRESS_SUPPORT *>(pFeatureData);
+      out->MaxGPUVirtualAddressBitsPerProcess = 48;
+      out->MaxGPUVirtualAddressBitsPerResource = 48;
+      return S_OK;
+    }
     default:
       break;
     }
