@@ -439,6 +439,7 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   description.PixelFormat = WMTPixelFormatInvalid;
   description.AttributeFormat = WMTAttributeFormatInvalid;
   description.BytesPerTexel = 0;
+  description.PlanarCount = 1;
   description.Flag = 0;
 
   switch (format) {
@@ -556,21 +557,25 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
     description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER |
                        MTL_DXGI_FORMAT_EMULATED_LINEAR_DEPTH_STENCIL;
     description.BytesPerTexel = 8;
+    description.PlanarCount = 2;
     break;
   }
   case DXGI_FORMAT_D32_FLOAT_S8X24_UINT: {
     description.PixelFormat = WMTPixelFormatDepth32Float_Stencil8;
     description.Flag = MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER;
+    description.PlanarCount = 2;
     break;
   }
   case DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS: {
     description.PixelFormat = WMTPixelFormatR32X8X32;
     description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_DEPTH_PLANER;
+    description.PlanarCount = 2;
     break;
   }
   case DXGI_FORMAT_X32_TYPELESS_G8X24_UINT: {
     description.PixelFormat = WMTPixelFormatX32G8X32;
     description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_STENCIL_PLANER;
+    description.PlanarCount = 2;
     break;
   }
   case DXGI_FORMAT_R10G10B10A2_TYPELESS: {
@@ -707,21 +712,25 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
                        MTL_DXGI_FORMAT_EMULATED_LINEAR_DEPTH_STENCIL | MTL_DXGI_FORMAT_EMULATED_D24;
     description.PixelFormat = WMTPixelFormatDepth32Float_Stencil8;
     description.BytesPerTexel = 4;
+    description.PlanarCount = 2;
     break;
   }
   case DXGI_FORMAT_D24_UNORM_S8_UINT: {
     description.Flag = MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER | MTL_DXGI_FORMAT_EMULATED_D24;
     description.PixelFormat = WMTPixelFormatDepth32Float_Stencil8;
+    description.PlanarCount = 2;
     break;
   }
   case DXGI_FORMAT_R24_UNORM_X8_TYPELESS: {
     description.Flag = MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_EMULATED_D24;
     description.PixelFormat = WMTPixelFormatR32X8X32;
+    description.PlanarCount = 2;
     break;
   }
   case DXGI_FORMAT_X24_TYPELESS_G8_UINT: {
     description.Flag = MTL_DXGI_FORMAT_STENCIL_PLANER | MTL_DXGI_FORMAT_EMULATED_D24;
     description.PixelFormat = WMTPixelFormatX32G8X32;
+    description.PlanarCount = 2;
     break;
   }
   case DXGI_FORMAT_R8G8_TYPELESS: {
