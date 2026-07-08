@@ -363,6 +363,10 @@ public:
       const D3D12_HEAP_PROPERTIES *pHeapProps, D3D12_HEAP_FLAGS HeapFlags, const D3D12_RESOURCE_DESC *pDesc,
       D3D12_RESOURCE_STATES InitialState, const D3D12_CLEAR_VALUE *OptimizedClearValue, REFIID riid, void **ppResource
   ) {
+    HRESULT hr = S_OK;
+    hr = ValidateResourceStates(InitialState, pHeapProps);
+    if (FAILED(hr))
+      return hr;
     switch (pDesc->Dimension) {
     case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
     case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
@@ -393,6 +397,11 @@ public:
     if (!pHeap)
       return E_INVALIDARG;
     auto d3d12heap = static_cast<MTLD3D12Heap *>(pHeap);
+    auto heap_desc = d3d12heap->GetDesc();
+    HRESULT hr = S_OK;
+    hr = ValidateResourceStates(InitialState, &heap_desc.Properties);
+    if (FAILED(hr))
+      return hr;
     switch (pDesc->Dimension) {
     case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
     case D3D12_RESOURCE_DIMENSION_TEXTURE2D:

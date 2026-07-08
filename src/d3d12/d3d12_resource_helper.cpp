@@ -214,4 +214,32 @@ ExtractEntireResourceViewDescription<D3D12_SHADER_RESOURCE_VIEW_DESC>(
   return S_OK;
 }
 
+constexpr D3D12_RESOURCE_STATES kExclusiveWrite =
+    D3D12_RESOURCE_STATE_RENDER_TARGET | D3D12_RESOURCE_STATE_UNORDERED_ACCESS | D3D12_RESOURCE_STATE_DEPTH_WRITE |
+    D3D12_RESOURCE_STATE_STREAM_OUT | D3D12_RESOURCE_STATE_COPY_DEST | D3D12_RESOURCE_STATE_RESOLVE_DEST |
+    D3D12_RESOURCE_STATE_VIDEO_DECODE_WRITE | D3D12_RESOURCE_STATE_VIDEO_PROCESS_WRITE |
+    D3D12_RESOURCE_STATE_VIDEO_ENCODE_WRITE;
+
+HRESULT
+ValidateResourceStates(D3D12_RESOURCE_STATES State, const D3D12_HEAP_PROPERTIES *pHeapProps) {
+  if (State & kExclusiveWrite) {
+    if (State & ~kExclusiveWrite)
+      return E_INVALIDARG;
+    if (bit::popcnt(State) != 1)
+      return E_INVALIDARG;
+  }
+
+  switch (pHeapProps->Type) {
+  case D3D12_HEAP_TYPE_READBACK: {
+    if (State != D3D12_RESOURCE_STATE_COPY_DEST && State != D3D12_RESOURCE_STATE_COMMON)
+      return E_INVALIDARG;
+    break;
+  }
+  default:
+    break;
+  }
+
+  return S_OK;
+}
+
 } // namespace dxmt
