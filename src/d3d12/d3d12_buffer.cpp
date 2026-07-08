@@ -53,7 +53,8 @@ public:
   };
 
   ~MTLD3D12Buffer() {
-    device_->UnregisterResidencyAndVA(buffer->current());
+    if (buffer)
+      device_->UnregisterResidencyAndVA(buffer->current());
   }
 
   HRESULT

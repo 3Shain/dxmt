@@ -177,7 +177,8 @@ public:
   };
 
   ~MTLD3D12Texture() {
-    device_->UnregisterResidency(texture->current()->texture());
+    if (texture)
+      device_->UnregisterResidency(texture->current()->texture());
   }
 
   HRESULT
