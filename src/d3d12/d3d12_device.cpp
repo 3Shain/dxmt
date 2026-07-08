@@ -209,6 +209,22 @@ public:
       out->MaxSupportedFeatureLevel = std::min(max_level, D3D_FEATURE_LEVEL_11_1);
       return S_OK;
     }
+    case D3D12_FEATURE_FORMAT_INFO:  {
+       if (DataSize != sizeof(D3D12_FEATURE_DATA_FORMAT_INFO))
+        return E_INVALIDARG;
+      auto *out = reinterpret_cast<D3D12_FEATURE_DATA_FORMAT_INFO *>(pFeatureData);
+      if (out->Format == DXGI_FORMAT_UNKNOWN) {
+        out->PlaneCount = 1;
+        return S_OK;
+      }
+      MTL_DXGI_FORMAT_DESC format_desc;
+      HRESULT hr = MTLQueryDXGIFormat(metal, out->Format, format_desc);
+      if (FAILED(hr))
+        return E_FAIL;
+
+      out->PlaneCount = format_desc.PlanarCount;
+      return S_OK;
+    }
     default:
       break;
     }
