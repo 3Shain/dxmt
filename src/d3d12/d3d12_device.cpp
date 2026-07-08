@@ -197,6 +197,18 @@ public:
       }
       return S_OK;
     }
+    case D3D12_FEATURE_FEATURE_LEVELS: {
+      if (DataSize != sizeof(D3D12_FEATURE_DATA_FEATURE_LEVELS))
+        return E_INVALIDARG;
+      auto *out = reinterpret_cast<D3D12_FEATURE_DATA_FEATURE_LEVELS *>(pFeatureData);
+      if (!out->NumFeatureLevels)
+        return E_INVALIDARG;
+      D3D_FEATURE_LEVEL max_level = {};
+      for (unsigned i = 0; i < out->NumFeatureLevels; i++)
+        max_level = std::max(out->pFeatureLevelsRequested[i], max_level);
+      out->MaxSupportedFeatureLevel = std::min(max_level, D3D_FEATURE_LEVEL_11_1);
+      return S_OK;
+    }
     default:
       break;
     }
