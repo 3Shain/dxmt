@@ -648,7 +648,6 @@ CreateCommittedTexture(
     const D3D12_RESOURCE_DESC *pDesc, D3D12_RESOURCE_STATES InitialState, const D3D12_CLEAR_VALUE *OptimizedClearValue,
     REFIID riid, void **ppResource
 ) {
-  InitReturnPtr(ppResource);
   auto texture = Com(new MTLD3D12Texture(pDevice));
   HRESULT hr = texture->Initialize(pHeapProps, HeapFlags, pDesc, InitialState, nullptr);
   if (FAILED(hr))
@@ -663,7 +662,6 @@ CreatePlacedTexture(
     MTLD3D12Device *pDevice, MTLD3D12Heap *pHeap, const D3D12_RESOURCE_DESC *pDesc, D3D12_RESOURCE_STATES InitialState,
     const D3D12_CLEAR_VALUE *OptimizedClearValue, REFIID riid, void **ppResource
 ) {
-  InitReturnPtr(ppResource);
   auto texture = Com(new MTLD3D12Texture(pDevice));
   D3D12_HEAP_DESC heap_desc = pHeap->GetDesc();
 

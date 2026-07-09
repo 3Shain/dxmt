@@ -242,4 +242,45 @@ ValidateResourceStates(D3D12_RESOURCE_STATES State, const D3D12_HEAP_PROPERTIES 
   return S_OK;
 }
 
+HRESULT
+ValidateResourceDescs(const D3D12_RESOURCE_DESC *pDesc, D3D12_HEAP_TYPE HeapType) {
+  switch (HeapType) {
+  case D3D12_HEAP_TYPE_UPLOAD: {
+    if (pDesc->Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
+      return E_INVALIDARG;
+    if (pDesc->Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS)
+      return E_INVALIDARG;
+    if (pDesc->Dimension != D3D12_RESOURCE_DIMENSION_BUFFER)
+      return E_INVALIDARG;
+    break;
+  }
+  case D3D12_HEAP_TYPE_READBACK: {
+    if (pDesc->Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
+      return E_INVALIDARG;
+    if (pDesc->Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS)
+      return E_INVALIDARG;
+    if (pDesc->Dimension != D3D12_RESOURCE_DIMENSION_BUFFER)
+      return E_INVALIDARG;
+    break;
+  }
+  case D3D12_HEAP_TYPE_DEFAULT:
+  case D3D12_HEAP_TYPE_CUSTOM:
+    break;
+  default:
+    return E_INVALIDARG;
+  }
+
+  switch (pDesc->Dimension) {
+  case D3D12_RESOURCE_DIMENSION_BUFFER: {
+    if (pDesc->Flags & D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS)
+      return E_INVALIDARG;
+    break;
+  }
+  default:
+    break;
+  }
+
+  return S_OK;
+}
+
 } // namespace dxmt
