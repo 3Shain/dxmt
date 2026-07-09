@@ -20,6 +20,7 @@
 #include "d3d12_descriptor_heap.hpp"
 #include "d3d12_pageable.hpp"
 #include "com/com_pointer.hpp"
+#include "dxmt_sampler.hpp"
 #include "log/log.hpp"
 
 namespace dxmt {
@@ -259,9 +260,22 @@ public:
   }
 };
 
+struct SamplerGPUStorage {
+  uint64_t sampler;
+  uint64_t cube_sampler;
+  uint64_t metadata;
+  uint64_t padding;
+};
+
 class MTLD3D12SamplerDescriptorHeapImpl : public MTLD3D12Pageable<MTLD3D12SamplerDescriptorHeap> {
 
   D3D12_DESCRIPTOR_HEAP_DESC desc_;
+
+  std::vector<Rc<Sampler>> samplers_;
+
+  Rc<Buffer> buffer_;
+  SamplerGPUStorage *mapped_argument_buffer_ = nullptr;
+  uint64_t argument_buffer_gpu_address_ = 0;
 
 public:
   MTLD3D12SamplerDescriptorHeapImpl(MTLD3D12Device *pDevice) :
@@ -279,10 +293,35 @@ public:
     default:
       return E_INVALIDARG;
     }
+    samplers_.resize(pDesc->NumDescriptors);
+
+    if (pDesc->Flags & D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE) {
+      buffer_ = new Buffer(samplers_.size() * sizeof(SamplerGPUStorage), device_->GetMTLDevice());
+
+      Flags<BufferAllocationFlag> flags;
+#ifdef __i386__
+      IMPLEMENT_ME
+#endif
+      buffer_->rename(buffer_->allocate(flags));
+      mapped_argument_buffer_ = reinterpret_cast<SamplerGPUStorage *>(buffer_->current()->mappedMemory(0));
+      argument_buffer_gpu_address_ = buffer_->current()->gpuAddress();
+      // FIXME: is residency required for descriptor heap? Should be the case for Metal 4
+      device_->RegisterResidencyAndVA(buffer_->current());
+    } else {
+      mapped_argument_buffer_ =
+          reinterpret_cast<SamplerGPUStorage *>(malloc(samplers_.size() * sizeof(SamplerGPUStorage)));
+    }
+
     return S_OK;
   };
 
-  ~MTLD3D12SamplerDescriptorHeapImpl() {}
+  ~MTLD3D12SamplerDescriptorHeapImpl() {
+     if (buffer_) {
+      device_->UnregisterResidencyAndVA(buffer_->current());
+    } else {
+      free(mapped_argument_buffer_);
+    }
+  }
 
   HRESULT
   STDMETHODCALLTYPE
@@ -313,14 +352,37 @@ public:
 
   virtual D3D12_CPU_DESCRIPTOR_HANDLE *STDMETHODCALLTYPE
   GetCPUDescriptorHandleForHeapStart(D3D12_CPU_DESCRIPTOR_HANDLE *__ret) {
-    *__ret = {};
+    *__ret = GetSamplerDescriptor(this, 0);
     return __ret;
   }
 
   virtual D3D12_GPU_DESCRIPTOR_HANDLE *STDMETHODCALLTYPE
   GetGPUDescriptorHandleForHeapStart(D3D12_GPU_DESCRIPTOR_HANDLE *__ret) {
-    __ret->ptr = 0;
+    __ret->ptr = argument_buffer_gpu_address_;
     return __ret;
+  }
+
+
+  virtual HRESULT
+  AddSampler(UINT Index, const D3D12_SAMPLER_DESC *pDesc) {
+    if (!pDesc)
+      return E_INVALIDARG;
+    if (Index >= samplers_.size())
+      return E_INVALIDARG;
+  
+    WMTSamplerInfo info;
+    PopulateWMTSamplerInfo(device_->GetMTLDevice(), info, *pDesc);
+    auto sampler = Sampler::createSampler(device_->GetMTLDevice(), info, pDesc->MipLODBias);
+
+    samplers_[Index] = sampler;
+    if (mapped_argument_buffer_) {
+      auto &gpu_storage = mapped_argument_buffer_[Index];
+      gpu_storage.sampler = sampler->sampler_state_handle;
+      gpu_storage.cube_sampler = sampler->sampler_state_cube_handle;
+      gpu_storage.metadata = (uint64_t)std::bit_cast<uint32_t>(sampler->lod_bias);
+    }
+
+    return S_OK;
   }
 };
 

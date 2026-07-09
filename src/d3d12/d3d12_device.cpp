@@ -358,8 +358,10 @@ public:
     d3d12res->CreateDepthStencilView(pDesc, Descriptor);
   };
 
-  void STDMETHODCALLTYPE CreateSampler(const D3D12_SAMPLER_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor) {
-    IMPLEMENT_ME
+  void STDMETHODCALLTYPE
+  CreateSampler(const D3D12_SAMPLER_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor) {
+    auto [Heap, Index] = GetSamplerDescriptorHeap(this, Descriptor);
+    Heap->AddSampler(Index, pDesc);
   };
 
   void STDMETHODCALLTYPE CopyDescriptors(

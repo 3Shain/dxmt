@@ -110,6 +110,7 @@ public:
 
 class MTLD3D12SamplerDescriptorHeap : public ID3D12DescriptorHeap {
 public:
+  virtual HRESULT AddSampler(UINT Index, const D3D12_SAMPLER_DESC *Desc) = 0;
 };
 
 struct MTL_RENDER_TARGET_DESC {
