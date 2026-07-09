@@ -32,6 +32,8 @@ class MTLD3D12DeviceImpl : public MTLD3D12Object<ComObject<MTLD3D12Device>> {
 
   Com<IMTLDXGIAdapter> adapter_;
 
+  bool advertise_numa_ = false;
+
   dxmt::mutex residency_lock_;
   WMT::Reference<WMT::ResidencySet> residency_set_;
   std::map<uint64_t, BufferAllocation *> interval_map_;
@@ -138,7 +140,7 @@ public:
         return E_INVALIDARG;
       out->CacheCoherentUMA = FALSE;
       out->TileBasedRenderer = TRUE;
-      out->UMA = TRUE;
+      out->UMA = !advertise_numa_;
       return S_OK;
     }
     case D3D12_FEATURE_ARCHITECTURE1: {
@@ -149,7 +151,7 @@ public:
         return E_INVALIDARG;
       out->CacheCoherentUMA = FALSE;
       out->TileBasedRenderer = TRUE;
-      out->UMA = TRUE;
+      out->UMA = !advertise_numa_;
       out->IsolatedMMU = FALSE;
       return S_OK;
     }
@@ -355,7 +357,27 @@ public:
 
   D3D12_HEAP_PROPERTIES *STDMETHODCALLTYPE
   GetCustomHeapProperties(D3D12_HEAP_PROPERTIES *__ret, UINT NodeMask, D3D12_HEAP_TYPE HeapType) {
-    IMPLEMENT_ME
+    __ret->Type = D3D12_HEAP_TYPE_CUSTOM;
+    __ret->CreationNodeMask = 1;
+    __ret->VisibleNodeMask = 1;
+    switch (HeapType) {
+    case D3D12_HEAP_TYPE_DEFAULT:
+      __ret->CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE;
+      __ret->MemoryPoolPreference = advertise_numa_ ? D3D12_MEMORY_POOL_L1 : D3D12_MEMORY_POOL_L0;
+      break;
+    case D3D12_HEAP_TYPE_UPLOAD:
+      __ret->CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_COMBINE;
+      __ret->MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
+      break;
+    case D3D12_HEAP_TYPE_READBACK:
+      __ret->CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_BACK;
+      __ret->MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
+      break;
+    default:
+      E_INVALIDARG;
+    }
+
+    return __ret;
   };
 
   HRESULT STDMETHODCALLTYPE

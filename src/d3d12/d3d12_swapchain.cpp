@@ -321,9 +321,7 @@ public:
     } else {
       desc_.BufferCount = BufferCount;
     }
-    D3D12_HEAP_PROPERTIES heap_props{
-        D3D12_HEAP_TYPE_DEFAULT, D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE, D3D12_MEMORY_POOL_L1, 0, 0
-    };
+    D3D12_HEAP_PROPERTIES heap_props = device_->GetCustomHeapProperties(0, D3D12_HEAP_TYPE_DEFAULT);
     for (unsigned i = 0; i < BufferCount; i++) {
       Com<ID3D12Resource> backbuffer;
 
