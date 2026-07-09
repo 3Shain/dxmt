@@ -6,6 +6,9 @@
 #import <Metal/Metal.h>
 #import <MetalFX/MetalFX.h>
 #import <QuartzCore/QuartzCore.h>
+#include <inttypes.h>
+#include <objc/runtime.h>
+#include <stdio.h>
 #include "objc/objc-runtime.h"
 #include <bootstrap.h>
 #include <mach/mach_port.h>
@@ -24,6 +27,74 @@ execute_on_main(dispatch_block_t block) {
   } else {
     dispatch_sync(dispatch_get_main_queue(), block);
   }
+}
+
+static bool
+validate_indexed_draw_buffer(
+    obj_handle_t buffer_handle, enum WMTIndexType index_type, uint64_t index_buffer_offset, uint64_t index_count,
+    const char *command_name
+) {
+  id<MTLBuffer> index_buffer = (id<MTLBuffer>)buffer_handle;
+  if (!index_buffer) {
+    fprintf(stderr, "DXMT: skipping %s with null index buffer\n", command_name);
+    return false;
+  }
+  if (index_type != WMTIndexTypeUInt16 && index_type != WMTIndexTypeUInt32) {
+    fprintf(stderr, "DXMT: skipping %s with invalid index type %u\n", command_name, (unsigned)index_type);
+    return false;
+  }
+
+  const uint64_t index_size = index_type == WMTIndexTypeUInt32 ? 4 : 2;
+  const uint64_t index_buffer_length = [index_buffer length];
+  if (index_count > (UINT64_MAX - index_buffer_offset) / index_size) {
+    fprintf(
+        stderr,
+        "DXMT: skipping %s with overflowing index range offset=%" PRIu64 " count=%" PRIu64 " index_size=%" PRIu64
+        " length=%" PRIu64 "\n",
+        command_name, index_buffer_offset, index_count, index_size, index_buffer_length
+    );
+    return false;
+  }
+
+  const uint64_t index_range_end = index_buffer_offset + index_count * index_size;
+  if (index_buffer_offset > index_buffer_length || index_range_end > index_buffer_length) {
+    fprintf(
+        stderr,
+        "DXMT: skipping %s with out-of-bounds index range offset=%" PRIu64 " count=%" PRIu64
+        " index_size=%" PRIu64 " length=%" PRIu64 "\n",
+        command_name, index_buffer_offset, index_count, index_size, index_buffer_length
+    );
+    return false;
+  }
+
+  return true;
+}
+
+static char g_render_encoder_has_pipeline_state_key;
+
+static bool
+render_encoder_has_pipeline_state(id<MTLRenderCommandEncoder> encoder) {
+  NSNumber *state = objc_getAssociatedObject(encoder, &g_render_encoder_has_pipeline_state_key);
+  return state ? [state boolValue] : false;
+}
+
+static void
+render_encoder_set_pipeline_state_valid(id<MTLRenderCommandEncoder> encoder, bool valid) {
+  objc_setAssociatedObject(
+      encoder, &g_render_encoder_has_pipeline_state_key, [NSNumber numberWithBool:valid], OBJC_ASSOCIATION_RETAIN_NONATOMIC
+  );
+}
+
+static bool
+validate_render_pipeline_state(bool pipeline_state_valid, bool *reported_missing_pso) {
+  if (pipeline_state_valid)
+    return true;
+
+  if (!*reported_missing_pso) {
+    fprintf(stderr, "DXMT: skipping render draws without a valid pipeline state\n");
+    *reported_missing_pso = true;
+  }
+  return false;
 }
 
 static NTSTATUS
@@ -854,6 +925,8 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
   struct unixcall_generic_obj_cmd_noret *params = obj;
   const struct wmtcmd_base *next = params->cmd_head.ptr;
   id<MTLRenderCommandEncoder> encoder = (id<MTLRenderCommandEncoder>)params->encoder;
+  bool render_pipeline_state_valid = render_encoder_has_pipeline_state(encoder);
+  bool reported_missing_pso = false;
   while (next) {
     switch ((enum WMTRenderCommandType)next->type) {
     default:
@@ -939,7 +1012,15 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
     }
     case WMTRenderCommandSetPSO: {
       struct wmtcmd_render_setpso *body = (struct wmtcmd_render_setpso *)next;
+      if (!body->pso) {
+        render_pipeline_state_valid = false;
+        render_encoder_set_pipeline_state_valid(encoder, false);
+        fprintf(stderr, "DXMT: skipping null render pipeline state\n");
+        break;
+      }
       [encoder setRenderPipelineState:(id<MTLRenderPipelineState>)body->pso];
+      render_pipeline_state_valid = true;
+      render_encoder_set_pipeline_state_valid(encoder, true);
       break;
     }
     case WMTRenderCommandSetDSSO: {
@@ -961,6 +1042,8 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
     }
     case WMTRenderCommandDraw: {
       struct wmtcmd_render_draw *body = (struct wmtcmd_render_draw *)next;
+      if (!validate_render_pipeline_state(render_pipeline_state_valid, &reported_missing_pso))
+        break;
       [encoder drawPrimitives:(MTLPrimitiveType)body->primitive_type
                   vertexStart:body->vertex_start
                   vertexCount:body->vertex_count
@@ -970,6 +1053,12 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
     }
     case WMTRenderCommandDrawIndexed: {
       struct wmtcmd_render_draw_indexed *body = (struct wmtcmd_render_draw_indexed *)next;
+      if (!validate_render_pipeline_state(render_pipeline_state_valid, &reported_missing_pso))
+        break;
+      if (!validate_indexed_draw_buffer(
+              body->index_buffer, body->index_type, body->index_buffer_offset, body->index_count, "DrawIndexed"
+          ))
+        break;
       [encoder drawIndexedPrimitives:(MTLPrimitiveType)body->primitive_type
                           indexCount:body->index_count
                            indexType:(MTLIndexType)body->index_type
@@ -982,6 +1071,8 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
     }
     case WMTRenderCommandDrawIndirect: {
       struct wmtcmd_render_draw_indirect *body = (struct wmtcmd_render_draw_indirect *)next;
+      if (!validate_render_pipeline_state(render_pipeline_state_valid, &reported_missing_pso))
+        break;
       [encoder drawPrimitives:(MTLPrimitiveType)body->primitive_type
                 indirectBuffer:(id<MTLBuffer>)body->indirect_args_buffer
           indirectBufferOffset:body->indirect_args_offset];
@@ -989,6 +1080,23 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
     }
     case WMTRenderCommandDrawIndexedIndirect: {
       struct wmtcmd_render_draw_indexed_indirect *body = (struct wmtcmd_render_draw_indexed_indirect *)next;
+      if (!validate_render_pipeline_state(render_pipeline_state_valid, &reported_missing_pso))
+        break;
+      if (!validate_indexed_draw_buffer(
+              body->index_buffer, body->index_type, body->index_buffer_offset, 0, "DrawIndexedIndirect"
+          ))
+        break;
+      id<MTLBuffer> indirect_args_buffer = (id<MTLBuffer>)body->indirect_args_buffer;
+      if (!indirect_args_buffer || body->indirect_args_offset > [indirect_args_buffer length] ||
+          [indirect_args_buffer length] - body->indirect_args_offset < 5 * sizeof(uint32_t)) {
+        fprintf(
+            stderr,
+            "DXMT: skipping DrawIndexedIndirect with invalid indirect buffer offset=%" PRIu64 " length=%" PRIu64
+            "\n",
+            body->indirect_args_offset, indirect_args_buffer ? (uint64_t)[indirect_args_buffer length] : 0
+        );
+        break;
+      }
       [encoder drawIndexedPrimitives:(MTLPrimitiveType)body->primitive_type
                            indexType:(MTLIndexType)body->index_type
                          indexBuffer:(id<MTLBuffer>)body->index_buffer
@@ -999,6 +1107,8 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
     }
     case WMTRenderCommandDrawMeshThreadgroups: {
       struct wmtcmd_render_draw_meshthreadgroups *body = (struct wmtcmd_render_draw_meshthreadgroups *)next;
+      if (!validate_render_pipeline_state(render_pipeline_state_valid, &reported_missing_pso))
+        break;
       [encoder drawMeshThreadgroups:MTLSizeMake(
                                         body->threadgroup_per_grid.width, body->threadgroup_per_grid.height,
                                         body->threadgroup_per_grid.depth
@@ -1016,6 +1126,8 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
     case WMTRenderCommandDrawMeshThreadgroupsIndirect: {
       struct wmtcmd_render_draw_meshthreadgroups_indirect *body =
           (struct wmtcmd_render_draw_meshthreadgroups_indirect *)next;
+      if (!validate_render_pipeline_state(render_pipeline_state_valid, &reported_missing_pso))
+        break;
       [encoder drawMeshThreadgroupsWithIndirectBuffer:(id<MTLBuffer>)body->indirect_args_buffer
                                  indirectBufferOffset:body->indirect_args_offset
                           threadsPerObjectThreadgroup:MTLSizeMake(
@@ -1039,6 +1151,8 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
     }
     case WMTRenderCommandDXMTGeometryDraw: {
       struct wmtcmd_render_dxmt_geometry_draw *body = (struct wmtcmd_render_dxmt_geometry_draw *)next;
+      if (!validate_render_pipeline_state(render_pipeline_state_valid, &reported_missing_pso))
+        break;
       [encoder setObjectBufferOffset:body->draw_arguments_offset atIndex:SM50_BINDING_INDEX_DRAW_ARGUMENTS];
       [encoder drawMeshThreadgroups:MTLSizeMake(body->warp_count, body->instance_count, 1)
           threadsPerObjectThreadgroup:MTLSizeMake(body->vertex_per_warp, 1, 1)
@@ -1047,6 +1161,8 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
     }
     case WMTRenderCommandDXMTGeometryDrawIndexed: {
       struct wmtcmd_render_dxmt_geometry_draw_indexed *body = (struct wmtcmd_render_dxmt_geometry_draw_indexed *)next;
+      if (!validate_render_pipeline_state(render_pipeline_state_valid, &reported_missing_pso))
+        break;
       [encoder setObjectBuffer:(id<MTLBuffer>)body->index_buffer
                         offset:body->index_buffer_offset
                        atIndex:SM50_BINDING_INDEX_INDEX_BUFFER];
@@ -1058,6 +1174,8 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
     }
     case WMTRenderCommandDXMTGeometryDrawIndirect: {
       struct wmtcmd_render_dxmt_geometry_draw_indirect *body = (struct wmtcmd_render_dxmt_geometry_draw_indirect *)next;
+      if (!validate_render_pipeline_state(render_pipeline_state_valid, &reported_missing_pso))
+        break;
       [encoder setObjectBuffer:(id<MTLBuffer>)body->indirect_args_buffer
                         offset:body->indirect_args_offset
                        atIndex:SM50_BINDING_INDEX_INDIRECT_ARGUMENTS];
@@ -1073,6 +1191,8 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
     case WMTRenderCommandDXMTGeometryDrawIndexedIndirect: {
       struct wmtcmd_render_dxmt_geometry_draw_indexed_indirect *body =
           (struct wmtcmd_render_dxmt_geometry_draw_indexed_indirect *)next;
+      if (!validate_render_pipeline_state(render_pipeline_state_valid, &reported_missing_pso))
+        break;
       [encoder setObjectBuffer:(id<MTLBuffer>)body->index_buffer
                         offset:body->index_buffer_offset
                        atIndex:SM50_BINDING_INDEX_INDEX_BUFFER];
@@ -1090,6 +1210,8 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
     }
     case WMTRenderCommandDXMTTessellationMeshDraw: {
       struct wmtcmd_render_dxmt_tessellation_mesh_draw *body = (struct wmtcmd_render_dxmt_tessellation_mesh_draw *)next;
+      if (!validate_render_pipeline_state(render_pipeline_state_valid, &reported_missing_pso))
+        break;
       [encoder setObjectBufferOffset:body->draw_arguments_offset atIndex:SM50_BINDING_INDEX_DRAW_ARGUMENTS];
       [encoder drawMeshThreadgroups:MTLSizeMake(body->patch_per_mesh_instance, body->instance_count, 1)
           threadsPerObjectThreadgroup:MTLSizeMake(body->threads_per_patch, body->patch_per_group, 1)
@@ -1099,6 +1221,8 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
     case WMTRenderCommandDXMTTessellationMeshDrawIndexed: {
       struct wmtcmd_render_dxmt_tessellation_mesh_draw_indexed *body =
           (struct wmtcmd_render_dxmt_tessellation_mesh_draw_indexed *)next;
+      if (!validate_render_pipeline_state(render_pipeline_state_valid, &reported_missing_pso))
+        break;
       [encoder setObjectBuffer:(id<MTLBuffer>)body->index_buffer
                         offset:body->index_buffer_offset
                        atIndex:SM50_BINDING_INDEX_INDEX_BUFFER];
@@ -1111,6 +1235,8 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
 
     case WMTRenderCommandDXMTTessellationMeshDrawIndirect: {
       struct wmtcmd_render_dxmt_tessellation_mesh_draw_indirect *body = (struct wmtcmd_render_dxmt_tessellation_mesh_draw_indirect *)next;
+      if (!validate_render_pipeline_state(render_pipeline_state_valid, &reported_missing_pso))
+        break;
       [encoder setObjectBuffer:(id<MTLBuffer>)body->indirect_args_buffer
                         offset:body->indirect_args_offset
                        atIndex:SM50_BINDING_INDEX_INDIRECT_ARGUMENTS];
@@ -1126,6 +1252,8 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
     case WMTRenderCommandDXMTTessellationMeshDrawIndexedIndirect: {
       struct wmtcmd_render_dxmt_tessellation_mesh_draw_indexed_indirect *body =
           (struct wmtcmd_render_dxmt_tessellation_mesh_draw_indexed_indirect *)next;
+      if (!validate_render_pipeline_state(render_pipeline_state_valid, &reported_missing_pso))
+        break;
       [encoder setObjectBuffer:(id<MTLBuffer>)body->index_buffer
                         offset:body->index_buffer_offset
                        atIndex:SM50_BINDING_INDEX_INDEX_BUFFER];
