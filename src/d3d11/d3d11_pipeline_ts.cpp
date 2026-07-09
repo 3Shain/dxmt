@@ -34,7 +34,7 @@ public:
                                   const MTL_GRAPHICS_PIPELINE_DESC *pDesc)
       : num_rtvs(pDesc->NumColorAttachments),
         depth_stencil_format(pDesc->DepthStencilFormat), device_(pDevice),
-        pBlendState(pDesc->BlendState),
+        ready_(false), pBlendState(pDesc->BlendState),
         RasterizationEnabled(pDesc->RasterizationEnabled),
         SampleCount(pDesc->SampleCount) {
     if (pDesc->RasterizationEnabled && !pDesc->PixelShader)

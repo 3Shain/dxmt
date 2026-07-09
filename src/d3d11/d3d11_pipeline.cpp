@@ -16,7 +16,7 @@ public:
       : num_rtvs(pDesc->NumColorAttachments),
         depth_stencil_format(pDesc->DepthStencilFormat),
         topology_class(pDesc->TopologyClass), device_(pDevice),
-        pBlendState(pDesc->BlendState),
+        ready_(false), pBlendState(pDesc->BlendState),
         RasterizationEnabled(pDesc->RasterizationEnabled),
         SampleCount(pDesc->SampleCount) {
     uint32_t unorm_output_reg_mask = 0;
@@ -141,7 +141,7 @@ class MTLCompiledComputePipelineImpl
     : public MTLCompiledComputePipeline {
 public:
   MTLCompiledComputePipelineImpl(MTLD3D11Device *pDevice, ManagedShader shader)
-      : device_(pDevice) {
+      : device_(pDevice), ready_(false) {
     ComputeShader = shader->get_shader(ShaderVariantDefault{});
     uint32_t total_tgsize = shader->reflection().ThreadgroupSize[0] *
                             shader->reflection().ThreadgroupSize[1] *

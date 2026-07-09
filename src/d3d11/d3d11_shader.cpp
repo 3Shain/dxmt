@@ -28,7 +28,7 @@ public:
   GeneralShaderCompileTask(MTLD3D11Device *pDevice, ManagedShader shader,
                            Proc &&proc, std::string func_name, const Sha1Digest& variant_digest)
       : CompiledShader(), proc(std::forward<Proc>(proc)), func_name(func_name), device_(pDevice),
-        shader_(shader), variant_digest_(variant_digest) {
+        shader_(shader), variant_digest_(variant_digest), ready_(false) {
     sm50_common.type = SM50_SHADER_COMMON;
     sm50_common.metal_version = (SM50_SHADER_METAL_VERSION)pDevice->GetDXMTDevice().metalVersion();
     sm50_common.flags = getGlobalShaderFlag();
