@@ -241,6 +241,27 @@ public:
       reinterpret_cast<D3D12_FEATURE_DATA_SHADER_MODEL *>(pFeatureData)->HighestShaderModel = D3D_SHADER_MODEL_5_1;
       return S_OK;
     }
+    case D3D12_FEATURE_D3D12_OPTIONS: {
+      if (DataSize != sizeof(D3D12_FEATURE_DATA_D3D12_OPTIONS))
+        return E_INVALIDARG;
+      auto *out = reinterpret_cast<D3D12_FEATURE_DATA_D3D12_OPTIONS *>(pFeatureData);
+      out->DoublePrecisionFloatShaderOps = FALSE;
+      out->OutputMergerLogicOp = FALSE;
+      out->MinPrecisionSupport = D3D12_SHADER_MIN_PRECISION_SUPPORT_16_BIT;
+      out->TiledResourcesTier = D3D12_TILED_RESOURCES_TIER_NOT_SUPPORTED;
+      out->ResourceBindingTier = D3D12_RESOURCE_BINDING_TIER_2;
+      out->PSSpecifiedStencilRefSupported = TRUE;
+      out->TypedUAVLoadAdditionalFormats = TRUE;
+      out->ROVsSupported = TRUE;
+      out->ConservativeRasterizationTier = D3D12_CONSERVATIVE_RASTERIZATION_TIER_NOT_SUPPORTED;
+      out->MaxGPUVirtualAddressBitsPerResource = 48;
+      out->StandardSwizzle64KBSupported = TRUE;
+      out->CrossNodeSharingTier = D3D12_CROSS_NODE_SHARING_TIER_NOT_SUPPORTED;
+      out->CrossAdapterRowMajorTextureSupported = FALSE;
+      out->VPAndRTArrayIndexFromAnyShaderFeedingRasterizerSupportedWithoutGSEmulation = TRUE;
+      out->ResourceHeapTier = D3D12_RESOURCE_HEAP_TIER_2;
+      return S_OK;
+    }
     default:
       break;
     }
