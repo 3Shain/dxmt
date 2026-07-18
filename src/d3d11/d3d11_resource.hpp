@@ -26,6 +26,96 @@ DEFINE_COM_INTERFACE("9a6f6549-d4b1-45ea-8794-8503d190d3d1",
 
 namespace dxmt {
 
+/* Aggregated IDXGISurface facet for 2D texture resources.
+   Wine's Direct2D-on-D3D10 render target path queries a backing tex2d for
+   IDXGISurface, then uses GetDevice plus the D3D10 resource to create a render
+   target view. DXMT textures already expose ID3D10Texture2D and IDXGIResource1,
+   so this facet only forwards to the owning resource; Map/Unmap/GetDC stay
+   unimplemented until a path actually needs them. */
+struct IDXGISurfaceVD : public IDXGISurface2 {
+  virtual ~IDXGISurfaceVD(){};
+};
+
+template <DXGIResourceAggregateContext IResource>
+class MTLDXGISurface : public IDXGISurfaceVD {
+public:
+  MTLDXGISurface(IResource *pResource) : resource_(pResource) {}
+  ~MTLDXGISurface() {}
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) final {
+    return resource_->QueryInterface(riid, ppvObject);
+  }
+
+  ULONG STDMETHODCALLTYPE AddRef() final { return resource_->AddRef(); }
+
+  ULONG STDMETHODCALLTYPE Release() final { return resource_->Release(); }
+
+  HRESULT STDMETHODCALLTYPE
+  SetPrivateData(REFGUID guid, UINT data_size, const void *data) final {
+    return resource_->SetPrivateData(guid, data_size, data);
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  SetPrivateDataInterface(REFGUID guid, const IUnknown *object) final {
+    return resource_->SetPrivateDataInterface(guid, object);
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  GetPrivateData(REFGUID guid, UINT *data_size, void *data) final {
+    return resource_->GetPrivateData(guid, data_size, data);
+  }
+
+  HRESULT STDMETHODCALLTYPE GetParent(REFIID riid, void **parent) final {
+    return GetDevice(riid, parent);
+  }
+
+  HRESULT STDMETHODCALLTYPE GetDevice(REFIID riid, void **ppDevice) final {
+    return resource_->GetDeviceInterface(riid, ppDevice);
+  }
+
+  HRESULT STDMETHODCALLTYPE GetDesc(DXGI_SURFACE_DESC *pDesc) final {
+    if (!pDesc)
+      return E_INVALIDARG;
+    D3D11_TEXTURE2D_DESC tex_desc = {};
+    resource_->GetDesc(&tex_desc);
+    pDesc->Width = tex_desc.Width;
+    pDesc->Height = tex_desc.Height;
+    pDesc->Format = tex_desc.Format;
+    pDesc->SampleDesc = tex_desc.SampleDesc;
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE Map(DXGI_MAPPED_RECT *pLockedRect, UINT MapFlags) final {
+    ERR_ONCE("DXGISurface::Map: stub");
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE Unmap() final {
+    ERR_ONCE("DXGISurface::Unmap: stub");
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE GetDC(BOOL Discard, HDC *phdc) final {
+    ERR_ONCE("DXGISurface::GetDC: stub");
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE ReleaseDC(RECT *pDirtyRect) final {
+    ERR_ONCE("DXGISurface::ReleaseDC: stub");
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  GetResource(REFIID riid, void **ppParentResource, UINT *pSubresourceIndex) final {
+    if (pSubresourceIndex)
+      *pSubresourceIndex = 0;
+    return resource_->QueryInterface(riid, ppParentResource);
+  }
+
+private:
+  IResource *resource_;
+};
+
 template <typename RESOURCE_DESC>
 void UpgradeResourceDescription(const RESOURCE_DESC *pSrc, RESOURCE_DESC &dst) {
   dst = *pSrc;
@@ -190,6 +280,9 @@ public:
       d3d10(reinterpret_cast<tag::COM *>(this), device->GetImmediateContextPrivate()) {
     // D3D11ResourceCommonß::bind_flags_
     this->bind_flags_ = desc.BindFlags;
+    if constexpr (tag::dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D) {
+      dxgi_surface.reset(new MTLDXGISurface<TResourceBase<tag, Base...>>(this));
+    }
   }
 
   template <std::size_t n> HRESULT ResolveBase(REFIID riid, void **ppvObject) {
@@ -236,6 +329,14 @@ public:
         riid == __uuidof(IDXGIResource) || riid == __uuidof(IDXGIResource1)) {
       *ppvObject = ref(dxgi_resource.get());
       return S_OK;
+    }
+
+    if constexpr (tag::dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D) {
+      if (riid == __uuidof(IDXGISurface) || riid == __uuidof(IDXGISurface1) ||
+          riid == __uuidof(IDXGISurface2)) {
+        *ppvObject = ref(dxgi_surface.get());
+        return S_OK;
+      }
     }
 
     if (logQueryInterfaceError(__uuidof(typename tag::COM), riid)) {
@@ -307,6 +408,7 @@ public:
 protected:
   tag::DESC1 desc;
   std::unique_ptr<IDXGIResource1> dxgi_resource;
+  std::unique_ptr<IDXGISurfaceVD> dxgi_surface;
   tag::D3D10_IMPL d3d10;
 };
 
