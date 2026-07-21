@@ -128,6 +128,8 @@ struct D3D11ResourceCommon : ID3D11Resource {
   virtual HRESULT GetSharedHandle(HANDLE *pSharedHandle) = 0;
   virtual HRESULT
   CreateSharedHandle(const SECURITY_ATTRIBUTES *Attributes, DWORD Access, const WCHAR *pName, HANDLE *pNTHandle) = 0;
+  virtual HRESULT AcquireSync(UINT64 Key, DWORD dwMilliseconds) = 0;
+  virtual HRESULT ReleaseSync(UINT64 Key) = 0;
 
   virtual Rc<StagingResource> staging(UINT Subresource) = 0;
   virtual Rc<DynamicBuffer> dynamicBuffer(UINT *pBufferLength, UINT *pBindFlags) = 0;
@@ -187,6 +189,7 @@ public:
       MTLD3D11DeviceChild<D3D11ResourceCommon, Base...>(device),
       desc(desc),
       dxgi_resource(this),
+      keyed_mutex(this),
       d3d10(reinterpret_cast<tag::COM *>(this), device->GetImmediateContextPrivate()) {
     // D3D11ResourceCommonß::bind_flags_
     this->bind_flags_ = desc.BindFlags;
@@ -235,6 +238,13 @@ public:
         riid == __uuidof(IDXGIDeviceSubObject) ||
         riid == __uuidof(IDXGIResource) || riid == __uuidof(IDXGIResource1)) {
       *ppvObject = ref(&dxgi_resource);
+      return S_OK;
+    }
+  
+    if (riid == __uuidof(IDXGIKeyedMutex)) {
+      if (!(this->desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX))
+        return E_NOINTERFACE;
+      *ppvObject = ref(&keyed_mutex);
       return S_OK;
     }
 
@@ -304,9 +314,20 @@ public:
     return E_INVALIDARG;
   }
 
+  virtual HRESULT
+  AcquireSync(UINT64 Key, DWORD dwMilliseconds) override {
+    return DXGI_ERROR_INVALID_CALL;
+  }
+
+  virtual HRESULT
+  ReleaseSync(UINT64 Key) override {
+    return DXGI_ERROR_INVALID_CALL;
+  }
+
 protected:
   tag::DESC1 desc;
   MTLDXGIResource<TResourceBase<tag, Base...>> dxgi_resource;
+  MTLDXGIKeyedMutex<TResourceBase<tag, Base...>> keyed_mutex;
   tag::D3D10_IMPL d3d10;
 };
 

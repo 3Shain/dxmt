@@ -96,4 +96,60 @@ private:
   IResource *resource_; // since it's aggregated, no extra reference is needed
 };
 
+template <typename IResource> class MTLDXGIKeyedMutex : public IDXGIKeyedMutex {
+public:
+  MTLDXGIKeyedMutex(IResource *pResource) : resource_(pResource) {}
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
+                                           void **ppvObject) final {
+    return resource_->QueryInterface(riid, ppvObject);
+  }
+
+  ULONG STDMETHODCALLTYPE AddRef() final { return resource_->AddRef(); }
+
+  ULONG STDMETHODCALLTYPE Release() final { return resource_->Release(); }
+
+  HRESULT
+  STDMETHODCALLTYPE
+  SetPrivateData(REFGUID guid, UINT data_size, const void *data) final {
+    return resource_->SetPrivateData(guid, data_size, data);
+  }
+
+  HRESULT
+  STDMETHODCALLTYPE
+  SetPrivateDataInterface(REFGUID guid, const IUnknown *object) final {
+    return resource_->SetPrivateDataInterface(guid, object);
+  }
+
+  HRESULT
+  STDMETHODCALLTYPE
+  GetPrivateData(REFGUID guid, UINT *data_size, void *data) final {
+    return resource_->GetPrivateData(guid, data_size, data);
+  }
+
+  HRESULT
+  STDMETHODCALLTYPE
+  GetParent(REFIID riid, void **parent) final {
+    return GetDevice(riid, parent);
+  }
+
+  HRESULT
+  STDMETHODCALLTYPE
+  GetDevice(REFIID riid, void **ppDevice) final {
+    return resource_->GetDeviceInterface(riid, ppDevice);
+  }
+
+  HRESULT STDMETHODCALLTYPE AcquireSync(UINT64 Key,
+                                        DWORD dwMilliseconds) final {
+    return resource_->AcquireSync(Key, dwMilliseconds);
+  }
+
+  HRESULT STDMETHODCALLTYPE ReleaseSync(UINT64 Key) final {
+    return resource_->ReleaseSync(Key);
+  }
+
+private:
+  IResource *resource_;
+};
+
 } // namespace dxmt

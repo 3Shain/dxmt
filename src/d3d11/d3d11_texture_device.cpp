@@ -328,6 +328,25 @@ public:
     return S_OK;
   }
 
+  virtual HRESULT
+  AcquireSync(UINT64 Key, DWORD dwMilliseconds) override {
+    if (this->desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX) {
+      // TODO(keyed-mutex): stub
+      return S_OK;
+    }
+    return DXGI_ERROR_INVALID_CALL;
+  }
+
+  virtual HRESULT
+  ReleaseSync(UINT64 Key) override {
+    if (this->desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX) {
+      // TODO(keyed-mutex): stub
+      return S_OK;
+    }
+    return DXGI_ERROR_INVALID_CALL;
+  }
+
+
   void SetMinLOD(float MinLod) override { min_lod = MinLod; }
 
   float GetMinLOD() override { return min_lod; }
