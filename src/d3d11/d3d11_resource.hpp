@@ -3,6 +3,7 @@
 #include "dxmt_dynamic.hpp"
 #include "dxmt_staging.hpp"
 #include "dxmt_texture.hpp"
+#include "dxmt_keyed_mutex.hpp"
 #include "d3d11_device_child.hpp"
 #include "com/com_pointer.hpp"
 #include "com/com_guid.hpp"
@@ -128,8 +129,6 @@ struct D3D11ResourceCommon : ID3D11Resource {
   virtual HRESULT GetSharedHandle(HANDLE *pSharedHandle) = 0;
   virtual HRESULT
   CreateSharedHandle(const SECURITY_ATTRIBUTES *Attributes, DWORD Access, const WCHAR *pName, HANDLE *pNTHandle) = 0;
-  virtual HRESULT AcquireSync(UINT64 Key, DWORD dwMilliseconds) = 0;
-  virtual HRESULT ReleaseSync(UINT64 Key) = 0;
 
   virtual Rc<StagingResource> staging(UINT Subresource) = 0;
   virtual Rc<DynamicBuffer> dynamicBuffer(UINT *pBufferLength, UINT *pBindFlags) = 0;
@@ -139,6 +138,7 @@ struct D3D11ResourceCommon : ID3D11Resource {
   Rc<Buffer> buffer_{};
   Rc<Texture> texture_{};
   uint32_t bind_flags_{};
+  Rc<KeyedMutex> keyed_mutex_{};
 
   const Rc<Buffer> &buffer() const {
     return buffer_;
@@ -153,6 +153,9 @@ struct D3D11ResourceCommon : ID3D11Resource {
   hazardsFree() const {
     return (bind_flags_ & (D3D11_BIND_STREAM_OUTPUT | D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_RENDER_TARGET |
                            D3D11_BIND_DEPTH_STENCIL)) == 0;
+  }
+  const Rc<KeyedMutex> &keyedMutex() const {
+    return keyed_mutex_;
   }
 };
 
@@ -189,7 +192,7 @@ public:
       MTLD3D11DeviceChild<D3D11ResourceCommon, Base...>(device),
       desc(desc),
       dxgi_resource(this),
-      keyed_mutex(this),
+      keyed_mutex(this, device->GetImmediateContextPrivate()),
       d3d10(reinterpret_cast<tag::COM *>(this), device->GetImmediateContextPrivate()) {
     // D3D11ResourceCommonß::bind_flags_
     this->bind_flags_ = desc.BindFlags;
@@ -314,20 +317,10 @@ public:
     return E_INVALIDARG;
   }
 
-  virtual HRESULT
-  AcquireSync(UINT64 Key, DWORD dwMilliseconds) override {
-    return DXGI_ERROR_INVALID_CALL;
-  }
-
-  virtual HRESULT
-  ReleaseSync(UINT64 Key) override {
-    return DXGI_ERROR_INVALID_CALL;
-  }
-
 protected:
   tag::DESC1 desc;
   MTLDXGIResource<TResourceBase<tag, Base...>> dxgi_resource;
-  MTLDXGIKeyedMutex<TResourceBase<tag, Base...>> keyed_mutex;
+  MTLDXGIKeyedMutex<TResourceBase<tag, Base...>, IMTLD3D11DeviceContext> keyed_mutex;
   tag::D3D10_IMPL d3d10;
 };
 

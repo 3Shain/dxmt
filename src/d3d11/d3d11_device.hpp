@@ -18,6 +18,8 @@ DEFINE_COM_INTERFACE("3a3f085a-d0fe-4324-b0ae-fe04de18571c",
   virtual void PrepareFlush() = 0;
   virtual void Commit() = 0;
   virtual void SOGetTargetsWithOffsets(UINT NumBuffers, REFIID riid, void ** ppSOTargets, UINT *pOffsets) = 0;
+  virtual HRESULT AcquireSync(ID3D11Resource *pResource, UINT64 Key, DWORD dwMilliseconds) = 0;
+  virtual HRESULT ReleaseSync(ID3D11Resource *pResource, UINT64 Key) = 0;
 };
 
 namespace dxmt {

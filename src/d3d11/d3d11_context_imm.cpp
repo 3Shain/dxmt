@@ -621,6 +621,41 @@ public:
     return 0;
   }
 
+  HRESULT
+  AcquireSync(ID3D11Resource *pResource, UINT64 Key, DWORD dwMilliseconds) override {
+    std::lock_guard<d3d11_device_mutex> lock(mutex);
+    auto resource = GetResourceCommon(pResource);
+    if (!resource->keyedMutex())
+      return DXGI_ERROR_INVALID_CALL;
+    return resource->keyedMutex()->acquire(
+        [&](uint64_t fence) {
+          InvalidateCurrentPass(true);
+          EmitOP([event = resource->keyedMutex()->sharedEvent(), fence](ArgumentEncodingContext &enc) mutable {
+            enc.waitEvent(std::move(event), fence);
+          });
+          Flush();
+        },
+        Key, dwMilliseconds
+    );
+  }
+  HRESULT
+  ReleaseSync(ID3D11Resource *pResource, UINT64 Key) override {
+    std::lock_guard<d3d11_device_mutex> lock(mutex);
+    auto resource = GetResourceCommon(pResource);
+    if (!resource->keyedMutex())
+      return DXGI_ERROR_INVALID_CALL;
+    return resource->keyedMutex()->release(
+        [&](uint64_t fence) {
+          InvalidateCurrentPass(true);
+          EmitOP([event = resource->keyedMutex()->sharedEvent(), fence](ArgumentEncodingContext &enc) mutable {
+            enc.signalEvent(std::move(event), fence);
+          });
+          Flush();
+        },
+        Key
+    );
+  }
+
 private:
   std::vector<Com<MTLD3D11OcclusionQuery>> pending_occlusion_queries;
   CommandQueue &cmd_queue;

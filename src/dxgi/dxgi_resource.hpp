@@ -96,9 +96,11 @@ private:
   IResource *resource_; // since it's aggregated, no extra reference is needed
 };
 
-template <typename IResource> class MTLDXGIKeyedMutex : public IDXGIKeyedMutex {
+template <typename IResource, typename IDeviceContext>
+class MTLDXGIKeyedMutex : public IDXGIKeyedMutex {
 public:
-  MTLDXGIKeyedMutex(IResource *pResource) : resource_(pResource) {}
+  MTLDXGIKeyedMutex(IResource *pResource, IDeviceContext *pContext)
+      : resource_(pResource), context_(pContext) {}
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
@@ -141,15 +143,16 @@ public:
 
   HRESULT STDMETHODCALLTYPE AcquireSync(UINT64 Key,
                                         DWORD dwMilliseconds) final {
-    return resource_->AcquireSync(Key, dwMilliseconds);
+    return context_->AcquireSync(resource_, Key, dwMilliseconds);
   }
 
   HRESULT STDMETHODCALLTYPE ReleaseSync(UINT64 Key) final {
-    return resource_->ReleaseSync(Key);
+    return context_->ReleaseSync(resource_, Key);
   }
 
 private:
   IResource *resource_;
+  IDeviceContext *context_;
 };
 
 } // namespace dxmt

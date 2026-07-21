@@ -456,6 +456,15 @@ public:
     return context_flag;
   }
 
+  HRESULT
+  AcquireSync(ID3D11Resource *pResource, UINT64 Key, DWORD dwMilliseconds) override {
+    return DXGI_ERROR_INVALID_CALL;
+  }
+  HRESULT
+  ReleaseSync(ID3D11Resource *pResource, UINT64 Key) override {
+    return DXGI_ERROR_INVALID_CALL;
+  }
+
 private:
   DeferredContextInternalState ctx_state;
   null_mutex mutex;
