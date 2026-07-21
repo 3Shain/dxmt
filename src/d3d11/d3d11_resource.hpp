@@ -186,7 +186,7 @@ public:
   TResourceBase(const tag::DESC1 &desc, MTLD3D11Device *device) :
       MTLD3D11DeviceChild<D3D11ResourceCommon, Base...>(device),
       desc(desc),
-      dxgi_resource(new MTLDXGIResource<TResourceBase<tag, Base...>>(this)),
+      dxgi_resource(this),
       d3d10(reinterpret_cast<tag::COM *>(this), device->GetImmediateContextPrivate()) {
     // D3D11ResourceCommonß::bind_flags_
     this->bind_flags_ = desc.BindFlags;
@@ -234,7 +234,7 @@ public:
     if (riid == __uuidof(IDXGIObject) ||
         riid == __uuidof(IDXGIDeviceSubObject) ||
         riid == __uuidof(IDXGIResource) || riid == __uuidof(IDXGIResource1)) {
-      *ppvObject = ref(dxgi_resource.get());
+      *ppvObject = ref(&dxgi_resource);
       return S_OK;
     }
 
@@ -306,7 +306,7 @@ public:
 
 protected:
   tag::DESC1 desc;
-  std::unique_ptr<IDXGIResource1> dxgi_resource;
+  MTLDXGIResource<TResourceBase<tag, Base...>> dxgi_resource;
   tag::D3D10_IMPL d3d10;
 };
 

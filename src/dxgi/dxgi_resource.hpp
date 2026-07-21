@@ -7,22 +7,8 @@
 
 namespace dxmt {
 
-template <typename T>
-concept DXGIResourceAggregateContext =
-    std::is_base_of< IUnknown, T>::value &&
-    requires(T t, REFGUID guid, UINT data_size, const void *data) {
-      { t.GetEvictionPriority() } -> std::same_as<UINT>;
-      { t.SetPrivateData(guid, data_size, data) } -> std::same_as<HRESULT>;
-      // TODO: complete the constraints
-    };
-
-/* this is awkward */
-struct IDXGIResourceVD: public IDXGIResource1 {
-    virtual ~IDXGIResourceVD() {};
-};
-
 /* designed to be used as an aggregated object*/
-template <DXGIResourceAggregateContext IResource> class MTLDXGIResource : public IDXGIResourceVD {
+template <typename IResource> class MTLDXGIResource : public IDXGIResource1 {
 public:
   MTLDXGIResource(IResource *pResource) : resource_(pResource) {}
   ~MTLDXGIResource() {}
