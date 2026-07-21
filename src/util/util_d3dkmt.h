@@ -473,6 +473,47 @@ typedef struct _D3DKMT_OPENNTHANDLEFROMNAME
   HANDLE hNtHandle;
 } D3DKMT_OPENNTHANDLEFROMNAME;
 
+typedef struct _D3DKMT_ACQUIREKEYEDMUTEX
+{
+    D3DKMT_HANDLE hKeyedMutex;
+    UINT64 Key;
+    LARGE_INTEGER *pTimeout;
+    UINT64 FenceValue;
+} D3DKMT_ACQUIREKEYEDMUTEX;
+
+typedef struct _D3DKMT_CREATEKEYEDMUTEX2_FLAGS {
+  union {
+    struct {
+      UINT NtSecuritySharing : 1;
+      UINT Reserved : 31;
+    };
+    UINT Value;
+  };
+} D3DKMT_CREATEKEYEDMUTEX2_FLAGS;
+
+typedef struct _D3DKMT_CREATEKEYEDMUTEX2 {
+  UINT64 InitialValue;
+  D3DKMT_HANDLE hSharedHandle;
+  D3DKMT_HANDLE hKeyedMutex;
+  void *pPrivateRuntimeData;
+  UINT PrivateRuntimeDataSize;
+  D3DKMT_CREATEKEYEDMUTEX2_FLAGS Flags;
+} D3DKMT_CREATEKEYEDMUTEX2;
+
+typedef struct _D3DKMT_OPENKEYEDMUTEX2
+{
+    D3DKMT_HANDLE hSharedHandle;
+    D3DKMT_HANDLE hKeyedMutex;
+    void *pPrivateRuntimeData;
+    UINT PrivateRuntimeDataSize;
+} D3DKMT_OPENKEYEDMUTEX2;
+
+typedef struct _D3DKMT_RELEASEKEYEDMUTEX {
+  D3DKMT_HANDLE hKeyedMutex;
+  UINT64 Key;
+  UINT64 FenceValue;
+} D3DKMT_RELEASEKEYEDMUTEX;
+
 #ifdef _WIN32
 
 extern "C"
@@ -494,6 +535,10 @@ extern "C"
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTCloseAdapter(const D3DKMT_CLOSEADAPTER *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTShareObjects(UINT count, const D3DKMT_HANDLE *handles, OBJECT_ATTRIBUTES *attr, UINT access, HANDLE *handle);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTOpenNtHandleFromName(D3DKMT_OPENNTHANDLEFROMNAME *desc);
+  DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTCreateKeyedMutex2(D3DKMT_CREATEKEYEDMUTEX2 *desc);
+  DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTOpenKeyedMutex2(D3DKMT_OPENKEYEDMUTEX2 *desc);
+  DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTAcquireKeyedMutex(D3DKMT_ACQUIREKEYEDMUTEX *desc);
+  DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTReleaseKeyedMutex(D3DKMT_RELEASEKEYEDMUTEX *desc);
 }
 
 #else
@@ -584,6 +629,26 @@ extern "C"
 
   inline NTSTATUS D3DKMTOpenNtHandleFromName(D3DKMT_OPENNTHANDLEFROMNAME *desc) {
     dxmt::Logger::warn("D3DKMTOpenNtHandleFromName not implemented.");
+    return -1;
+  }
+
+  inline NTSTATUS WINAPI D3DKMTCreateKeyedMutex2(D3DKMT_CREATEKEYEDMUTEX2 *desc) {
+    dxmt::Logger::warn("D3DKMTCreateKeyedMutex2 not implemented.");
+    return -1;
+  }
+
+  inline NTSTATUS WINAPI D3DKMTOpenKeyedMutex2(D3DKMT_OPENKEYEDMUTEX2 *desc) {
+    dxmt::Logger::warn("D3DKMTOpenKeyedMutex2 not implemented.");
+    return -1;
+  }
+
+  inline NTSTATUS WINAPI D3DKMTAcquireKeyedMutex(D3DKMT_ACQUIREKEYEDMUTEX *desc) {
+    dxmt::Logger::warn("D3DKMTAcquireKeyedMutex not implemented.");
+    return -1;
+  }
+
+  inline NTSTATUS WINAPI D3DKMTReleaseKeyedMutex(D3DKMT_RELEASEKEYEDMUTEX *desc) {
+    dxmt::Logger::warn("D3DKMTReleaseKeyedMutex not implemented.");
     return -1;
   }
 }
