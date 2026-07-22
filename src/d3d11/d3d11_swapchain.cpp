@@ -97,13 +97,16 @@ GetMonitorFormatBpp(DXGI_FORMAT Format) {
  * The macdrv metal view is a PER-WINDOW singleton: WMT::CreateMetalViewFromHWND
  * (backed by winemac.drv's macdrv_view_create_metal_view) returns the
  * already-existing WineMetalView for a window on repeated calls, and
- * WMT::ReleaseMetalView removes that view from the window outright. If an
- * application creates a second swapchain on the same HWND while the first
- * still exists (e.g. ANGLE recreates its swapchain on resize), both swapchains
- * share ONE view — and destroying the old swapchain detaches the view the new
- * swapchain is presenting into, leaving a permanently blank (GDI-background)
- * window while every present still "succeeds". Refcount the view per HWND so
- * it is only released when the last swapchain using it goes away.
+ * WMT::ReleaseMetalView removes that view from the window outright. If a
+ * second swapchain is created on the same HWND while the first still exists
+ * (e.g. an EGL client recreating its window surface: eglDestroySurface on a
+ * surface that is still current only schedules destruction, so ANGLE creates
+ * the new surface's swapchain before the old surface — and its swapchain —
+ * is released on the next eglMakeCurrent), both swapchains share ONE view —
+ * and destroying the old swapchain detaches the view the new swapchain is
+ * presenting into, leaving a permanently blank (GDI-background) window while
+ * every present still "succeeds". Refcount the view per HWND so it is only
+ * released when the last swapchain using it goes away.
  *
  * Locking: WMT:: calls cross into the unix side (AppKit) and must never run
  * under g_metal_view_mutex. The view is created before the lock is taken (a
