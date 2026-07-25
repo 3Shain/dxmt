@@ -2239,16 +2239,21 @@ GetChromaticity_xy(ColorSyncProfileRef profile, CFStringRef tag, float *out_x, f
   CFDataRef tag_data = ColorSyncProfileCopyTag(profile, tag);
   if (!tag_data)
     return false;
-  if (CFDataGetLength(tag_data) != sizeof(icc_XYZ_t))
+  if (CFDataGetLength(tag_data) != sizeof(icc_XYZ_t)) {
+    CFRelease(tag_data);
     return false;
+  }
   icc_XYZ_t *data = (icc_XYZ_t *)CFDataGetBytePtr(tag_data);
-  if (data->sig != 0x205a5958)
+  if (data->sig != 0x205a5958) {
+    CFRelease(tag_data);
     return false;
+  }
   double X = (int32_t)__builtin_bswap32(data->x) / 65536.0;
   double Y = (int32_t)__builtin_bswap32(data->y) / 65536.0;
   double Z = (int32_t)__builtin_bswap32(data->z) / 65536.0;
   *out_x = X / (X + Y + Z);
   *out_y = Y / (X + Y + Z);
+  CFRelease(tag_data);
   return true;
 }
 
@@ -2285,8 +2290,15 @@ _WMTGetDisplayDescription(void *obj) {
   CGDirectDisplayID display_id = params->handle;
   struct WMTDisplayDescription *desc_out = params->arg.ptr;
   ColorSyncProfileRef profile = ColorSyncProfileCreateWithDisplayID(display_id);
-  if (!profile || !GetDisplayColorGamut(profile, desc_out))
-    GetDisplayColorGamut(ColorSyncProfileCreateWithName(kColorSyncGenericRGBProfile), desc_out);
+  if (!profile || !GetDisplayColorGamut(profile, desc_out)) {
+    ColorSyncProfileRef generic = ColorSyncProfileCreateWithName(kColorSyncGenericRGBProfile);
+    if (generic) {
+      GetDisplayColorGamut(generic, desc_out);
+      CFRelease(generic);
+    }
+  }
+  if (profile)
+    CFRelease(profile);
   NSScreen *screen = GetNSScreenForDisplayID(display_id);
   if (screen) {
     desc_out->maximum_edr_color_component_value = [screen maximumExtendedDynamicRangeColorComponentValue];
