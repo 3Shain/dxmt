@@ -46,20 +46,21 @@ resolve_cache_dir(NSString *path, bool path_is_file) {
     NSString *dbPath = resolve_cache_dir(path, true);
     if (!dbPath) {
       NSLog(@"[CacheReader] Failed to resolve cache path");
+      [self release];
       return nil;
     }
     NSString *tableName = [NSString stringWithFormat:@"cache_%llu", version];
     if (sqlite3_open_v2([dbPath fileSystemRepresentation], &_db, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, NULL) !=
         SQLITE_OK) {
       NSLog(@"[CacheReader] Failed to open DB: %s", sqlite3_errmsg(_db));
-      sqlite3_close(_db);
+      [self release];
       return nil;
     }
 
     NSString *sqlGet = [NSString stringWithFormat:@"SELECT value FROM %@ WHERE key = ?;", tableName];
     if (sqlite3_prepare_v2(_db, sqlGet.UTF8String, -1, &_stmt, NULL) != SQLITE_OK) {
       NSLog(@"[CacheReader] Failed to prepare SELECT: %s", sqlite3_errmsg(_db));
-      sqlite3_close(_db);
+      [self release];
       return nil;
     }
   }
@@ -104,6 +105,7 @@ resolve_cache_dir(NSString *path, bool path_is_file) {
     NSString *dbPath = resolve_cache_dir(path, true);
     if (!dbPath) {
       NSLog(@"[CacheReader] Failed to resolve cache path");
+      [self release];
       return nil;
     }
 
@@ -111,6 +113,7 @@ resolve_cache_dir(NSString *path, bool path_is_file) {
     int fd = open([lockPath fileSystemRepresentation], O_RDWR | O_CREAT, 0666);
     if (fd < 0) {
       NSLog(@"[CacheWriter] Failed to open file for locking %@", lockPath);
+      [self release];
       return nil;
     }
     flock(fd, LOCK_EX);
@@ -122,6 +125,7 @@ resolve_cache_dir(NSString *path, bool path_is_file) {
       NSLog(@"[CacheWriter] Failed to open DB: %s", sqlite3_errmsg(_db));
       flock(fd, LOCK_UN);
       close(fd);
+      [self release];
       return nil;
     }
 
@@ -146,7 +150,7 @@ resolve_cache_dir(NSString *path, bool path_is_file) {
     NSString *sqlSet = [NSString stringWithFormat:@"INSERT OR REPLACE INTO %@ (key, value) VALUES (?, ?);", tableName];
     if (sqlite3_prepare_v2(_db, sqlSet.UTF8String, -1, &_stmt, NULL) != SQLITE_OK) {
       NSLog(@"[CacheWriter] Failed to prepare INSERT: %s", sqlite3_errmsg(_db));
-      sqlite3_close(_db);
+      [self release];
       return nil;
     }
   }
