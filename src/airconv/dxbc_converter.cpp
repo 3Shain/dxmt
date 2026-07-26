@@ -907,19 +907,20 @@ AIRCONV_API int SM50Initialize(
   if (ppError) {
     *ppError = nullptr;
   }
-  auto errorObj = new SM50ErrorInternal();
+  auto errorObj = std::make_unique<SM50ErrorInternal>();
   llvm::raw_svector_ostream errorOut(errorObj->buf);
+  auto set_error = [&]() { if (ppError) *ppError = (sm50_error_t)errorObj.release(); };
 
   if (ppShader == nullptr) {
     errorOut << "ppShader can not be null\0";
-    *ppError = (sm50_error_t)errorObj;
+    set_error();
     return 1;
   }
 
   CDXBCParser DXBCParser;
   if (DXBCParser.ReadDXBC(pBytecode, BytecodeSize) != S_OK) {
     errorOut << "Invalid DXBC bytecode\0";
-    *ppError = (sm50_error_t)errorObj;
+    set_error();
     return 1;
   }
 
@@ -929,7 +930,7 @@ AIRCONV_API int SM50Initialize(
   }
   if (codeBlobIdx == DXBC_BLOB_NOT_FOUND) {
     errorOut << "Invalid DXBC bytecode: shader blob not found\0";
-    *ppError = (sm50_error_t)errorObj;
+    set_error();
     return 1;
   }
   const void *codeBlob = DXBCParser.GetBlob(codeBlobIdx);
@@ -940,13 +941,13 @@ AIRCONV_API int SM50Initialize(
   CSignatureParser inputParser;
   if (DXBCGetInputSignature(pBytecode, &inputParser) != S_OK) {
     errorOut << "Invalid DXBC bytecode: input signature not found\0";
-    *ppError = (sm50_error_t)errorObj;
+    set_error();
     return 1;
   }
   CSignatureParser5 outputParser;
   if (DXBCGetOutputSignature(pBytecode, &outputParser) != S_OK) {
     errorOut << "Invalid DXBC bytecode: output signature not found\0";
-    *ppError = (sm50_error_t)errorObj;
+    set_error();
     return 1;
   }
 
@@ -1167,7 +1168,7 @@ AIRCONV_API int SM50Initialize(
       auto threads_per_patch = next_pow2(sm50_shader->hull_maximum_threads_per_patch);
       if (threads_per_patch > 32) {
         errorOut << "Threadgroup size of tessellation pipeline is too large.";
-        *ppError = (sm50_error_t)errorObj;
+        set_error();
         return 1;
       }
       auto patch_per_group = 32 / threads_per_patch;
@@ -1179,7 +1180,7 @@ AIRCONV_API int SM50Initialize(
             max_tesselation_factor = std::max(max_tesselation_factor - 2.0f, 1.0f);
           } else {
             errorOut << "Payload size of tessellation pipeline is too large.";
-            *ppError = (sm50_error_t)errorObj;
+            set_error();
             return 1;
           }
         } else {
@@ -1265,11 +1266,12 @@ AIRCONV_API int SM50Compile(
   if (ppError) {
     *ppError = nullptr;
   }
-  auto errorObj = new SM50ErrorInternal();
+  auto errorObj = std::make_unique<SM50ErrorInternal>();
   llvm::raw_svector_ostream errorOut(errorObj->buf);
+  auto set_error = [&]() { if (ppError) *ppError = (sm50_error_t)errorObj.release(); };
   if (ppBitcode == nullptr) {
     errorOut << "ppBitcode can not be null\0";
-    *ppError = (sm50_error_t)errorObj;
+    set_error();
     return 1;
   }
 
@@ -1289,7 +1291,7 @@ AIRCONV_API int SM50Compile(
     llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
       errorOut << u.msg;
     });
-    *ppError = (sm50_error_t)errorObj;
+    set_error();
     return 1;
   }
 
@@ -1326,11 +1328,12 @@ AIRCONV_API int SM50CompileTessellationPipelineHull(
   if (ppError) {
     *ppError = nullptr;
   }
-  auto errorObj = new SM50ErrorInternal();
+  auto errorObj = std::make_unique<SM50ErrorInternal>();
   llvm::raw_svector_ostream errorOut(errorObj->buf);
+  auto set_error = [&]() { if (ppError) *ppError = (sm50_error_t)errorObj.release(); };
   if (ppBitcode == nullptr) {
     errorOut << "ppBitcode can not be null\0";
-    *ppError = (sm50_error_t)errorObj;
+    set_error();
     return 1;
   }
 
@@ -1352,7 +1355,7 @@ AIRCONV_API int SM50CompileTessellationPipelineHull(
     llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
       errorOut << u.msg;
     });
-    *ppError = (sm50_error_t)errorObj;
+    set_error();
     return 1;
   }
 
@@ -1390,11 +1393,12 @@ AIRCONV_API int SM50CompileTessellationPipelineDomain(
   if (ppError) {
     *ppError = nullptr;
   }
-  auto errorObj = new SM50ErrorInternal();
+  auto errorObj = std::make_unique<SM50ErrorInternal>();
   llvm::raw_svector_ostream errorOut(errorObj->buf);
+  auto set_error = [&]() { if (ppError) *ppError = (sm50_error_t)errorObj.release(); };
   if (ppBitcode == nullptr) {
     errorOut << "ppBitcode can not be null\0";
-    *ppError = (sm50_error_t)errorObj;
+    set_error();
     return 1;
   }
 
@@ -1417,7 +1421,7 @@ AIRCONV_API int SM50CompileTessellationPipelineDomain(
     llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
       errorOut << u.msg;
     });
-    *ppError = (sm50_error_t)errorObj;
+    set_error();
     return 1;
   }
 
@@ -1455,11 +1459,12 @@ AIRCONV_API int SM50CompileGeometryPipelineVertex(
   if (ppError) {
     *ppError = nullptr;
   }
-  auto errorObj = new SM50ErrorInternal();
+  auto errorObj = std::make_unique<SM50ErrorInternal>();
   llvm::raw_svector_ostream errorOut(errorObj->buf);
+  auto set_error = [&]() { if (ppError) *ppError = (sm50_error_t)errorObj.release(); };
   if (ppBitcode == nullptr) {
     errorOut << "ppBitcode can not be null\0";
-    *ppError = (sm50_error_t)errorObj;
+    set_error();
     return 1;
   }
 
@@ -1481,7 +1486,7 @@ AIRCONV_API int SM50CompileGeometryPipelineVertex(
     llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
       errorOut << u.msg;
     });
-    *ppError = (sm50_error_t)errorObj;
+    set_error();
     return 1;
   }
 
@@ -1518,11 +1523,12 @@ AIRCONV_API int SM50CompileGeometryPipelineGeometry(
   if (ppError) {
     *ppError = nullptr;
   }
-  auto errorObj = new SM50ErrorInternal();
+  auto errorObj = std::make_unique<SM50ErrorInternal>();
   llvm::raw_svector_ostream errorOut(errorObj->buf);
+  auto set_error = [&]() { if (ppError) *ppError = (sm50_error_t)errorObj.release(); };
   if (ppBitcode == nullptr) {
     errorOut << "ppBitcode can not be null\0";
-    *ppError = (sm50_error_t)errorObj;
+    set_error();
     return 1;
   }
 
@@ -1545,7 +1551,7 @@ AIRCONV_API int SM50CompileGeometryPipelineGeometry(
     llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
       errorOut << u.msg;
     });
-    *ppError = (sm50_error_t)errorObj;
+    set_error();
     return 1;
   }
 
