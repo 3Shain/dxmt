@@ -131,7 +131,8 @@ CreateFence(MTLD3D11Device *pDevice, UINT64 InitialValue, D3D11_FENCE_FLAG Flags
     }
   }
   event.signalValue(InitialValue);
-  auto fence = new MTLD3D11FenceImpl(pDevice, std::move(event), local_kmt);
+  Com<MTLD3D11FenceImpl> fence =
+      ref(new MTLD3D11FenceImpl(pDevice, std::move(event), local_kmt));
   return fence->QueryInterface(riid, ppFence);
 }
 
@@ -181,10 +182,10 @@ OpenSharedFence(MTLD3D11Device *pDevice, HANDLE hResource,
     return E_INVALIDARG;
   }
 
-  auto fence = new MTLD3D11FenceImpl(
+  Com<MTLD3D11FenceImpl> fence = ref(new MTLD3D11FenceImpl(
       pDevice,
       pDevice->GetMTLDevice().newSharedEventWithMachPort(mach_port),
-      open.hSyncObject);
+      open.hSyncObject));
   return fence->QueryInterface(riid, ppFence);
 }
 
