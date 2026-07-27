@@ -94,19 +94,19 @@ GetMonitorFormatBpp(DXGI_FORMAT Format) {
 }
 
 /**
- * The macdrv metal view is a PER-WINDOW singleton: WMT::CreateMetalViewFromHWND
+ * The macdrv metal view is a per-window singleton: WMT::CreateMetalViewFromHWND
  * (backed by winemac.drv's macdrv_view_create_metal_view) returns the
  * already-existing WineMetalView for a window on repeated calls, and
- * WMT::ReleaseMetalView removes that view from the window outright. If a
- * second swapchain is created on the same HWND while the first still exists
- * (e.g. an EGL client recreating its window surface: eglDestroySurface on a
- * surface that is still current only schedules destruction, so ANGLE creates
- * the new surface's swapchain before the old surface — and its swapchain —
- * is released on the next eglMakeCurrent), both swapchains share ONE view —
- * and destroying the old swapchain detaches the view the new swapchain is
- * presenting into, leaving a permanently blank (GDI-background) window while
- * every present still "succeeds". Refcount the view per HWND so it is only
- * released when the last swapchain using it goes away.
+ * WMT::ReleaseMetalView removes that view from the window outright. A second
+ * swapchain can be created on the same HWND while the first still exists.
+ * For example, an EGL client that recreates its window surface: destroying a
+ * surface that is still current only schedules the destruction, so ANGLE
+ * creates the new surface's swapchain before the old surface (and its
+ * swapchain) is released on the next eglMakeCurrent. Both swapchains then
+ * share one view, and destroying the old swapchain detaches the view the new
+ * swapchain is presenting into, leaving a permanently blank (GDI-background)
+ * window while every present still "succeeds". Refcount the view per HWND so
+ * it is only released when the last swapchain using it goes away.
  *
  * Locking: WMT:: calls cross into the unix side (AppKit) and must never run
  * under g_metal_view_mutex. The view is created before the lock is taken (a
@@ -172,7 +172,7 @@ ReleaseMetalViewForHWND(HWND hwnd, WMT::Object view) {
     std::lock_guard<dxmt::mutex> lock(g_metal_view_mutex);
     auto it = g_metal_views.find((intptr_t)hwnd);
     /* No entry, or the entry was superseded because the HWND was recycled: the
-     * view this swapchain held has already been released — do nothing. */
+     * view this swapchain held has already been released; do nothing. */
     if (it == g_metal_views.end() || it->second.view != view)
       return;
     if (--it->second.refcount > 0)
