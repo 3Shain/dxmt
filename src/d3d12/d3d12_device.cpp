@@ -270,6 +270,22 @@ public:
       out->DynamicDepthBiasSupported = FALSE; // TODO(d3d12): ID3D12GraphicsCommandList9::RSSetDepthBias
       return S_OK;
     }
+    case D3D12_FEATURE_FORMAT_SUPPORT: {
+      if (DataSize != sizeof(D3D12_FEATURE_DATA_FORMAT_SUPPORT))
+        return E_INVALIDARG;
+      auto *out = reinterpret_cast<D3D12_FEATURE_DATA_FORMAT_SUPPORT *>(pFeatureData);
+
+      if (out->Format == DXGI_FORMAT_UNKNOWN) {
+        out->Support1 = D3D12_FORMAT_SUPPORT1_BUFFER;
+        out->Support2 = {};
+        return S_OK;
+      }
+
+      // TODO(d3d12): report correct support
+      out->Support1 = (D3D12_FORMAT_SUPPORT1)0xffffffff;
+      out->Support2 = (D3D12_FORMAT_SUPPORT2)0xffffffff;
+      return S_OK;
+    }
     default:
       break;
     }
