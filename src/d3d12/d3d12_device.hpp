@@ -294,4 +294,6 @@ HRESULT ValidateResourceStates(D3D12_RESOURCE_STATES State, const D3D12_HEAP_PRO
 
 HRESULT ValidateResourceDescs(const D3D12_RESOURCE_DESC *pDesc, D3D12_HEAP_TYPE HeapType);
 
+HRESULT ValidateHeapProperties(const D3D12_HEAP_PROPERTIES *pHeapProps, D3D12_HEAP_FLAGS Flags, bool AdapterIsNUMA);
+
 } // namespace dxmt

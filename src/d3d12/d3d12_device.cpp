@@ -434,6 +434,9 @@ public:
   ) {
     InitReturnPtr(ppResource);
     HRESULT hr = S_OK;
+    hr = ValidateHeapProperties(pHeapProps, HeapFlags, advertise_numa_);
+    if (FAILED(hr))
+      return hr;
     hr = ValidateResourceDescs(pDesc, pHeapProps->Type);
     if (FAILED(hr))
       return hr;
@@ -459,6 +462,10 @@ public:
 
   HRESULT STDMETHODCALLTYPE
   CreateHeap(const D3D12_HEAP_DESC *pDesc, REFIID riid, void **ppHeap) {
+    HRESULT hr = S_OK;
+    hr = ValidateHeapProperties(&pDesc->Properties, pDesc->Flags, advertise_numa_);
+    if (FAILED(hr))
+      return hr;
     return dxmt::CreateHeap(this, pDesc, riid, ppHeap);
   };
 
@@ -473,6 +480,9 @@ public:
     auto d3d12heap = static_cast<MTLD3D12Heap *>(pHeap);
     auto heap_desc = d3d12heap->GetDesc();
     HRESULT hr = S_OK;
+    hr = ValidateHeapProperties(&heap_desc.Properties, heap_desc.Flags, advertise_numa_);
+    if (FAILED(hr))
+      return hr;
     hr = ValidateResourceDescs(pDesc, heap_desc.Properties.Type);
     if (FAILED(hr))
       return hr;

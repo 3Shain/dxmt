@@ -54,6 +54,29 @@ public:
 
   HRESULT
   Initialize(const D3D12_HEAP_DESC *pDesc) {
+    if (pDesc->Flags & D3D12_HEAP_FLAG_ALLOW_DISPLAY)
+      return E_INVALIDARG; // must be committed resource
+
+    desc_ = *pDesc;
+    desc_.Properties.CreationNodeMask = 1;
+    desc_.Properties.VisibleNodeMask = 1;
+
+
+    switch (pDesc->Alignment) {
+    case 0:
+      desc_.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+      [[fallthrough]];
+    case D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT:
+    case D3D12_DEFAULT_MSAA_RESOURCE_PLACEMENT_ALIGNMENT:
+      break;
+    default:
+      return E_INVALIDARG;
+    }
+
+    auto size_aligned = align(pDesc->SizeInBytes, desc_.Alignment);
+    if (!size_aligned)
+      return E_INVALIDARG;
+
     return S_OK;
   }
 

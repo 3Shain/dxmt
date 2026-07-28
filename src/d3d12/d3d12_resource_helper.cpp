@@ -283,4 +283,46 @@ ValidateResourceDescs(const D3D12_RESOURCE_DESC *pDesc, D3D12_HEAP_TYPE HeapType
   return S_OK;
 }
 
+HRESULT
+ValidateHeapProperties(const D3D12_HEAP_PROPERTIES *pHeapProps, D3D12_HEAP_FLAGS Flags, bool AdapterIsNUMA) {
+  switch (pHeapProps->Type) {
+  case D3D12_HEAP_TYPE_DEFAULT:
+  case D3D12_HEAP_TYPE_READBACK: {
+    if (Flags & D3D12_HEAP_FLAG_ALLOW_WRITE_WATCH)
+      return E_INVALIDARG;
+    [[fallthrough]];
+  }
+  case D3D12_HEAP_TYPE_UPLOAD: {
+    if (pHeapProps->CPUPageProperty != D3D12_CPU_PAGE_PROPERTY_UNKNOWN)
+      return E_INVALIDARG;
+    if (pHeapProps->MemoryPoolPreference != D3D12_MEMORY_POOL_UNKNOWN)
+      return E_INVALIDARG;
+    break;
+  }
+  case D3D12_HEAP_TYPE_CUSTOM: {
+    if (pHeapProps->CPUPageProperty == D3D12_CPU_PAGE_PROPERTY_UNKNOWN)
+      return E_INVALIDARG;
+    if (pHeapProps->MemoryPoolPreference == D3D12_MEMORY_POOL_UNKNOWN)
+      return E_INVALIDARG;
+    if (pHeapProps->MemoryPoolPreference == D3D12_MEMORY_POOL_L1 && AdapterIsNUMA) {
+      if (pHeapProps->CPUPageProperty != D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE)
+        return E_INVALIDARG;
+    }
+    break;
+  }
+  default:
+    return E_INVALIDARG;
+  }
+
+  if (pHeapProps->MemoryPoolPreference == D3D12_MEMORY_POOL_L1) {
+    if (!AdapterIsNUMA)
+      return E_INVALIDARG;
+    if (pHeapProps->CPUPageProperty != D3D12_CPU_PAGE_PROPERTY_NOT_AVAILABLE)
+      return E_INVALIDARG;
+  }
+
+  // TODO(d3d12): check NodeMask
+  return S_OK;
+}
+
 } // namespace dxmt
