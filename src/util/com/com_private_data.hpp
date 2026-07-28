@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "thread.hpp"
 #include <vector>
 #include <unknwn.h>
 
@@ -89,11 +90,24 @@ public:
 
   HRESULT getData(REFGUID guid, UINT *size, void *data);
 
-private:
+protected:
   std::vector<ComPrivateDataEntry> m_entries;
 
   ComPrivateDataEntry *findEntry(REFGUID guid);
   void insertEntry(ComPrivateDataEntry &&entry);
+};
+
+class ConcurrentComPrivateData : public ComPrivateData {
+
+public:
+  HRESULT setData(REFGUID guid, UINT size, const void *data);
+
+  HRESULT setInterface(REFGUID guid, const IUnknown *iface);
+
+  HRESULT getData(REFGUID guid, UINT *size, void *data);
+
+private:
+  dxmt::mutex mutex_;
 };
 
 } // namespace dxmt

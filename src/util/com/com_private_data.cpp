@@ -147,4 +147,40 @@ void ComPrivateData::insertEntry(ComPrivateDataEntry &&entry) {
     m_entries.push_back(std::move(srcEntry));
 }
 
+HRESULT ConcurrentComPrivateData::setData(REFGUID guid, UINT size, const void *data) {
+  std::lock_guard<dxmt::mutex> lock(mutex_);
+  if (!data) {
+    for (auto it = m_entries.begin(); it != m_entries.end(); ++it) {
+      if (it->hasGuid(guid)) {
+        m_entries.erase(it);
+        return S_OK;
+      }
+    }
+    return S_FALSE;
+  }
+  this->insertEntry(ComPrivateDataEntry(guid, size, data));
+  return S_OK;
+}
+
+HRESULT ConcurrentComPrivateData::setInterface(REFGUID guid, const IUnknown *iface) {
+  std::lock_guard<dxmt::mutex> lock(mutex_);
+  this->insertEntry(ComPrivateDataEntry(guid, iface));
+  return S_OK;
+}
+
+HRESULT ConcurrentComPrivateData::getData(REFGUID guid, UINT *size, void *data) {
+  std::lock_guard<dxmt::mutex> lock(mutex_);
+  if (!size)
+    return E_INVALIDARG;
+
+  auto entry = this->findEntry(guid);
+
+  if (!entry) {
+    *size = 0;
+    return DXGI_ERROR_NOT_FOUND;
+  }
+
+  return entry->get(*size, data);
+}
+
 } // namespace dxmt
