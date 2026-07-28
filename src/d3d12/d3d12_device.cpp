@@ -657,7 +657,7 @@ public:
       const D3D12_COMMAND_SIGNATURE_DESC *pDesc, ID3D12RootSignature *pRootSignature, REFIID riid,
       void **ppCommandSignature
   ) {
-    return E_NOTIMPL;
+    return dxmt::CreateCommandSignature(this, pDesc, pRootSignature, riid, ppCommandSignature);
   };
 
   void STDMETHODCALLTYPE GetResourceTiling(

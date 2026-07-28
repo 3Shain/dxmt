@@ -105,6 +105,10 @@ public:
   uint64_t const *EncodedStaticSamplers;
 };
 
+class MTLD3D12CommandSignature : public ID3D12CommandSignature {
+public:
+};
+
 class MTLD3D12QueryHeap : public ID3D12QueryHeap {
 public:
 };
@@ -200,6 +204,12 @@ HRESULT
 CreateRootSignature(
     MTLD3D12Device *pDevice, UINT NodeMask, const void *pBytecode, SIZE_T BytecodeLength, REFIID riid,
     void **ppRootSignature
+);
+
+HRESULT
+CreateCommandSignature(
+    MTLD3D12Device *pDevice, const D3D12_COMMAND_SIGNATURE_DESC *pDesc, ID3D12RootSignature *pRootSignature,
+    REFIID riid, void **ppCommandSignature
 );
 
 HRESULT
