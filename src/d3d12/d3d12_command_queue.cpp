@@ -210,6 +210,15 @@ public:
           encoder.endEncoding();
           break;
         }
+        case EncoderType::Compute: {
+          auto data = static_cast<ComputeEncoderData *>(current);
+          auto encoder = cmdbuf.computeCommandEncoder(false);
+          encoder.waitForFence(fence_);
+          encoder.encodeCommands(&data->cmd_head);
+          encoder.updateFence(fence_);
+          encoder.endEncoding();
+          break;
+        }
         }
         current = current->next;
       }

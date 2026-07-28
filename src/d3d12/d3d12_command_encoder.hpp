@@ -28,6 +28,7 @@ enum class EncoderType {
   Clear,
   Render,
   Blit,
+  Compute,
 };
 
 struct EncoderData {
@@ -104,6 +105,11 @@ struct RenderEncoderData : EncoderData {
 
 struct BlitEncoderData : EncoderData {
   wmtcmd_blit_nop cmd_head;
+  wmtcmd_base *cmd_tail;
+};
+
+struct ComputeEncoderData : EncoderData {
+  wmtcmd_compute_nop cmd_head;
   wmtcmd_base *cmd_tail;
 };
 

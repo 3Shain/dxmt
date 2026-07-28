@@ -118,6 +118,9 @@ MTLD3D12CommandAllocatorImpl::Reset() {
       case EncoderType::Blit:
         reinterpret_cast<BlitEncoderData *>(next)->~BlitEncoderData();
         break;
+      case EncoderType::Compute:
+        reinterpret_cast<ComputeEncoderData *>(next)->~ComputeEncoderData();
+        break;
       }
       next = next->next;
     }
