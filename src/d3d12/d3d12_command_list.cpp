@@ -472,7 +472,35 @@ public:
     cmd_draw.base_instance = StartInstanceLocation;
   };
 
-  void STDMETHODCALLTYPE Dispatch(UINT X, UINT Y, UINT Z) { IMPLEMENT_ME };
+  bool
+  PreDispatch() {
+    if (!allocator_->encoder_current || allocator_->encoder_current->type != EncoderType::Compute) {
+      allocator_->InvalidateCurrentPass();
+      auto compute = allocator_->AllocatePass<ComputeEncoderData>();
+      compute->type = EncoderType::Compute;
+      compute->cmd_head.type = WMTComputeCommandNop;
+      compute->cmd_head.next.set(0);
+      compute->cmd_tail = (wmtcmd_base *)&compute->cmd_head;
+      if (pso_compute_) {
+        auto &cmd_setpso = allocator_->EncodeComputeCommand<wmtcmd_compute_setpso>();
+        cmd_setpso.type = WMTComputeCommandSetPSO;
+        cmd_setpso.pso = pso_compute_->pso;
+        cmd_setpso.threadgroup_size = pso_compute_->threadgroup_size;
+      }
+    }
+
+    return true;
+  }
+
+  void STDMETHODCALLTYPE
+  Dispatch(UINT X, UINT Y, UINT Z) {
+    if (!PreDispatch())
+      return;
+
+    auto &cmd_dispatch = allocator_->EncodeComputeCommand<wmtcmd_compute_dispatch>();
+    cmd_dispatch.type = WMTComputeCommandDispatch;
+    cmd_dispatch.size = {X, Y, Z};
+  };
 
   bool
   PreBlit() {
@@ -689,7 +717,12 @@ public:
         return;
       pso_compute_ = compute_pso;
       pso_graphics_ = nullptr;
-
+      if (!allocator_->encoder_current || allocator_->encoder_current->type != EncoderType::Compute)
+        return;
+      auto &cmd_setpso = allocator_->EncodeComputeCommand<wmtcmd_compute_setpso>();
+      cmd_setpso.type = WMTComputeCommandSetPSO;
+      cmd_setpso.pso = pso_compute_->pso;
+      cmd_setpso.threadgroup_size = pso_compute_->threadgroup_size;
       return;
     }
 
