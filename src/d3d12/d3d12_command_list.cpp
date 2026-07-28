@@ -139,6 +139,8 @@ class MTLD3D12GraphicsCommandListImpl : public MTLD3D12DeviceChild<MTLD3D12Graph
   Com<MTLD3D12RootSignature, false> rootsig_graphics_;
   uint64_t rootarg_graphics_staging_[64];
 
+  Com<MTLD3D12ComputePipelineState, false> pso_compute_;
+
 public:
   MTLD3D12GraphicsCommandListImpl(MTLD3D12Device *pDevice) : MTLD3D12DeviceChild<MTLD3D12GraphicsCommandList>(pDevice) {}
 
@@ -152,9 +154,12 @@ public:
       allocator_ = allocator;
 
     pso_graphics_ = nullptr;
+    pso_compute_ = nullptr;
     if (auto pso = static_cast<MTLD3D12PipelineState *>(pInitialPipelineState)) {
       if (!pso->IsComputePipelineState)
         pso_graphics_ = static_cast<MTLD3D12GraphicsPipelineState *>(pInitialPipelineState);
+      else
+        pso_compute_ = static_cast<MTLD3D12ComputePipelineState *>(pInitialPipelineState);
     }
 
     num_rtvs = {};
@@ -673,12 +678,26 @@ public:
   SetPipelineState(ID3D12PipelineState *pPSO) {
     if (!pPSO) {
       pso_graphics_ = nullptr;
+      pso_compute_ = nullptr;
       return;
     }
+
+    auto pso = static_cast<MTLD3D12PipelineState *>(pPSO);
+    if (pso->IsComputePipelineState) {
+      auto compute_pso = static_cast<MTLD3D12ComputePipelineState *>(pPSO);
+      if (pso_compute_.ptr() == compute_pso)
+        return;
+      pso_compute_ = compute_pso;
+      pso_graphics_ = nullptr;
+
+      return;
+    }
+
     auto graphics_pso = static_cast<MTLD3D12GraphicsPipelineState *>(pPSO);
     if (pso_graphics_.ptr() == graphics_pso)
       return;
     pso_graphics_ = graphics_pso;
+    pso_compute_ = nullptr;
     if (!allocator_->encoder_current || allocator_->encoder_current->type != EncoderType::Render)
       return;
 

@@ -136,6 +136,15 @@ public:
   virtual void ReleasePrivate() = 0;
 };
 
+class MTLD3D12ComputePipelineState : public MTLD3D12PipelineState {
+public:
+  WMT::Reference<WMT::ComputePipelineState> pso;
+  WMTSize threadgroup_size;
+
+  virtual void AddRefPrivate() = 0;
+  virtual void ReleasePrivate() = 0;
+};
+
 class MTLD3D12Device : public ID3D12Device1 {
 public:
   virtual WMT::Device GetMTLDevice() = 0;
@@ -215,6 +224,11 @@ CreateCommandSignature(
 HRESULT
 CreateGraphicsPipelineState(
     MTLD3D12Device *pDevice, const D3D12_GRAPHICS_PIPELINE_STATE_DESC *pDesc, REFIID riid, void **ppPipelineState
+);
+
+HRESULT
+CreateComputePipelineState(
+    MTLD3D12Device *pDevice, const D3D12_COMPUTE_PIPELINE_STATE_DESC *pDesc, REFIID riid, void **ppPipelineState
 );
 
 HRESULT
