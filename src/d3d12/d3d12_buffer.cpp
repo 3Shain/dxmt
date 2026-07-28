@@ -19,6 +19,7 @@
 #include "d3d12_device.hpp"
 #include "d3d12_pageable.hpp"
 #include "com/com_pointer.hpp"
+#include "dxmt_format.hpp"
 
 namespace dxmt {
 
@@ -139,8 +140,40 @@ public:
   CreateUnorderedAccessView(
       ID3D12Resource *pCounter, const D3D12_UNORDERED_ACCESS_VIEW_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor
   ) {
-    IMPLEMENT_ME
-    return S_OK;
+    HRESULT hr;
+    D3D12_UNORDERED_ACCESS_VIEW_DESC ViewDesc;
+    if (!pDesc) {
+      hr = ExtractEntireResourceViewDescription(desc_, &ViewDesc);
+      if (FAILED(hr))
+        return hr;
+    } else {
+      ViewDesc = *pDesc;
+    }
+
+    if (ViewDesc.ViewDimension != D3D12_UAV_DIMENSION_BUFFER)
+      return E_INVALIDARG;
+
+    auto [Heap, Index] = GetShaderVisibleDescriptorHeap(device_, Descriptor);
+    BufferSlice Slice;
+
+    if (ViewDesc.Format == DXGI_FORMAT_UNKNOWN || ViewDesc.Buffer.Flags & D3D12_BUFFER_UAV_FLAG_RAW) {
+      // TODO(d3d12): structured/raw buffer view
+      IMPLEMENT_ME
+    }
+
+    MTL_DXGI_FORMAT_DESC Format;
+    if (FAILED(MTLQueryDXGIFormat(device_->GetMTLDevice(), ViewDesc.Format, Format))) {
+      ERR("D3D12Buffer::CreateUnorderedAccessView: not an ordinary or packed format: ", ViewDesc.Format);
+      return E_FAIL;
+    }
+    BufferViewDescriptor view_descriptor{Format.PixelFormat};
+    Slice.firstElement = ViewDesc.Buffer.FirstElement;
+    Slice.elementCount = ViewDesc.Buffer.NumElements;
+    Slice.byteOffset = Format.BytesPerTexel * ViewDesc.Buffer.FirstElement;
+    Slice.byteLength = Format.BytesPerTexel * ViewDesc.Buffer.NumElements;
+
+    auto view = buffer->createView(view_descriptor);
+    return Heap->AddUnorderedAccessView(Index, buffer.ptr(), view, Slice);
   };
 
   virtual HRESULT STDMETHODCALLTYPE

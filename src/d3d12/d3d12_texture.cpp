@@ -402,8 +402,87 @@ public:
   CreateUnorderedAccessView(
       ID3D12Resource *pCounter, const D3D12_UNORDERED_ACCESS_VIEW_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor
   ) {
-    IMPLEMENT_ME
-    return S_OK;
+    HRESULT hr;
+    D3D12_UNORDERED_ACCESS_VIEW_DESC ViewDesc;
+    if (!pDesc) {
+      hr = ExtractEntireResourceViewDescription(desc_, &ViewDesc);
+      if (FAILED(hr))
+        return hr;
+    } else {
+      ViewDesc = *pDesc;
+    }
+
+    auto [Heap, Index] = GetShaderVisibleDescriptorHeap(device_, Descriptor);
+    TextureViewKey View = texture->fullView;
+
+    TextureViewDescriptor view_descriptor;
+    MTL_DXGI_FORMAT_DESC metal_format;
+    hr = MTLQueryDXGIFormat(device_->GetMTLDevice(), ViewDesc.Format, metal_format);
+    if (FAILED(hr))
+      return hr;
+
+    view_descriptor.format = metal_format.PixelFormat;
+
+    switch (ViewDesc.ViewDimension) {
+    case D3D12_UAV_DIMENSION_TEXTURE1D: {
+      view_descriptor.type = WMTTextureType2D; // FIXME: lowering to 2d array
+      view_descriptor.firstMiplevel = ViewDesc.Texture1D.MipSlice;
+      view_descriptor.miplevelCount = 1;
+      view_descriptor.firstArraySlice = 0;
+      view_descriptor.arraySize = 1;
+      View = texture->createView(view_descriptor);
+      break;
+    }
+    case D3D12_UAV_DIMENSION_TEXTURE2D: {
+      view_descriptor.type = WMTTextureType2D; // FIXME: lowering to 2d array
+      view_descriptor.firstMiplevel = ViewDesc.Texture2D.MipSlice;
+      view_descriptor.miplevelCount = 1;
+      view_descriptor.firstArraySlice = 0;
+      view_descriptor.arraySize = 1;
+      View = texture->createView(view_descriptor);
+      break;
+    }
+    case D3D12_UAV_DIMENSION_TEXTURE1DARRAY: {
+      view_descriptor.type = WMTTextureType2DArray;
+      view_descriptor.firstMiplevel = ViewDesc.Texture1DArray.MipSlice;
+      view_descriptor.miplevelCount = 1;
+      view_descriptor.firstArraySlice = ViewDesc.Texture1DArray.FirstArraySlice;
+      if (ViewDesc.Texture1DArray.ArraySize == ~0u)
+        view_descriptor.arraySize = desc_.DepthOrArraySize - ViewDesc.Texture1DArray.FirstArraySlice;
+      else
+        view_descriptor.arraySize = ViewDesc.Texture1DArray.ArraySize;
+      View = texture->createView(view_descriptor);
+      break;
+    }
+    case D3D12_UAV_DIMENSION_TEXTURE2DARRAY: {
+      view_descriptor.type = WMTTextureType2DArray;
+      view_descriptor.firstMiplevel = ViewDesc.Texture2DArray.MipSlice;
+      view_descriptor.miplevelCount = 1;
+      view_descriptor.firstArraySlice = ViewDesc.Texture2DArray.FirstArraySlice;
+      if (ViewDesc.Texture2DArray.ArraySize == ~0u)
+        view_descriptor.arraySize = desc_.DepthOrArraySize - ViewDesc.Texture2DArray.FirstArraySlice;
+      else
+        view_descriptor.arraySize = ViewDesc.Texture2DArray.ArraySize;
+      View = texture->createView(view_descriptor);
+      break;
+    }
+    case D3D12_UAV_DIMENSION_TEXTURE3D: {
+      view_descriptor.type = WMTTextureType3D;
+      view_descriptor.firstMiplevel = ViewDesc.Texture3D.MipSlice;
+      view_descriptor.miplevelCount = 1;
+      view_descriptor.firstArraySlice = 0;
+      view_descriptor.arraySize = 1;
+      View = texture->createView(view_descriptor);
+      if (ViewDesc.Texture3D.FirstWSlice > 0) {
+        ERR("3D UAV with WSlice unsupported");
+      }
+      break;
+    }
+    default:
+      return E_INVALIDARG;
+    }
+
+    return Heap->AddUnorderedAccessView(Index, texture.ptr(), View);
   };
 
   virtual HRESULT STDMETHODCALLTYPE

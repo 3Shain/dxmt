@@ -18,6 +18,7 @@
 
 #pragma once
 #include "d3d12.h"
+#include "dxmt_buffer.hpp"
 #include "dxmt_texture.hpp"
 #include <cstdint>
 
@@ -78,11 +79,21 @@ enum class ShaderVisibleDescriptorType {
   Null,
   SRVTexture,
   ConstantBuffer,
+  UAVTexture,
+  UAVTexelBuffer,
 };
 
 struct SRVTextureCPUStorage {
   Texture *texture = nullptr;
   TextureViewKey view{};
+};
+
+using UAVTextureCPUStorage = SRVTextureCPUStorage;
+
+struct UAVTexelBufferCPUStorage {
+  Buffer *buffer = nullptr;
+  BufferViewKey view{};
+  BufferSlice slice{};
 };
 
 struct CBVCommonStorage {
@@ -95,6 +106,8 @@ struct ShaderVisibleDescriptorCPUStorage {
   union {
     SRVTextureCPUStorage SRVTexture;
     CBVCommonStorage ConstantBuffer;
+    UAVTextureCPUStorage UAVTexture;
+    UAVTexelBufferCPUStorage UAVTexelBuffer;
   };
 
   ShaderVisibleDescriptorCPUStorage() : type(ShaderVisibleDescriptorType::Null) {}
@@ -106,6 +119,10 @@ public:
   AddShaderResourceView(UINT Index, Texture *Texture, TextureViewKey View, FLOAT ResourceMinLODClamp) = 0;
 
   virtual HRESULT AddConstantBufferView(UINT Index, UINT64 VA, UINT32 SizeInBytes) = 0;
+
+  virtual HRESULT AddUnorderedAccessView(UINT Index, Texture *Texture, TextureViewKey View) = 0;
+
+  virtual HRESULT AddUnorderedAccessView(UINT Index, Buffer *Buffer, BufferViewKey View, BufferSlice Slice) = 0;
 };
 
 class MTLD3D12SamplerDescriptorHeap : public ID3D12DescriptorHeap {

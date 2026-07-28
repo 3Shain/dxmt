@@ -31,10 +31,20 @@ struct SRVTextureGPUStorage {
   uint64_t padding[2];
 };
 
+using UAVTextureGPUStorage = SRVTextureGPUStorage;
+
+struct UAVTexelBufferGPUStorage {
+  uint64_t resource_id;
+  uint64_t metadata;
+  uint64_t padding[2];
+};
+
 struct ShaderVisibleDescriptorGPUStorage {
   union {
     SRVTextureGPUStorage SRVTexture;
     CBVCommonStorage ConstantBuffer;
+    UAVTextureGPUStorage UAVTexture;
+    UAVTexelBufferGPUStorage UAVTexelBuffer;
   };
 
   ShaderVisibleDescriptorGPUStorage();
@@ -173,6 +183,45 @@ public:
     return S_OK;
   }
 
+  virtual HRESULT
+  AddUnorderedAccessView(UINT Index, Texture *Texture, TextureViewKey View) {
+    if (Index >= descriptors_.size())
+      return E_INVALIDARG;
+    auto &cpu_storage = descriptors_[Index];
+    cpu_storage.type = ShaderVisibleDescriptorType::UAVTexture;
+    cpu_storage.UAVTexture.texture = Texture; // 
+    cpu_storage.UAVTexture.view = View;
+    if (mapped_argument_buffer_) {
+      auto &texture_view = Texture->view(View);
+      auto &gpu_storage = mapped_argument_buffer_[Index];
+      gpu_storage.UAVTexture.resource_id = texture_view.gpuResourceID;
+      gpu_storage.UAVTexture.metadata = TextureMetadata(Texture->arrayLength(View), 0);
+    }
+    return S_OK;
+  }
+
+  virtual HRESULT
+  AddUnorderedAccessView(UINT Index, Buffer *UAVBuffer, BufferViewKey View, BufferSlice Slice) {
+    if (Index >= descriptors_.size())
+      return E_INVALIDARG;
+    auto &cpu_storage = descriptors_[Index];
+    cpu_storage.type = ShaderVisibleDescriptorType::UAVTexelBuffer;
+    cpu_storage.UAVTexelBuffer.buffer = UAVBuffer;
+    cpu_storage.UAVTexelBuffer.slice = Slice;
+    cpu_storage.UAVTexelBuffer.view = View;
+    if (mapped_argument_buffer_) { 
+      auto &gpu_storage = mapped_argument_buffer_[Index];
+      if (UAVBuffer) {
+        auto &buffer_view = UAVBuffer->view_(View);
+        gpu_storage.UAVTexelBuffer.resource_id = buffer_view.gpu_resource_id;
+        gpu_storage.UAVTexelBuffer.metadata = ((uint64_t)Slice.elementCount << 32) | (uint64_t)(Slice.firstElement);
+      } else {
+        gpu_storage.UAVTexelBuffer.resource_id = 0;
+        gpu_storage.UAVTexelBuffer.metadata = 0;
+      }
+    }
+    return S_OK;
+  }
 };
 
 class MTLD3D12RenderTargetDescriptorHeapImpl : public MTLD3D12Pageable<MTLD3D12RenderTargetDescriptorHeap> {
