@@ -100,10 +100,10 @@ PopulateWMTTextureInfo(WMT::Device Device, WMTTextureInfo &InfoOut, const D3D12_
     break;
   }
   }
+
+  InfoOut.mipmap_level_count = 32 - __builtin_clz(InfoOut.width | InfoOut.height | InfoOut.depth);
   if (Desc.MipLevels)
-    InfoOut.mipmap_level_count = Desc.MipLevels;
-  else
-    InfoOut.mipmap_level_count = 32 - __builtin_clz(InfoOut.width | InfoOut.height | InfoOut.depth);
+    InfoOut.mipmap_level_count = std::min<uint32_t>(InfoOut.mipmap_level_count, Desc.MipLevels);
 
   WMTTextureUsage Usage = WMTTextureUsagePixelFormatView;
   if (Desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET)
@@ -167,6 +167,9 @@ public:
     HRESULT hr = PopulateWMTTextureInfo(device_->GetMTLDevice(), texture_info, desc_);
     if (FAILED(hr))
       return hr;
+
+    if (!desc_.MipLevels)
+      desc_.MipLevels = texture_info.mipmap_level_count;
 
     texture = new Texture(texture_info, device_->GetMTLDevice());
     Flags<TextureAllocationFlag> flags = {};
