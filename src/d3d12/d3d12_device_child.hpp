@@ -56,7 +56,7 @@ public:
   }
 
 private:
-  ComPrivateData private_data_;
+  ConcurrentComPrivateData private_data_;
 };
 
 template <typename... Base> class MTLD3D12DeviceChild : public MTLD3D12Object<ComObject<Base...>> {
