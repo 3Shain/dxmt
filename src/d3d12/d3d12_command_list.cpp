@@ -672,7 +672,34 @@ public:
     }
   };
 
-  void STDMETHODCALLTYPE CopyResource(ID3D12Resource *pDstResource, ID3D12Resource *pSrcResource) { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE
+  CopyResource(ID3D12Resource *pDstResource, ID3D12Resource *pSrcResource) {
+    auto *pDst = static_cast<MTLD3D12Resource *>(pDstResource);
+    auto *pSrc = static_cast<MTLD3D12Resource *>(pSrcResource);
+    if (!pDst || !pSrc || (pDst == pSrc))
+      return;
+
+    auto DstDesc = pDst->GetDesc();
+    auto SrcDesc = pSrc->GetDesc();
+    if (DstDesc.Dimension != SrcDesc.Dimension)
+      return;
+
+    if (!PreBlit())
+      return;
+
+    if (DstDesc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
+      auto &cmd_cp = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
+      cmd_cp.type = WMTBlitCommandCopyFromBufferToBuffer;
+      cmd_cp.copy_length = SrcDesc.Width;
+      cmd_cp.src = pSrc->buffer->current()->buffer();
+      cmd_cp.src_offset = 0;
+      cmd_cp.dst = pDst->buffer->current()->buffer();
+      cmd_cp.dst_offset = 0;
+      return;
+    }
+
+    IMPLEMENT_ME
+  };
 
   void STDMETHODCALLTYPE CopyTiles(
       ID3D12Resource *tiled_resource, const D3D12_TILED_RESOURCE_COORDINATE *tile_region_start_coordinate,
