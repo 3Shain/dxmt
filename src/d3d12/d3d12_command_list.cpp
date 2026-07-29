@@ -28,6 +28,8 @@ enum class DirtyState {
   GraphicsRootSignature,
   Viewport,
   ScissorRect,
+  ComputeRootArguments,
+  ComputeRootSignature,
 };
 
 enum class DrawCallStatus {
@@ -140,6 +142,8 @@ class MTLD3D12GraphicsCommandListImpl : public MTLD3D12DeviceChild<MTLD3D12Graph
   uint64_t rootarg_graphics_staging_[64];
 
   Com<MTLD3D12ComputePipelineState, false> pso_compute_;
+  Com<MTLD3D12RootSignature, false> rootsig_compute_;
+  uint64_t rootarg_compute_staging_[64];
 
 public:
   MTLD3D12GraphicsCommandListImpl(MTLD3D12Device *pDevice) : MTLD3D12DeviceChild<MTLD3D12GraphicsCommandList>(pDevice) {}
@@ -176,6 +180,9 @@ public:
 
     rootsig_graphics_ = nullptr;
     memset(rootarg_graphics_staging_, 0, sizeof(rootarg_graphics_staging_));
+
+    rootsig_compute_ = nullptr;
+    memset(rootarg_compute_staging_, 0, sizeof(rootarg_compute_staging_));
 
     memset(vertex_buffers_.data(), 0, sizeof(vertex_buffers_));
 
@@ -481,12 +488,40 @@ public:
       compute->cmd_head.type = WMTComputeCommandNop;
       compute->cmd_head.next.set(0);
       compute->cmd_tail = (wmtcmd_base *)&compute->cmd_head;
+      dirty_state_.set(DirtyState::ComputeRootArguments, DirtyState::ComputeRootSignature);
       if (pso_compute_) {
         auto &cmd_setpso = allocator_->EncodeComputeCommand<wmtcmd_compute_setpso>();
         cmd_setpso.type = WMTComputeCommandSetPSO;
         cmd_setpso.pso = pso_compute_->pso;
         cmd_setpso.threadgroup_size = pso_compute_->threadgroup_size;
       }
+    }
+
+    if (dirty_state_.test(DirtyState::ComputeRootArguments)) {
+      if (rootsig_compute_) {
+        auto [Ptr, Offset] = allocator_->AllocateGPUHeap(sizeof(uint64_t) * rootsig_compute_->UploadQwords, 64);
+        memcpy(Ptr, rootarg_compute_staging_, rootsig_compute_->UploadQwords * sizeof(uint64_t));
+        auto &cmd_argbuf = allocator_->EncodeComputeCommand<wmtcmd_compute_setbuffer>();
+        cmd_argbuf.type = WMTComputeCommandSetBuffer;
+        cmd_argbuf.buffer = allocator_->gpu_heap_buffer_;
+        cmd_argbuf.offset = Offset;
+        cmd_argbuf.index = SM50_BINDING_INDEX_ROOT_ARGUMENTS;
+      }
+      dirty_state_.clr(DirtyState::ComputeRootArguments);
+    }
+
+    if (dirty_state_.test(DirtyState::ComputeRootSignature)) {
+      if (rootsig_compute_) {
+        auto static_sampler_encode_size = sizeof(uint64_t) * rootsig_compute_->NumStaticSamplers * 4;
+        auto [Ptr, Offset] = allocator_->AllocateGPUHeap(static_sampler_encode_size, 64);
+        memcpy(Ptr, rootsig_compute_->EncodedStaticSamplers, static_sampler_encode_size);
+        auto &cmd_argbuf = allocator_->EncodeComputeCommand<wmtcmd_compute_setbuffer>();
+        cmd_argbuf.type = WMTComputeCommandSetBuffer;
+        cmd_argbuf.buffer = allocator_->gpu_heap_buffer_;
+        cmd_argbuf.offset = Offset;
+        cmd_argbuf.index = SM50_BINDING_INDEX_STATIC_SAMPLERS;
+      }
+      dirty_state_.clr(DirtyState::ComputeRootSignature);
     }
 
     return true;
@@ -751,7 +786,18 @@ public:
     // no need to do anything here because because we encode the full descriptor table address in root argument
   };
 
-  void STDMETHODCALLTYPE SetComputeRootSignature(ID3D12RootSignature *pRootSignature) { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE
+  SetComputeRootSignature(ID3D12RootSignature *pRootSignature) {
+    if (rootsig_compute_.ptr() == pRootSignature)
+      return;
+    if (pRootSignature) {
+      rootsig_compute_ = static_cast<MTLD3D12RootSignature *>(pRootSignature);
+      assert(rootsig_compute_->UploadQwords < std::size(rootarg_compute_staging_));
+    } else {
+      rootsig_compute_ = nullptr;
+    }
+    dirty_state_.set(DirtyState::ComputeRootArguments, DirtyState::ComputeRootSignature);
+  };
 
   void STDMETHODCALLTYPE
   SetGraphicsRootSignature(ID3D12RootSignature *pRootSignature) {
@@ -767,7 +813,12 @@ public:
   };
 
   void STDMETHODCALLTYPE SetComputeRootDescriptorTable(UINT Index, D3D12_GPU_DESCRIPTOR_HANDLE BaseDescriptor) {
-    IMPLEMENT_ME
+    if (!rootsig_compute_)
+      return;
+    if (Index > rootsig_compute_->ParameterSlots)
+      return;
+    rootarg_compute_staging_[rootsig_compute_->SlotQwordOffsets[Index]] = BaseDescriptor.ptr;
+    dirty_state_.set(DirtyState::ComputeRootArguments);
   };
 
   void STDMETHODCALLTYPE
@@ -780,7 +831,15 @@ public:
     dirty_state_.set(DirtyState::GraphicsRootArguments);
   };
 
-  void STDMETHODCALLTYPE SetComputeRoot32BitConstant(UINT Index, UINT Data, UINT DstOffset) { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE SetComputeRoot32BitConstant(UINT Index, UINT Data, UINT DstOffset) {
+    if (!rootsig_compute_)
+      return;
+    if (Index > rootsig_compute_->ParameterSlots)
+      return;
+    auto dst = reinterpret_cast<uint32_t *>(rootarg_compute_staging_ + rootsig_compute_->SlotQwordOffsets[Index]);
+    dst[DstOffset] = Data;
+    dirty_state_.set(DirtyState::ComputeRootArguments);
+  };
 
   void STDMETHODCALLTYPE
   SetGraphicsRoot32BitConstant(UINT Index, UINT Data, UINT DstOffset) {
@@ -795,7 +854,16 @@ public:
 
   void STDMETHODCALLTYPE
   SetComputeRoot32BitConstants(UINT Index, UINT ConstantCount, const void *pData, UINT DstOffset) {
-    IMPLEMENT_ME
+    if (!rootsig_compute_)
+      return;
+    if (Index > rootsig_compute_->ParameterSlots)
+      return;
+    auto src = reinterpret_cast<const uint32_t *>(pData);
+    auto dst = reinterpret_cast<uint32_t *>(rootarg_compute_staging_ + rootsig_compute_->SlotQwordOffsets[Index]);
+    for (unsigned i = 0; i < ConstantCount; i++) {
+      dst[i + DstOffset] = src[i];
+    }
+    dirty_state_.set(DirtyState::ComputeRootArguments);
   };
 
   void STDMETHODCALLTYPE
@@ -812,7 +880,14 @@ public:
     dirty_state_.set(DirtyState::GraphicsRootArguments);
   };
 
-  void STDMETHODCALLTYPE SetComputeRootConstantBufferView(UINT Index, D3D12_GPU_VIRTUAL_ADDRESS VA) { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE SetComputeRootConstantBufferView(UINT Index, D3D12_GPU_VIRTUAL_ADDRESS VA) {
+    if (!rootsig_compute_)
+      return;
+    if (Index > rootsig_compute_->ParameterSlots)
+      return;
+    rootarg_compute_staging_[rootsig_compute_->SlotQwordOffsets[Index]] = VA;
+    dirty_state_.set(DirtyState::ComputeRootArguments);
+  };
 
   void STDMETHODCALLTYPE
   SetGraphicsRootConstantBufferView(UINT Index, D3D12_GPU_VIRTUAL_ADDRESS VA) {
@@ -824,7 +899,14 @@ public:
     dirty_state_.set(DirtyState::GraphicsRootArguments);
   };
 
-  void STDMETHODCALLTYPE SetComputeRootShaderResourceView(UINT Index, D3D12_GPU_VIRTUAL_ADDRESS VA) { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE SetComputeRootShaderResourceView(UINT Index, D3D12_GPU_VIRTUAL_ADDRESS VA) {
+    if (!rootsig_compute_)
+      return;
+    if (Index > rootsig_compute_->ParameterSlots)
+      return;
+    rootarg_compute_staging_[rootsig_compute_->SlotQwordOffsets[Index]] = VA;
+    dirty_state_.set(DirtyState::ComputeRootArguments);
+  };
 
   void STDMETHODCALLTYPE
   SetGraphicsRootShaderResourceView(UINT Index, D3D12_GPU_VIRTUAL_ADDRESS VA) {
@@ -836,7 +918,14 @@ public:
     dirty_state_.set(DirtyState::GraphicsRootArguments);
   };
 
-  void STDMETHODCALLTYPE SetComputeRootUnorderedAccessView(UINT Index, D3D12_GPU_VIRTUAL_ADDRESS VA) { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE SetComputeRootUnorderedAccessView(UINT Index, D3D12_GPU_VIRTUAL_ADDRESS VA) {
+    if (!rootsig_compute_)
+      return;
+    if (Index > rootsig_compute_->ParameterSlots)
+      return;
+    rootarg_compute_staging_[rootsig_compute_->SlotQwordOffsets[Index]] = VA;
+    dirty_state_.set(DirtyState::ComputeRootArguments);
+  };
 
   void STDMETHODCALLTYPE
   SetGraphicsRootUnorderedAccessView(UINT Index, D3D12_GPU_VIRTUAL_ADDRESS VA) {
