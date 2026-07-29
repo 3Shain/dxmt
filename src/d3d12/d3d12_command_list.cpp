@@ -549,6 +549,8 @@ public:
         return;
 
       auto dst_planar_count = getPlanarCount(dst->pixelFormat());
+      auto dst_subresource_index = pDst->SubresourceIndex / dst_planar_count;
+      auto dst_subresource_planar = pDst->SubresourceIndex % dst_planar_count;
 
       if (pSrc->Type == D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT) {
         auto &src = static_cast<MTLD3D12Resource *>(pSrc->pResource)->buffer;
@@ -558,7 +560,7 @@ public:
           IMPLEMENT_ME
 
         auto &cmd_cp = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture_withblitoption>();
-        cmd_cp.type = WMTBlitCommandCopyFromBufferToTexture;
+        cmd_cp.type = WMTBlitCommandCopyFromBufferToTextureWithBlitOption;
         cmd_cp.src = src->current()->buffer();
         cmd_cp.src_offset = pSrc->PlacedFootprint.Offset;
         cmd_cp.bytes_per_row = pSrc->PlacedFootprint.Footprint.RowPitch;
@@ -568,11 +570,11 @@ public:
             pSrc->PlacedFootprint.Footprint.Depth
         };
         cmd_cp.dst = dst->current()->texture();
-        cmd_cp.level = pDst->SubresourceIndex % dst->miplevelCount();
-        cmd_cp.slice = pDst->SubresourceIndex / dst->miplevelCount();
-        cmd_cp.options = dst_planar_count ? (pSrc->SubresourceIndex ? WMTBlitOptionStencilFromDepthStencil
-                                                                    : WMTBlitOptionDepthFromDepthStencil)
-                                          : WMTBlitOptionNone;
+        cmd_cp.level = dst_subresource_index % dst->miplevelCount();
+        cmd_cp.slice = dst_subresource_index / dst->miplevelCount();
+        cmd_cp.options = (dst_planar_count > 1) ? (dst_subresource_planar ? WMTBlitOptionStencilFromDepthStencil
+                                                                          : WMTBlitOptionDepthFromDepthStencil)
+                                                : WMTBlitOptionNone;
         cmd_cp.origin = {DstX, DstY, DstZ};
       } else {
         auto &src = static_cast<MTLD3D12Resource *>(pSrc->pResource)->texture;
