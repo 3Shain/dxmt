@@ -157,8 +157,18 @@ public:
     BufferSlice Slice;
 
     if (ViewDesc.Format == DXGI_FORMAT_UNKNOWN || ViewDesc.Buffer.Flags & D3D12_BUFFER_UAV_FLAG_RAW) {
-      // TODO(d3d12): structured/raw buffer view
-      IMPLEMENT_ME
+      UINT Stride = (ViewDesc.Buffer.Flags & D3D12_BUFFER_UAV_FLAG_RAW) ? 4 : ViewDesc.Buffer.StructureByteStride;
+      Slice.firstElement = ViewDesc.Buffer.FirstElement;
+      Slice.elementCount = ViewDesc.Buffer.NumElements;
+      Slice.byteOffset = Slice.firstElement * Stride;
+      Slice.byteLength = Slice.elementCount * Stride;
+      if (!pCounter)
+        return Heap->AddUnorderedAccessView(Index, buffer.ptr(), Slice, nullptr, 0);
+
+      auto Counter = static_cast<MTLD3D12Buffer *>(pCounter);
+      return Heap->AddUnorderedAccessView(
+          Index, buffer.ptr(), Slice, Counter->buffer.ptr(), ViewDesc.Buffer.CounterOffsetInBytes
+      );
     }
 
     MTL_DXGI_FORMAT_DESC Format;

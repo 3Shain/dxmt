@@ -81,6 +81,7 @@ enum class ShaderVisibleDescriptorType {
   ConstantBuffer,
   UAVTexture,
   UAVTexelBuffer,
+  UAVBuffer,
 };
 
 struct SRVTextureCPUStorage {
@@ -101,6 +102,11 @@ struct CBVCommonStorage {
   uint64_t size = 0;
 };
 
+struct UAVBufferCPUStorage {
+  Buffer *buffer = nullptr;
+  BufferSlice slice{};
+};
+
 struct ShaderVisibleDescriptorCPUStorage {
   ShaderVisibleDescriptorType type;
   union {
@@ -108,6 +114,7 @@ struct ShaderVisibleDescriptorCPUStorage {
     CBVCommonStorage ConstantBuffer;
     UAVTextureCPUStorage UAVTexture;
     UAVTexelBufferCPUStorage UAVTexelBuffer;
+    UAVBufferCPUStorage UAVBuffer;
   };
 
   ShaderVisibleDescriptorCPUStorage() : type(ShaderVisibleDescriptorType::Null) {}
@@ -123,6 +130,10 @@ public:
   virtual HRESULT AddUnorderedAccessView(UINT Index, Texture *Texture, TextureViewKey View) = 0;
 
   virtual HRESULT AddUnorderedAccessView(UINT Index, Buffer *Buffer, BufferViewKey View, BufferSlice Slice) = 0;
+
+  virtual HRESULT AddUnorderedAccessView(
+      UINT Index, Buffer *UAVBuffer, BufferSlice Slice, Buffer *Counter, UINT CounterOffsetInBytes
+  ) = 0;
 };
 
 class MTLD3D12SamplerDescriptorHeap : public ID3D12DescriptorHeap {

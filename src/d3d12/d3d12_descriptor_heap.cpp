@@ -39,12 +39,20 @@ struct UAVTexelBufferGPUStorage {
   uint64_t padding[2];
 };
 
+struct UAVBufferGPUStorage {
+  uint64_t pointer;
+  uint64_t metadata;
+  uint64_t counter_pointer;
+  uint64_t padding;
+};
+
 struct ShaderVisibleDescriptorGPUStorage {
   union {
     SRVTextureGPUStorage SRVTexture;
     CBVCommonStorage ConstantBuffer;
     UAVTextureGPUStorage UAVTexture;
     UAVTexelBufferGPUStorage UAVTexelBuffer;
+    UAVBufferGPUStorage UAVBuffer;
   };
 
   ShaderVisibleDescriptorGPUStorage();
@@ -218,6 +226,29 @@ public:
       } else {
         gpu_storage.UAVTexelBuffer.resource_id = 0;
         gpu_storage.UAVTexelBuffer.metadata = 0;
+      }
+    }
+    return S_OK;
+  }
+
+  virtual HRESULT
+  AddUnorderedAccessView(UINT Index, Buffer *UAVBuffer, BufferSlice Slice, Buffer *Counter, UINT CounterOffsetInBytes) {
+    if (Index >= descriptors_.size())
+      return E_INVALIDARG;
+    auto &cpu_storage = descriptors_[Index];
+    cpu_storage.type = ShaderVisibleDescriptorType::UAVBuffer;
+    cpu_storage.UAVBuffer.buffer = UAVBuffer;
+    cpu_storage.UAVBuffer.slice = Slice;
+    if (mapped_argument_buffer_) {
+      auto &gpu_storage = mapped_argument_buffer_[Index];
+      if (UAVBuffer) {
+        gpu_storage.UAVBuffer.pointer = UAVBuffer->current()->gpuAddress() + Slice.byteOffset;
+        gpu_storage.UAVBuffer.metadata = Slice.byteLength;
+        gpu_storage.UAVBuffer.counter_pointer = Counter ? Counter->current()->gpuAddress() + CounterOffsetInBytes : 0;
+      } else {
+        gpu_storage.UAVBuffer.pointer = 0;
+        gpu_storage.UAVBuffer.metadata = 0;
+        gpu_storage.UAVBuffer.counter_pointer = 0;
       }
     }
     return S_OK;
