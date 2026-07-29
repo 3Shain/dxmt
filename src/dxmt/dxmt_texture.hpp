@@ -242,6 +242,11 @@ public:
     return std::max(info_.height >> view.mip_start, 1u);
   }
 
+  unsigned
+  depth(TextureViewKey view) const {
+    return std::max(info_.depth >> view.mip_start, 1u);
+  }
+
   /**
   \warning for cube texture, this would be multiple of 6.
   */
