@@ -38,8 +38,10 @@ class MTLD3D12DeviceImpl : public MTLD3D12Object<ComObject<MTLD3D12Device>> {
   WMT::Reference<WMT::ResidencySet> residency_set_;
   std::map<uint64_t, BufferAllocation *> interval_map_;
 
+  InternalCommandLibrary command_library;
+
 public:
-  MTLD3D12DeviceImpl(IMTLDXGIAdapter *adapter) : adapter_(adapter) {}
+  MTLD3D12DeviceImpl(IMTLDXGIAdapter *adapter) : adapter_(adapter), command_library(adapter_->GetMTLDevice()) {}
 
   ~MTLD3D12DeviceImpl() {}
 
@@ -744,6 +746,11 @@ public:
     --iter;
     *pOffset = VA - iter->first;
     return iter->second;
+  }
+
+  InternalCommandLibrary &
+  GetLib() {
+    return command_library;
   }
 };
 

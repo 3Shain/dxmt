@@ -24,6 +24,7 @@
 #include "dxgi_interfaces.h"
 #include "airconv_public.h"
 #include "dxmt_buffer.hpp"
+#include "dxmt_command.hpp"
 #include "dxmt_fence.hpp"
 #include "dxmt_presenter.hpp"
 #include "dxmt_texture.hpp"
@@ -162,6 +163,8 @@ public:
   virtual HRESULT UnregisterResidencyAndVA(BufferAllocation *allocation) = 0;
 
   virtual BufferAllocation *LookupBufferByVA(D3D12_GPU_VIRTUAL_ADDRESS VA, uint64_t *pOffset) = 0;
+
+  virtual InternalCommandLibrary& GetLib() = 0;
 
   EventListener event_listener;
 };

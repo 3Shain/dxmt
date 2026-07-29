@@ -1078,11 +1078,58 @@ public:
     allocator_->InvalidateCurrentPass();
   };
 
-  void STDMETHODCALLTYPE ClearUnorderedAccessViewUint(
+  void STDMETHODCALLTYPE
+  ClearUnorderedAccessViewUint(
       D3D12_GPU_DESCRIPTOR_HANDLE GpuHandle, D3D12_CPU_DESCRIPTOR_HANDLE CpuHandle, ID3D12Resource *pResource,
       const UINT Values[4], UINT RectCount, const D3D12_RECT *pRects
   ) {
-    IMPLEMENT_ME
+    auto [Heap, Index] = GetShaderVisibleDescriptorHeap(device_, CpuHandle);
+    auto &Descriptor = Heap->GetDescriptor(Index);
+    auto color = std::array<uint32_t, 4>({Values[0], Values[1], Values[2], Values[3]});
+    D3D12_RECT full_rect;
+    switch (Descriptor.type) {
+    case ShaderVisibleDescriptorType::UAVBuffer: {
+      allocator_->clear_uav_.begin(color, Descriptor.UAVBuffer.buffer);
+      full_rect = {
+          (LONG)Descriptor.UAVBuffer.slice.byteOffset >> 2, 0,
+          (LONG)((Descriptor.UAVBuffer.slice.byteOffset + Descriptor.UAVBuffer.slice.byteLength) >> 2), 1
+      };
+      break;
+    }
+    case ShaderVisibleDescriptorType::UAVTexture: {
+      allocator_->clear_uav_.begin(color, Descriptor.UAVTexture.texture, Descriptor.UAVTexture.view);
+      full_rect = {
+          0, 0, (LONG)Descriptor.UAVTexture.texture->width(Descriptor.UAVTexture.view),
+          (LONG)Descriptor.UAVTexture.texture->height(Descriptor.UAVTexture.view)
+      };
+      break;
+    }
+    case ShaderVisibleDescriptorType::UAVTexelBuffer: {
+      allocator_->clear_uav_.begin(color, Descriptor.UAVTexelBuffer.buffer, Descriptor.UAVTexelBuffer.view);
+      full_rect = {
+          (LONG)Descriptor.UAVTexelBuffer.slice.firstElement, 0,
+          (LONG)(Descriptor.UAVTexelBuffer.slice.firstElement + Descriptor.UAVTexelBuffer.slice.elementCount), 1
+      };
+      break;
+    }
+    default:
+      allocator_->clear_uav_.end();
+      return;
+    }
+
+    const D3D12_RECT *rects = RectCount > 0 ? pRects : &full_rect;
+    UINT rect_count = RectCount > 0 ? RectCount : 1;
+
+    for (unsigned i = 0; i < rect_count; i++) {
+      auto &rect = rects[i];
+      auto width = rect.right - rect.left;
+      auto height = rect.bottom - rect.top;
+      if (width <= 0 || height <= 0)
+        continue;
+      allocator_->clear_uav_.clear(rect.left, rect.top, width, height);
+    }
+
+    allocator_->clear_uav_.end();
   };
 
   void STDMETHODCALLTYPE ClearUnorderedAccessViewFloat(

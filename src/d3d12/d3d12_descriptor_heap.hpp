@@ -134,6 +134,8 @@ public:
   virtual HRESULT AddUnorderedAccessView(
       UINT Index, Buffer *UAVBuffer, BufferSlice Slice, Buffer *Counter, UINT CounterOffsetInBytes
   ) = 0;
+
+  virtual ShaderVisibleDescriptorCPUStorage const &GetDescriptor(UINT Index) = 0;
 };
 
 class MTLD3D12SamplerDescriptorHeap : public ID3D12DescriptorHeap {

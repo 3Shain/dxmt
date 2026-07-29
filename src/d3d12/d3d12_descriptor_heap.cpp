@@ -253,6 +253,11 @@ public:
     }
     return S_OK;
   }
+
+  virtual ShaderVisibleDescriptorCPUStorage const &
+  GetDescriptor(UINT Index) {
+    return descriptors_[Index];
+  }
 };
 
 class MTLD3D12RenderTargetDescriptorHeapImpl : public MTLD3D12Pageable<MTLD3D12RenderTargetDescriptorHeap> {
