@@ -391,14 +391,11 @@ public:
         if (FAILED(hr = MTLQueryDXGIFormat(device_->GetMTLDevice(), pDesc->DSVFormat, format_desc))) {
           return hr;
         }
-        // TODO
-        // if (any_bit_set(
-        //         device_->GetMTLPixelFormatCapability(format_desc.PixelFormat) & FormatCapability::DepthStencil
-        //     )) {
-        //   info.depth_pixel_format = format_desc.PixelFormat;
-        //   if (DepthStencilPlanarFlags(info.depth_pixel_format) & 2)
-        //     info.stencil_pixel_format = info.depth_pixel_format;
-        // }
+        auto dsv_flags = DepthStencilPlanarFlags(format_desc.PixelFormat);
+        if (dsv_flags & 1)
+          info.depth_pixel_format = format_desc.PixelFormat;
+        if (dsv_flags & 2)
+          info.stencil_pixel_format = format_desc.PixelFormat;
       }
     }
 
