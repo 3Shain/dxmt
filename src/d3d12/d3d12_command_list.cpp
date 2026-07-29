@@ -683,7 +683,52 @@ public:
       ID3D12Resource *pDstResource, UINT DstSubresource, ID3D12Resource *pSrcResource, UINT SrcSubresource,
       DXGI_FORMAT Format
   ) {
-    IMPLEMENT_ME
+    auto *pDst = static_cast<MTLD3D12Resource *>(pDstResource);
+    auto *pSrc = static_cast<MTLD3D12Resource *>(pSrcResource);
+
+    if (!pDst->texture || !pSrc->texture)
+      return;
+
+    auto DstMips = pDst->texture->miplevelCount();
+    auto DstLevel = DstSubresource % DstMips;
+    auto DstSlice = DstSubresource / DstMips;
+
+    allocator_->InvalidateCurrentPass();
+    auto resolve = allocator_->AllocatePass<ResolveEncoderData>();
+    resolve->type = EncoderType::Resolve;
+
+    MTL_DXGI_FORMAT_DESC format_desc;
+    if (FAILED(MTLQueryDXGIFormat(device_->GetMTLDevice(), Format, format_desc))) {
+      ERR("ResolveSubresource: invalid format ", Format);
+      return;
+    }
+    {
+      auto format = format_desc.PixelFormat;
+      TextureViewDescriptor src_desc;
+      auto &src = pSrc->texture;
+      auto &dst = pDst->texture;
+      src_desc.format = format;
+      src_desc.type = src->textureType();
+      src_desc.arraySize = 1;
+      src_desc.firstArraySlice = SrcSubresource; // src must be a MS(Array) texture which has exactly 1 mipmap level
+      src_desc.miplevelCount = 1;
+      src_desc.firstMiplevel = 0;
+
+      TextureViewDescriptor dst_desc;
+      dst_desc.format = format;
+      dst_desc.type = WMTTextureType2D;
+      dst_desc.arraySize = 1;
+      dst_desc.firstArraySlice = DstSlice;
+      dst_desc.miplevelCount = 1;
+      dst_desc.firstMiplevel = DstLevel;
+
+      auto src_view = src->createView(src_desc);
+      auto dst_view = dst->createView(dst_desc);
+
+      resolve->src = src->view(src_view);
+      resolve->dst = dst->view(dst_view);
+    }
+    allocator_->InvalidateCurrentPass();
   };
 
   void STDMETHODCALLTYPE
