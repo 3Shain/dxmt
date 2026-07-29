@@ -599,7 +599,9 @@ public:
         cmd_cp.src = src->current()->buffer();
         cmd_cp.src_offset = pSrc->PlacedFootprint.Offset;
         cmd_cp.bytes_per_row = pSrc->PlacedFootprint.Footprint.RowPitch;
-        cmd_cp.bytes_per_image = 0;
+        cmd_cp.bytes_per_image = dst->textureType() == WMTTextureType3D
+                                     ? pSrc->PlacedFootprint.Footprint.Height * pSrc->PlacedFootprint.Footprint.RowPitch
+                                     : 0;
         cmd_cp.size = {
             pSrc->PlacedFootprint.Footprint.Width, pSrc->PlacedFootprint.Footprint.Height,
             pSrc->PlacedFootprint.Footprint.Depth
@@ -661,7 +663,9 @@ public:
         cmd_cp.dst = dst->current()->buffer();
         cmd_cp.offset = pDst->PlacedFootprint.Offset;
         cmd_cp.bytes_per_row = pDst->PlacedFootprint.Footprint.RowPitch;
-        cmd_cp.bytes_per_image = 0;
+        cmd_cp.bytes_per_image = src->textureType() == WMTTextureType3D
+                                     ? pDst->PlacedFootprint.Footprint.Height * pDst->PlacedFootprint.Footprint.RowPitch
+                                     : 0;
       } else {
         // so it is buffer to buffer copy?
         IMPLEMENT_ME
