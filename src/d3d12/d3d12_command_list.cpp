@@ -347,8 +347,7 @@ public:
       render->render_target_height = render_target_height;
       render->render_target_array_length = render_target_array_length;
       if (effective_rtvs == 0) {
-        IMPLEMENT_ME
-        // render->default_raster_sample_count = std::max(1u, forced_sample_count);
+        render->default_raster_sample_count = std::max(1u, pso_graphics_->forced_sample_count);
       }
 
       if (pso_graphics_) {
