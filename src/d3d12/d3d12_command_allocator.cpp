@@ -23,7 +23,8 @@ namespace dxmt {
 
 MTLD3D12CommandAllocatorImpl::MTLD3D12CommandAllocatorImpl(MTLD3D12Device *pDevice, D3D12_COMMAND_LIST_TYPE Type) :
     MTLD3D12Pageable<MTLD3D12CommandAllocator>(pDevice),
-    type_(Type) {}
+    type_(Type),
+    clear_uav_(device_->GetMTLDevice(), *this) {}
 
 HRESULT
 CreateCommandAllocator(MTLD3D12Device *pDevice, D3D12_COMMAND_LIST_TYPE Type, REFIID riid, void **ppCommandAllocator) {
@@ -132,5 +133,104 @@ MTLD3D12CommandAllocatorImpl::Reset() {
 
   return Initialize();
 };
+
+template <>
+WMT::Reference<WMT::ComputePipelineState>
+SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::getComputePipeline(std::string name) {
+  auto lib = ctx.device_->GetLib().getLibrary();
+  auto func = lib.newFunction(name.c_str());
+  if (!func)
+    return {};
+  WMT::Reference<WMT::Error> err;
+  auto pso = ctx.device_->GetMTLDevice().newComputePipelineState(func, err);
+  if (err) {
+    ERR("Failed to create compute PSO: ", err.description().getUTF8String());
+  }
+  return pso;
+}
+
+template <>
+void
+SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::startComputePass() {
+  ctx.InvalidateCurrentPass();
+  auto compute = ctx.AllocatePass<ComputeEncoderData>();
+  compute->type = EncoderType::Compute;
+  compute->cmd_head.type = WMTComputeCommandNop;
+  compute->cmd_head.next.set(0);
+  compute->cmd_tail = (wmtcmd_base *)&compute->cmd_head;
+}
+
+template <>
+void
+SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::endPass() {
+  ctx.InvalidateCurrentPass();
+}
+
+template <>
+void
+SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::setComputePSO(WMT::ComputePipelineState pso, WMTSize tgsize) {
+  auto &setpso = ctx.EncodeComputeCommand<wmtcmd_compute_setpso>();
+  setpso.type = WMTComputeCommandSetPSO;
+  setpso.pso = pso;
+  setpso.threadgroup_size = tgsize;
+}
+
+template <>
+void
+SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::dispatch(WMTSize size) {
+  auto &dispatch = ctx.EncodeComputeCommand<wmtcmd_compute_dispatch>();
+  dispatch.type = WMTComputeCommandDispatchThreads;
+  dispatch.size = size;
+}
+
+template <>
+void
+SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::setComputeTexture(
+    uint32_t index, const Rc<Texture> &texture, uint64_t viewId, int flags
+) {
+  auto &dst_ = texture->view(viewId);
+  auto &settex = ctx.EncodeComputeCommand<wmtcmd_compute_settexture>();
+  settex.type = WMTComputeCommandSetTexture;
+  settex.texture = dst_.texture;
+  settex.index = index;
+}
+
+template <>
+void
+SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::setComputeTexelBuffer(
+    uint32_t index, const Rc<Buffer> &buffer, uint64_t viewId, int flags
+) {
+  auto &dst_ = buffer->view_(viewId);
+  auto &settexbuf = ctx.EncodeComputeCommand<wmtcmd_compute_settexture>();
+  settexbuf.type = WMTComputeCommandSetTexture;
+  settexbuf.texture = dst_.texture;
+  settexbuf.index = index;
+}
+
+template <>
+void
+SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::setComputeBuffer(
+    uint32_t index, const Rc<Buffer> &buffer, uint32_t offset, uint32_t length, int flags
+) {
+  auto dst_ = buffer->current();
+  auto &setbuf = ctx.EncodeComputeCommand<wmtcmd_compute_setbuffer>();
+  setbuf.type = WMTComputeCommandSetBuffer;
+  setbuf.buffer = dst_->buffer();
+  setbuf.index = index;
+  setbuf.offset = 0; // the `offset` and `length` parameter of this function are just for (potential) hazard tracking,
+                     // which we don't need here
+}
+
+template <>
+void *
+SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::setComputeBytes(uint32_t index, uint32_t length) {
+  auto &setmeta = ctx.EncodeComputeCommand<wmtcmd_compute_setbytes>();
+  setmeta.type = WMTComputeCommandSetBytes;
+  void *temp = ctx.AllocateCPUHeap(length, 16);
+  setmeta.bytes.set(temp);
+  setmeta.length = length;
+  setmeta.index = index;
+  return temp;
+}
 
 }; // namespace dxmt

@@ -19,6 +19,7 @@
 #pragma once
 
 #include "d3d12_pageable.hpp"
+#include "dxmt_command_clear.hpp"
 
 namespace dxmt {
 
@@ -39,6 +40,7 @@ ptr_add(const void *const p, const std::uintptr_t &amount) noexcept {
 
 class MTLD3D12CommandAllocatorImpl : public MTLD3D12Pageable<MTLD3D12CommandAllocator> {
   friend class MTLD3D12GraphicsCommandListImpl;
+  friend struct SimpleCommandContext<MTLD3D12CommandAllocatorImpl>;
 
   D3D12_COMMAND_LIST_TYPE type_;
   
@@ -55,6 +57,9 @@ class MTLD3D12CommandAllocatorImpl : public MTLD3D12Pageable<MTLD3D12CommandAllo
   size_t encoder_count_;
 
   small_vector<EncoderData, 64> encoder_lists_;
+
+
+  ClearUAV<MTLD3D12CommandAllocatorImpl> clear_uav_;
 
 public:
   MTLD3D12CommandAllocatorImpl(MTLD3D12Device *pDevice, D3D12_COMMAND_LIST_TYPE Type);
