@@ -219,6 +219,24 @@ public:
           encoder.endEncoding();
           break;
         }
+        case EncoderType::Resolve: {
+          auto data = static_cast<ResolveEncoderData *>(current);
+
+          WMTRenderPassInfo info;
+          WMT::InitializeRenderPassInfo(info);
+          info.colors[0].texture = data->src.texture();
+          info.colors[0].load_action = WMTLoadActionLoad;
+          info.colors[0].store_action = WMTStoreActionStoreAndMultisampleResolve;
+          info.colors[0].resolve_texture = data->dst.texture();
+
+          auto encoder = cmdbuf.renderCommandEncoder(info);
+          encoder.waitForFence(fence_, WMTRenderStageFragment);
+          encoder.setLabel(WMT::String::string("ResolvePass", WMTUTF8StringEncoding));
+          encoder.updateFence(fence_, WMTRenderStageFragment);
+          encoder.endEncoding();
+
+          break;
+        }
         }
         current = current->next;
       }

@@ -29,6 +29,7 @@ enum class EncoderType {
   Render,
   Blit,
   Compute,
+  Resolve,
 };
 
 struct EncoderData {
@@ -111,6 +112,10 @@ struct BlitEncoderData : EncoderData {
 struct ComputeEncoderData : EncoderData {
   wmtcmd_compute_nop cmd_head;
   wmtcmd_base *cmd_tail;
+};
+struct ResolveEncoderData : EncoderData {
+  TextureViewRef src;
+  TextureViewRef dst;
 };
 
 }; // namespace dxmt
