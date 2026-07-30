@@ -1028,8 +1028,11 @@ public:
 
   void STDMETHODCALLTYPE
   IASetVertexBuffers(UINT StartSlot, UINT Count, const D3D12_VERTEX_BUFFER_VIEW *Views) {
+    if (!Views)
+      return;
+    
     for (unsigned Slot = StartSlot; Slot < StartSlot + Count; Slot++) {
-      vertex_buffers_[Slot] = Views ? Views[Slot - StartSlot] : D3D12_VERTEX_BUFFER_VIEW{};
+      vertex_buffers_[Slot] = Views[Slot - StartSlot];
     }
     dirty_state_.set(DirtyState::VertexBuffer);
   };
