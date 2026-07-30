@@ -306,6 +306,15 @@ public:
   GetDescriptor(UINT Index) {
     return descriptors_[Index];
   }
+
+  virtual void
+  CopyDescriptors(UINT From, MTLD3D12DescriptorHeap *pHeapTo, UINT DescriptorTo, UINT CopyCount) {
+    for (unsigned i = 0; i < CopyCount; i++) {
+      static_cast<MTLD3D12DescriptorHeapImpl *>(pHeapTo)->descriptors_[DescriptorTo + i] = descriptors_[From + i];
+      static_cast<MTLD3D12DescriptorHeapImpl *>(pHeapTo)->mapped_argument_buffer_[DescriptorTo + i] =
+          mapped_argument_buffer_[From + i];
+    }
+  }
 };
 
 class MTLD3D12RenderTargetDescriptorHeapImpl : public MTLD3D12Pageable<MTLD3D12RenderTargetDescriptorHeap> {
@@ -390,6 +399,14 @@ public:
   virtual MTL_RENDER_TARGET_DESC
   GetRenderTarget(UINT Index) {
     return render_targets_[Index];
+  }
+
+  virtual void
+  CopyDescriptors(UINT From, MTLD3D12RenderTargetDescriptorHeap *pHeapTo, UINT DescriptorTo, UINT CopyCount) {
+    for (unsigned i = 0; i < CopyCount; i++) {
+      static_cast<MTLD3D12RenderTargetDescriptorHeapImpl *>(pHeapTo)->render_targets_[DescriptorTo + i] =
+          render_targets_[From + i];
+    }
   }
 };
 
@@ -516,6 +533,15 @@ public:
     }
 
     return S_OK;
+  }
+
+  virtual void
+  CopyDescriptors(UINT From, MTLD3D12SamplerDescriptorHeap *pHeapTo, UINT DescriptorTo, UINT CopyCount) {
+    for (unsigned i = 0; i < CopyCount; i++) {
+      static_cast<MTLD3D12SamplerDescriptorHeapImpl *>(pHeapTo)->samplers_[DescriptorTo + i] = samplers_[From + i];
+      static_cast<MTLD3D12SamplerDescriptorHeapImpl *>(pHeapTo)->mapped_argument_buffer_[DescriptorTo + i] =
+          mapped_argument_buffer_[From + i];
+    }
   }
 };
 

@@ -148,11 +148,15 @@ public:
   virtual HRESULT AddShaderResourceView(UINT Index, Buffer *Buffer, BufferSlice Slice) = 0;
 
   virtual ShaderVisibleDescriptorCPUStorage const &GetDescriptor(UINT Index) = 0;
+
+  virtual void CopyDescriptors(UINT From, MTLD3D12DescriptorHeap *pHeapTo, UINT DescriptorTo, UINT CopyCount) = 0;
 };
 
 class MTLD3D12SamplerDescriptorHeap : public ID3D12DescriptorHeap {
 public:
   virtual HRESULT AddSampler(UINT Index, const D3D12_SAMPLER_DESC *Desc) = 0;
+
+  virtual void CopyDescriptors(UINT From, MTLD3D12SamplerDescriptorHeap *pHeapTo, UINT DescriptorTo, UINT CopyCount) = 0;
 };
 
 struct MTL_RENDER_TARGET_DESC {
@@ -169,6 +173,8 @@ class MTLD3D12RenderTargetDescriptorHeap : public ID3D12DescriptorHeap {
 public:
   virtual HRESULT AddRenderTarget(UINT Index, MTL_RENDER_TARGET_DESC const *pDesc) = 0;
   virtual MTL_RENDER_TARGET_DESC GetRenderTarget(UINT Index) = 0;
+
+  virtual void CopyDescriptors(UINT From, MTLD3D12RenderTargetDescriptorHeap *pHeapTo, UINT DescriptorTo, UINT CopyCount) = 0;
 };
 
 } // namespace dxmt
