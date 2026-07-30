@@ -82,6 +82,8 @@ enum class ShaderVisibleDescriptorType {
   UAVTexture,
   UAVTexelBuffer,
   UAVBuffer,
+  SRVTexelBuffer,
+  SRVBuffer,
 };
 
 struct SRVTextureCPUStorage {
@@ -97,6 +99,8 @@ struct UAVTexelBufferCPUStorage {
   BufferSlice slice{};
 };
 
+using SRVTexelBufferCPUStorage = UAVTexelBufferCPUStorage;
+
 struct CBVCommonStorage {
   uint64_t address = 0;
   uint64_t size = 0;
@@ -107,6 +111,8 @@ struct UAVBufferCPUStorage {
   BufferSlice slice{};
 };
 
+using SRVBufferCPUStorage = UAVBufferCPUStorage;
+
 struct ShaderVisibleDescriptorCPUStorage {
   ShaderVisibleDescriptorType type;
   union {
@@ -115,6 +121,8 @@ struct ShaderVisibleDescriptorCPUStorage {
     UAVTextureCPUStorage UAVTexture;
     UAVTexelBufferCPUStorage UAVTexelBuffer;
     UAVBufferCPUStorage UAVBuffer;
+    SRVTexelBufferCPUStorage SRVTexelBuffer;
+    SRVBufferCPUStorage SRVBuffer;
   };
 
   ShaderVisibleDescriptorCPUStorage() : type(ShaderVisibleDescriptorType::Null) {}
@@ -134,6 +142,10 @@ public:
   virtual HRESULT AddUnorderedAccessView(
       UINT Index, Buffer *UAVBuffer, BufferSlice Slice, Buffer *Counter, UINT CounterOffsetInBytes
   ) = 0;
+
+  virtual HRESULT AddShaderResourceView(UINT Index, Buffer *Buffer, BufferViewKey View, BufferSlice Slice) = 0;
+
+  virtual HRESULT AddShaderResourceView(UINT Index, Buffer *Buffer, BufferSlice Slice) = 0;
 
   virtual ShaderVisibleDescriptorCPUStorage const &GetDescriptor(UINT Index) = 0;
 };

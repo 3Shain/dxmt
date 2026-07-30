@@ -132,8 +132,44 @@ public:
 
   virtual HRESULT STDMETHODCALLTYPE
   CreateShaderResourceView(const D3D12_SHADER_RESOURCE_VIEW_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor) {
-    IMPLEMENT_ME
-    return S_OK;
+    HRESULT hr;
+    D3D12_SHADER_RESOURCE_VIEW_DESC ViewDesc;
+    if (!pDesc) {
+      hr = ExtractEntireResourceViewDescription(desc_, &ViewDesc);
+      if (FAILED(hr))
+        return hr;
+    } else {
+      ViewDesc = *pDesc;
+    }
+
+    if (ViewDesc.ViewDimension != D3D12_SRV_DIMENSION_BUFFER)
+      return E_INVALIDARG;
+
+    auto [Heap, Index] = GetShaderVisibleDescriptorHeap(device_, Descriptor);
+    BufferSlice Slice;
+
+    if (ViewDesc.Format == DXGI_FORMAT_UNKNOWN || ViewDesc.Buffer.Flags & D3D12_BUFFER_SRV_FLAG_RAW) {
+      UINT Stride = (ViewDesc.Buffer.Flags & D3D12_BUFFER_SRV_FLAG_RAW) ? 4 : ViewDesc.Buffer.StructureByteStride;
+      Slice.firstElement = ViewDesc.Buffer.FirstElement;
+      Slice.elementCount = ViewDesc.Buffer.NumElements;
+      Slice.byteOffset = Slice.firstElement * Stride;
+      Slice.byteLength = Slice.elementCount * Stride;
+      return Heap->AddShaderResourceView(Index, buffer.ptr(), Slice);
+    }
+
+    MTL_DXGI_FORMAT_DESC Format;
+    if (FAILED(MTLQueryDXGIFormat(device_->GetMTLDevice(), ViewDesc.Format, Format))) {
+      ERR("D3D12Buffer::CreateShaderResourceView: not an ordinary or packed format: ", ViewDesc.Format);
+      return E_FAIL;
+    }
+    BufferViewDescriptor view_descriptor{Format.PixelFormat};
+    Slice.firstElement = ViewDesc.Buffer.FirstElement;
+    Slice.elementCount = ViewDesc.Buffer.NumElements;
+    Slice.byteOffset = Format.BytesPerTexel * ViewDesc.Buffer.FirstElement;
+    Slice.byteLength = Format.BytesPerTexel * ViewDesc.Buffer.NumElements;
+
+    auto view = buffer->createView(view_descriptor);
+    return Heap->AddShaderResourceView(Index, buffer.ptr(), view, Slice);
   };
 
   virtual HRESULT STDMETHODCALLTYPE

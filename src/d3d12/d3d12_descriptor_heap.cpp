@@ -39,12 +39,16 @@ struct UAVTexelBufferGPUStorage {
   uint64_t padding[2];
 };
 
+using SRVTexelBufferGPUStorage = UAVTexelBufferGPUStorage;
+
 struct UAVBufferGPUStorage {
   uint64_t pointer;
   uint64_t metadata;
   uint64_t counter_pointer;
   uint64_t padding;
 };
+
+using SRVBufferGPUStorage = UAVBufferGPUStorage;
 
 struct ShaderVisibleDescriptorGPUStorage {
   union {
@@ -53,6 +57,8 @@ struct ShaderVisibleDescriptorGPUStorage {
     UAVTextureGPUStorage UAVTexture;
     UAVTexelBufferGPUStorage UAVTexelBuffer;
     UAVBufferGPUStorage UAVBuffer;
+    SRVTexelBufferGPUStorage SRVTexelBuffer;
+    SRVBufferGPUStorage SRVBuffer;
   };
 
   ShaderVisibleDescriptorGPUStorage();
@@ -249,6 +255,48 @@ public:
         gpu_storage.UAVBuffer.pointer = 0;
         gpu_storage.UAVBuffer.metadata = 0;
         gpu_storage.UAVBuffer.counter_pointer = 0;
+      }
+    }
+    return S_OK;
+  }
+
+  virtual HRESULT AddShaderResourceView(UINT Index, Buffer *Buffer, BufferViewKey View, BufferSlice Slice) {
+    if (Index >= descriptors_.size())
+      return E_INVALIDARG;
+    auto &cpu_storage = descriptors_[Index];
+    cpu_storage.type = ShaderVisibleDescriptorType::SRVTexelBuffer;
+    cpu_storage.SRVTexelBuffer.buffer = Buffer;
+    cpu_storage.SRVTexelBuffer.slice = Slice;
+    cpu_storage.SRVTexelBuffer.view = View;
+    if (mapped_argument_buffer_) { 
+      auto &gpu_storage = mapped_argument_buffer_[Index];
+      if (Buffer) {
+        auto &buffer_view = Buffer->view_(View);
+        gpu_storage.UAVTexelBuffer.resource_id = buffer_view.gpu_resource_id;
+        gpu_storage.UAVTexelBuffer.metadata = ((uint64_t)Slice.elementCount << 32) | (uint64_t)(Slice.firstElement);
+      } else {
+        gpu_storage.UAVTexelBuffer.resource_id = 0;
+        gpu_storage.UAVTexelBuffer.metadata = 0;
+      }
+    }
+    return S_OK;
+  }
+
+  virtual HRESULT AddShaderResourceView(UINT Index, Buffer *Buffer, BufferSlice Slice) {
+    if (Index >= descriptors_.size())
+      return E_INVALIDARG;
+    auto &cpu_storage = descriptors_[Index];
+    cpu_storage.type = ShaderVisibleDescriptorType::SRVBuffer;
+    cpu_storage.SRVBuffer.buffer = Buffer;
+    cpu_storage.SRVBuffer.slice = Slice;
+    if (mapped_argument_buffer_) {
+      auto &gpu_storage = mapped_argument_buffer_[Index];
+      if (Buffer) {
+        gpu_storage.SRVBuffer.pointer = Buffer->current()->gpuAddress() + Slice.byteOffset;
+        gpu_storage.SRVBuffer.metadata = Slice.byteLength;
+      } else {
+        gpu_storage.SRVBuffer.pointer = 0;
+        gpu_storage.SRVBuffer.metadata = 0;
       }
     }
     return S_OK;
