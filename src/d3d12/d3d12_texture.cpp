@@ -252,6 +252,8 @@ public:
         return hr;
     } else {
       ViewDesc = *pDesc;
+      if (ViewDesc.Format == DXGI_FORMAT_UNKNOWN)
+        ViewDesc.Format = desc_.Format;
     }
 
     auto [Heap, Index] = GetShaderVisibleDescriptorHeap(device_, Descriptor);
@@ -413,6 +415,8 @@ public:
         return hr;
     } else {
       ViewDesc = *pDesc;
+      if (ViewDesc.Format == DXGI_FORMAT_UNKNOWN)
+        ViewDesc.Format = desc_.Format;
     }
 
     auto [Heap, Index] = GetShaderVisibleDescriptorHeap(device_, Descriptor);
@@ -498,6 +502,8 @@ public:
         return hr;
     } else {
       ViewDesc = *pDesc;
+      if (ViewDesc.Format == DXGI_FORMAT_UNKNOWN)
+        ViewDesc.Format = desc_.Format;
     }
 
     auto [Heap, Index] = GetRenderTargetHeap(device_, Descriptor);
@@ -626,6 +632,8 @@ public:
         return hr;
     } else {
       ViewDesc = *pDesc;
+      if (ViewDesc.Format == DXGI_FORMAT_UNKNOWN)
+        ViewDesc.Format = desc_.Format;
     }
 
     auto [Heap, Index] = GetRenderTargetHeap(device_, Descriptor);
