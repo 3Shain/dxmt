@@ -402,6 +402,39 @@ public:
 
     auto &desc = deserializer.desc_1_1_.Desc_1_1;
 
+    if (desc.NumParameters) {
+      if (desc.NumParameters > D3D12_MAX_ROOT_COST)
+        return E_INVALIDARG;
+
+      for (unsigned i = 0; i < desc.NumParameters; i++) {
+        if (!desc.pParameters)
+          return E_INVALIDARG;
+        auto &parameter = desc.pParameters[i];
+        if (parameter.ParameterType == D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE) {
+          bool is_normal_range = false, is_sampler_range = false;
+          for (unsigned j = 0; j < parameter.DescriptorTable.NumDescriptorRanges; j++) {
+            if (!parameter.DescriptorTable.pDescriptorRanges)
+              return E_INVALIDARG;
+            auto &range = parameter.DescriptorTable.pDescriptorRanges[j];
+            switch (range.RangeType) {
+            case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
+            case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
+            case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
+              is_normal_range = true;
+              break;
+            case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:
+              is_sampler_range = true;
+              break;
+            default:
+              return E_INVALIDARG;
+            }
+          }
+          if (is_normal_range && is_sampler_range)
+            return E_INVALIDARG;
+        }
+      }
+    }
+
     NumStaticSamplers = desc.NumStaticSamplers;
     if (NumStaticSamplers) {
       for (unsigned i = 0; i < desc.NumStaticSamplers; i++) {
