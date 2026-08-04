@@ -556,6 +556,52 @@ jobs:
           name: clang-debugoptimized-arm64ec-windows-cross
           path: install
 
+  build-clang-release-arm64ec-windows-cross:
+    runs-on: macos-15
+    needs: [setup-wine-arm64ec, setup-llvm-mingw, setup-llvm-darwin-arm64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Restore Wine Cache (ARM64EC)
+        uses: actions/cache/restore@v5
+        with:
+          key: wine-arm64ec-${{ env.WINE_ARM64EC_VERSION }}-macos
+          path: ./toolchains/wine
+
+      - name: Restore LLVM-MinGW Cache
+        uses: actions/cache/restore@v5
+        with:
+          key: llvm-mingw-${{ env.LLVM_MINGW_VERSION }}-macos
+          path: ./toolchains/${{ env.LLVM_MINGW_DIR }}
+
+      - name: Restore LLVM Darwin ARM64 Cache
+        uses: actions/cache/restore@v5
+        with:
+          key: llvm-darwin-${{ env.LLVM_VERSION }}-arm64-macos
+          path: ./toolchains/llvm-darwin-arm64
+
+      - name: Select Xcode Version
+        run: sudo xcode-select -s /Applications/Xcode_16.1.app
+
+      - name: Install Meson
+        run: pip3 install meson==1.10.0 --break-system-packages
+
+      - name: Build
+        run: |
+          export PATH="$PATH:$GITHUB_WORKSPACE/toolchains/${{ env.LLVM_MINGW_DIR }}/bin"
+          meson setup --cross-file build-arm64ec.txt -Denable_nvapi=true -Denable_nvngx=true -Dnative_llvm_path=toolchains/llvm-darwin-arm64 -Dwine_install_path=toolchains/wine build --buildtype release --prefix $(pwd)/install --strip
+          meson compile -C build
+          meson install -C build
+
+      - name: Upload
+        uses: actions/upload-artifact@v6
+        with:
+          name: clang-release-arm64ec-windows-cross
+          path: install
+
   build-clang-release-arm64-macos:
     runs-on: macos-15
     needs: setup-llvm-darwin-arm64
@@ -591,7 +637,7 @@ jobs:
 
   package:
     runs-on: macos-15
-    needs: [build-gcc-release-x86_64-windows-cross, build-gcc-release-x86-windows-cross]
+    needs: [build-gcc-release-x86_64-windows-cross, build-gcc-release-x86-windows-cross, build-clang-release-arm64ec-windows-cross]
     env:
       PACKAGE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || github.sha }}
     steps:
@@ -605,6 +651,12 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: gcc-release-x86-windows-cross
+          path: ./combined/${{ env.PACKAGE_TAG }}
+
+      - name: Download ARM64EC Artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: clang-release-arm64ec-windows-cross
           path: ./combined/${{ env.PACKAGE_TAG }}
 
       - name: Create Tarball
