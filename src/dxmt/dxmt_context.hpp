@@ -21,6 +21,7 @@
 #include "Metal.hpp"
 #include "dxmt_buffer.hpp"
 #include "dxmt_command.hpp"
+#include "dxmt_command_clear.hpp"
 #include "dxmt_counter.hpp"
 #include "dxmt_deptrack.hpp"
 #include "dxmt_occlusion_query.hpp"
@@ -331,6 +332,7 @@ struct AllocatedTempBufferSlice {
 };
 
 class ArgumentEncodingContext {
+  friend struct SimpleCommandContext<ArgumentEncodingContext>;
 private:
   template <PipelineStage stage> void track(GenericAccessTracker &tracker, int flags);
 
@@ -827,10 +829,11 @@ public:
   uint32_t tess_num_output_control_point_element;
   uint32_t tess_threads_per_patch;
 
+  InternalCommandLibrary &lib;
   EmulatedCommandContext emulated_cmd;
   ClearRenderTargetContext clear_rt_cmd;
   DepthStencilBlitContext blit_depth_stencil_cmd;
-  ClearResourceKernelContext clear_res_cmd;
+  ClearUAV<ArgumentEncodingContext> clear_uav_cmd;
   MTLFXMVScaleContext mv_scale_cmd;
   TileBarrierContext tile_barrier_cmd;
 

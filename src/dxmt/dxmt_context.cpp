@@ -30,10 +30,11 @@
 namespace dxmt {
 
 ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Device device, InternalCommandLibrary &lib) :
+    lib(lib),
     emulated_cmd(device, lib, *this),
     clear_rt_cmd(device, lib, *this),
     blit_depth_stencil_cmd(device, lib, *this),
-    clear_res_cmd(device, lib, *this),
+    clear_uav_cmd(device, *this),
     mv_scale_cmd(device, lib, *this),
     tile_barrier_cmd(device, lib, *this),
     timestamp_state_(device),
@@ -1588,6 +1589,100 @@ ArgumentEncodingContext::isResolveSignatureMatched(RenderEncoderData *render, Re
     }
   }
   return ret;
+}
+
+template <>
+WMT::Reference<WMT::ComputePipelineState>
+SimpleCommandContext<ArgumentEncodingContext>::getComputePipeline(std::string name) {
+  auto lib = ctx.lib.getLibrary();
+  auto func = lib.newFunction(name.c_str());
+  if (!func)
+    return {};
+  WMT::Reference<WMT::Error> err;
+  auto pso = ctx.device_.newComputePipelineState(func, err);
+  if (err) {
+    ERR("Failed to create compute PSO: ", err.description().getUTF8String());
+  }
+  return pso;
+}
+
+template <>
+void
+SimpleCommandContext<ArgumentEncodingContext>::startComputePass() {
+  ctx.startComputePass(0);
+}
+
+template <>
+void
+SimpleCommandContext<ArgumentEncodingContext>::endPass() {
+  ctx.endPass();
+}
+
+template <>
+void
+SimpleCommandContext<ArgumentEncodingContext>::setComputePSO(WMT::ComputePipelineState pso, WMTSize tgsize) {
+  auto &setpso = ctx.encodeComputeCommand<wmtcmd_compute_setpso>();
+  setpso.type = WMTComputeCommandSetPSO;
+  setpso.pso = pso;
+  setpso.threadgroup_size = tgsize;
+}
+
+template <>
+void
+SimpleCommandContext<ArgumentEncodingContext>::dispatch(WMTSize size) {
+  auto &dispatch = ctx.encodeComputeCommand<wmtcmd_compute_dispatch>();
+  dispatch.type = WMTComputeCommandDispatchThreads;
+  dispatch.size = size;
+}
+
+template <>
+void
+SimpleCommandContext<ArgumentEncodingContext>::setComputeTexture(
+    uint32_t index, const Rc<Texture> &texture, uint64_t viewId, int flags
+) {
+  auto &dst_ = ctx.access(texture, viewId, flags);
+  auto &settex = ctx.encodeComputeCommand<wmtcmd_compute_settexture>();
+  settex.type = WMTComputeCommandSetTexture;
+  settex.texture = dst_.texture;
+  settex.index = index;
+}
+
+template <>
+void
+SimpleCommandContext<ArgumentEncodingContext>::setComputeTexelBuffer(
+    uint32_t index, const Rc<Buffer> &buffer, uint64_t viewId, int flags
+) {
+  auto [dst_, dst_sub_offset] = ctx.access(buffer, viewId, flags);
+  auto &settexbuf = ctx.encodeComputeCommand<wmtcmd_compute_settexture>();
+  settexbuf.type = WMTComputeCommandSetTexture;
+  settexbuf.texture = dst_.texture;
+  settexbuf.index = index;
+}
+
+template <>
+void
+SimpleCommandContext<ArgumentEncodingContext>::setComputeBuffer(
+    uint32_t index, const Rc<Buffer> &buffer, uint32_t offset, uint32_t length, int flags
+) {
+  auto [dst_, dst_sub_offset] = ctx.access(buffer, offset, length, flags);
+  auto &setbuf = ctx.encodeComputeCommand<wmtcmd_compute_setbuffer>();
+  setbuf.type = WMTComputeCommandSetBuffer;
+  setbuf.buffer = dst_->buffer();
+  setbuf.index = index;
+  setbuf.offset = 0; // the `offset` and `length` parameter of this function are just for (potential) hazard tracking,
+                     // which we don't need here
+}
+
+template <>
+void *
+SimpleCommandContext<ArgumentEncodingContext>::setComputeBytes(uint32_t index, uint32_t length) {
+  auto &setmeta = ctx.encodeComputeCommand<wmtcmd_compute_setbytes>();
+  setmeta.type = WMTComputeCommandSetBytes;
+  void *temp = ctx.allocate_cpu_heap(length, 16);
+  setmeta.bytes.set(temp);
+  setmeta.length = length;
+  setmeta.index = index;
+  return temp;
 }
 
 } // namespace dxmt

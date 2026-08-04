@@ -903,17 +903,16 @@ public:
       if (desc.ViewDimension != D3D11_UAV_DIMENSION_BUFFER) {
         EmitST([=, texture = uav->texture(),
                 view = uav->viewId()](ArgumentEncodingContext &enc) {
-          enc.clear_res_cmd.begin(color, texture, view);
+          enc.clear_uav_cmd.begin(color, texture.ptr(), view);
         });
       } else if (desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
         EmitST([=, buffer = uav->buffer(),
                 view = uav->viewId()](ArgumentEncodingContext &enc) {
-          enc.clear_res_cmd.begin(color, buffer, view);
+          enc.clear_uav_cmd.begin(color, buffer.ptr(), view);
         });
       } else {
         EmitST([=, buffer = uav->buffer()](ArgumentEncodingContext &enc) {
-          /* FIXME: raw buffer always considered unsigned integer? */
-          enc.clear_res_cmd.begin(color, buffer, true);
+          enc.clear_uav_cmd.begin(color, buffer.ptr());
         });
       }
       for (unsigned i = 0; i < NumRects; i++) {
@@ -925,10 +924,10 @@ public:
         if (rect_height <= 0 || rect_width <= 0)
           continue;
         EmitOP([=](ArgumentEncodingContext &enc) {
-          enc.clear_res_cmd.clear(rect_offset_x, rect_offset_y, rect_width, rect_height);
+          enc.clear_uav_cmd.clear(rect_offset_x, rect_offset_y, rect_width, rect_height);
         });
       }
-      EmitST([](ArgumentEncodingContext &enc) { enc.clear_res_cmd.end(); });
+      EmitST([](ArgumentEncodingContext &enc) { enc.clear_uav_cmd.end(); });
       return;
     }
   }
