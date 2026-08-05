@@ -31,6 +31,7 @@ enum class DirtyState {
   ComputeRootArguments,
   ComputeRootSignature,
   BlendFactor,
+  StencilRef,
 };
 
 enum class DrawCallStatus {
@@ -147,6 +148,7 @@ class MTLD3D12GraphicsCommandListImpl : public MTLD3D12DeviceChild<MTLD3D12Graph
   uint64_t rootarg_compute_staging_[64];
 
   FLOAT blend_factor_[4];
+  UINT8 stencil_ref_;
 
 public:
   MTLD3D12GraphicsCommandListImpl(MTLD3D12Device *pDevice) : MTLD3D12DeviceChild<MTLD3D12GraphicsCommandList>(pDevice) {}
@@ -185,6 +187,7 @@ public:
     blend_factor_[1] = 1.0f;
     blend_factor_[2] = 1.0f;
     blend_factor_[3] = 1.0f;
+    stencil_ref_ = 0;
 
     rootsig_graphics_ = nullptr;
     memset(rootarg_graphics_staging_, 0, sizeof(rootarg_graphics_staging_));
@@ -363,7 +366,7 @@ public:
       }
       dirty_state_.set(DirtyState::VertexBuffer, DirtyState::GraphicsRootArguments, DirtyState::GraphicsRootSignature);
       dirty_state_.set(DirtyState::Viewport, DirtyState::ScissorRect);
-      dirty_state_.set(DirtyState::BlendFactor);
+      dirty_state_.set(DirtyState::BlendFactor, DirtyState::StencilRef);
     }
     if (dirty_state_.test(DirtyState::VertexBuffer)) {
       EncodeVertexBuffers();
@@ -447,6 +450,13 @@ public:
       cmd.blue = blend_factor_[2];
       cmd.alpha = blend_factor_[3];
       dirty_state_.clr(DirtyState::BlendFactor);
+    }
+
+    if (dirty_state_.test(DirtyState::StencilRef)) {
+      auto &cmd = allocator_->EncodeRenderCommand<wmtcmd_render_setstencilref>();
+      cmd.type = WMTRenderCommandSetStencilRef;
+      cmd.stencil_ref = stencil_ref_;
+      dirty_state_.clr(DirtyState::StencilRef);
     }
 
     return DrawCallStatus::Ordinary;
@@ -834,7 +844,11 @@ public:
     dirty_state_.set(DirtyState::BlendFactor);
   };
 
-  void STDMETHODCALLTYPE OMSetStencilRef(UINT StencilRef) { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE
+  OMSetStencilRef(UINT StencilRef) {
+    stencil_ref_ = StencilRef;
+    dirty_state_.set(DirtyState::StencilRef);
+  };
 
   void
   UpdateGraphicsPSO(MTLD3D12GraphicsPipelineState *pso_graphics) {
