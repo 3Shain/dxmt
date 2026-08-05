@@ -89,6 +89,7 @@ public:
       WMTComputePipelineInfo info;
       WMT::InitializeComputePipelineInfo(info);
       info.compute_function = cs_func;
+      info.support_indirect_command_buffers = true;
 
       pso = metal.newComputePipelineState(info, err);
       if (!pso) {

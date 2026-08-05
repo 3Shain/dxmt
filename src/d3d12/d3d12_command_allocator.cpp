@@ -75,6 +75,8 @@ MTLD3D12CommandAllocatorImpl::Initialize() {
   encoder_last = nullptr;
   encoder_count_ = 0;
 
+  icb_.clear();
+
   return S_OK;
 }
 
@@ -133,6 +135,93 @@ MTLD3D12CommandAllocatorImpl::Reset() {
 
   return Initialize();
 };
+
+IndirectComputeCommandData *
+MTLD3D12CommandAllocatorImpl::EncodeIndirectComputeCommand(MTLD3D12CommandSignature *pCmdSig, MTLD3D12ComputePipelineState *pPSO, size_t MaxCount) {
+  WMTIndirectCommandBufferInfo info;
+  info.inherit_buffers = 1;
+  info.inherit_pso = 1;
+  info.inherit_cull_mode = 0;
+  info.inherit_fill_mode = 0;
+  info.inherit_front_facing = 0;
+  info.inherit_depth_bias = 0;
+  info.inherit_depth_clip_mode = 0;
+  info.inherit_depth_stencil_state = 0;
+  info.support_color_attachment_mapping = 0;
+  info.support_dynamic_attribute_stride = 0;
+  info.support_ray_tracing = 0;
+  info.type = WMTIndirectCommandTypeConcurrentDispatch;
+  info.max_vertex_buffer_binding = 0;
+  info.max_fragment_buffer_binding = 0;
+  info.max_object_buffer_binding = 0;
+  info.max_mesh_buffer_binding = 0;
+  info.max_kernel_buffer_binding = 31;
+  info.max_kernel_threadgroup_memory_binding = 0;
+  info.max_object_threadgroup_memory_binding = 0;
+  info.gpu_resource_id = 0;
+
+  auto icb = device_->GetMTLDevice().newIndirectCommandBuffer(info, MaxCount, WMTResourceStorageModeShared);
+
+  auto [Ptr, Offset] = AllocateGPUHeap(sizeof(IndirectComputeCommandData), 16);
+
+  auto data = reinterpret_cast<IndirectComputeCommandData *>(Ptr);
+
+  data->cmd_buf = info.gpu_resource_id;
+  data->max_count = MaxCount;
+  data->tgsize_x = pPSO->threadgroup_size.width;
+  data->tgsize_y = pPSO->threadgroup_size.height;
+  data->tgsize_z = pPSO->threadgroup_size.depth;
+
+  {
+    // populated outside
+    data->max_count_buffer = 0;
+    data->argument_buffer = 0;
+    data->rootsig_qwords = 0;
+    data->rootsig_qwords_stride = 0;
+    data->static_samplers = 0;
+  }
+
+  {
+    /**
+     * TODO: move these out?
+     */
+
+    auto &cmd_use_icb = EncodeComputeCommand<wmtcmd_compute_useresource>();
+    cmd_use_icb.type = WMTComputeCommandUseResource;
+    cmd_use_icb.usage = WMTResourceUsageRead | WMTResourceUsageWrite;
+    cmd_use_icb.resource = icb;
+
+    auto &cmd_setpso_res = EncodeComputeCommand<wmtcmd_compute_setpso>();
+    cmd_setpso_res.type = WMTComputeCommandSetPSO;
+    cmd_setpso_res.pso = pCmdSig->compute_resolver;
+    cmd_setpso_res.threadgroup_size = {1, 1, 1};
+
+    auto &cmd_argbuf_res = EncodeComputeCommand<wmtcmd_compute_setbuffer>();
+    cmd_argbuf_res.type = WMTComputeCommandSetBuffer;
+    cmd_argbuf_res.buffer = gpu_heap_buffer_;
+    cmd_argbuf_res.offset = Offset;
+    cmd_argbuf_res.index = 30;
+
+    auto &cmd_dispatch_res = EncodeComputeCommand<wmtcmd_compute_dispatch>();
+    cmd_dispatch_res.type = WMTComputeCommandDispatch;
+    cmd_dispatch_res.size = {1, 1, 1};
+
+    auto &cmd_setpso = EncodeComputeCommand<wmtcmd_compute_setpso>();
+    cmd_setpso.type = WMTComputeCommandSetPSO;
+    cmd_setpso.pso = pPSO->pso;
+    cmd_setpso.threadgroup_size = pPSO->threadgroup_size; // not really used
+  }
+
+  auto &cmd = EncodeComputeCommand<wmtcmd_compute_executecommands>();
+  cmd.type = WMTComputeCommandExecuteCommandsInBuffer;
+  cmd.indirect_command_buffer = icb;
+  cmd.location = 0;
+  cmd.length = MaxCount;
+
+  icb_.push_back(std::move(icb));
+
+  return data;
+}
 
 template <>
 WMT::Reference<WMT::ComputePipelineState>

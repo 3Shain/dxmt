@@ -1255,6 +1255,26 @@ public:
       ID3D12CommandSignature *pCommandSignature, UINT MaxCommandCount, ID3D12Resource *pArgBuffer,
       UINT64 ArgBufferOffset, ID3D12Resource *pCountBuffer, UINT64 CountBufferOffset
   ) {
+    auto sig = static_cast<MTLD3D12CommandSignature *>(pCommandSignature);
+    auto arg_buffer = static_cast<MTLD3D12Resource *>(pArgBuffer);
+    if (!arg_buffer || !arg_buffer->buffer)
+      return;
+    auto ArgBufferAddress = arg_buffer->buffer->current()->gpuAddress() + ArgBufferOffset;
+    uint64_t CountBufferAddress = 0;
+    if (auto count_buffer = static_cast<MTLD3D12Resource *>(pCountBuffer)) {
+      if (!count_buffer->buffer)
+        return;
+      CountBufferAddress = count_buffer->buffer->current()->gpuAddress() + CountBufferOffset;
+    }
+    if (sig->CommandType == D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH) {
+      if (!PreDispatch())
+        return;
+
+      auto cmd = allocator_->EncodeIndirectComputeCommand(sig, pso_compute_.ptr(), MaxCommandCount);
+      cmd->max_count_buffer = CountBufferAddress;
+      cmd->argument_buffer = ArgBufferAddress;
+      return;
+    }
     IMPLEMENT_ME
   };
 };

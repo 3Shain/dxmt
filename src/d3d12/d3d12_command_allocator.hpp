@@ -38,6 +38,19 @@ ptr_add(const void *const p, const std::uintptr_t &amount) noexcept {
   return reinterpret_cast<void *>(reinterpret_cast<std::uintptr_t>(p) + amount);
 }
 
+struct IndirectComputeCommandData {
+  uint64_t cmd_buf;
+  uint64_t max_count;
+  uint64_t max_count_buffer;
+  uint64_t argument_buffer;
+  uint64_t static_samplers;
+  uint64_t rootsig_qwords;
+  uint32_t rootsig_qwords_stride;
+  uint32_t tgsize_x;
+  uint32_t tgsize_y;
+  uint32_t tgsize_z;
+};
+
 class MTLD3D12CommandAllocatorImpl : public MTLD3D12Pageable<MTLD3D12CommandAllocator> {
   friend class MTLD3D12GraphicsCommandListImpl;
   friend struct SimpleCommandContext<MTLD3D12CommandAllocatorImpl>;
@@ -58,6 +71,7 @@ class MTLD3D12CommandAllocatorImpl : public MTLD3D12Pageable<MTLD3D12CommandAllo
 
   small_vector<EncoderData, 64> encoder_lists_;
 
+  small_vector<WMT::Reference<WMT::IndirectCommandBuffer>, 4> icb_;
 
   ClearUAV<MTLD3D12CommandAllocatorImpl> clear_uav_;
 
@@ -186,6 +200,8 @@ public:
     assert(gpu_heap_offset_ < kGPUHeapSize);
     return {ptr_add(gpu_heap_, aligned), aligned};
   }
+
+  IndirectComputeCommandData *EncodeIndirectComputeCommand(MTLD3D12CommandSignature *pCmdSig, MTLD3D12ComputePipelineState *pPSO, size_t MaxCount);
 };
 
 } // namespace dxmt
