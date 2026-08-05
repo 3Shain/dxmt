@@ -478,8 +478,27 @@ public:
     cmd_draw.base_instance = StartInstanceLocation;
   };
 
+  uint64_t
+  EncodeRootArgument(MTLD3D12RootSignature *pRootSig, uint64_t const pStaging[64], UINT Count = 1) {
+    auto [Ptr, Offset] = allocator_->AllocateGPUHeap(sizeof(uint64_t) * pRootSig->UploadQwords * Count, 64);
+    for (unsigned i = 0; i < Count; i++)
+      memcpy(
+          reinterpret_cast<uint64_t *>(Ptr) + i * pRootSig->UploadQwords, pStaging,
+          pRootSig->UploadQwords * sizeof(uint64_t)
+      );
+    return Offset;
+  }
+
+  uint64_t
+  EncodeStaticSamplers(MTLD3D12RootSignature *pRootSig) {
+    auto static_sampler_encode_size = sizeof(uint64_t) * pRootSig->NumStaticSamplers * 4;
+    auto [Ptr, Offset] = allocator_->AllocateGPUHeap(static_sampler_encode_size, 64);
+    memcpy(Ptr, pRootSig->EncodedStaticSamplers, static_sampler_encode_size);
+    return Offset;
+  }
+
   bool
-  PreDispatch() {
+  PreDispatch(bool SkipResourceBinding = false) {
     if (!allocator_->encoder_current || allocator_->encoder_current->type != EncoderType::Compute) {
       allocator_->InvalidateCurrentPass();
       auto compute = allocator_->AllocatePass<ComputeEncoderData>();
@@ -496,10 +515,9 @@ public:
       }
     }
 
-    if (dirty_state_.test(DirtyState::ComputeRootArguments)) {
+    if (dirty_state_.test(DirtyState::ComputeRootArguments) && !SkipResourceBinding) {
       if (rootsig_compute_) {
-        auto [Ptr, Offset] = allocator_->AllocateGPUHeap(sizeof(uint64_t) * rootsig_compute_->UploadQwords, 64);
-        memcpy(Ptr, rootarg_compute_staging_, rootsig_compute_->UploadQwords * sizeof(uint64_t));
+        auto Offset = EncodeRootArgument(rootsig_compute_.ptr(), rootarg_compute_staging_);
         auto &cmd_argbuf = allocator_->EncodeComputeCommand<wmtcmd_compute_setbuffer>();
         cmd_argbuf.type = WMTComputeCommandSetBuffer;
         cmd_argbuf.buffer = allocator_->gpu_heap_buffer_;
@@ -509,11 +527,9 @@ public:
       dirty_state_.clr(DirtyState::ComputeRootArguments);
     }
 
-    if (dirty_state_.test(DirtyState::ComputeRootSignature)) {
+    if (dirty_state_.test(DirtyState::ComputeRootSignature) && !SkipResourceBinding) {
       if (rootsig_compute_) {
-        auto static_sampler_encode_size = sizeof(uint64_t) * rootsig_compute_->NumStaticSamplers * 4;
-        auto [Ptr, Offset] = allocator_->AllocateGPUHeap(static_sampler_encode_size, 64);
-        memcpy(Ptr, rootsig_compute_->EncodedStaticSamplers, static_sampler_encode_size);
+        auto Offset = EncodeStaticSamplers(rootsig_compute_.ptr());
         auto &cmd_argbuf = allocator_->EncodeComputeCommand<wmtcmd_compute_setbuffer>();
         cmd_argbuf.type = WMTComputeCommandSetBuffer;
         cmd_argbuf.buffer = allocator_->gpu_heap_buffer_;
@@ -1267,12 +1283,21 @@ public:
       CountBufferAddress = count_buffer->buffer->current()->gpuAddress() + CountBufferOffset;
     }
     if (sig->CommandType == D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH) {
-      if (!PreDispatch())
+      if (!PreDispatch(sig->UpdateRootArguments))
         return;
 
       auto cmd = allocator_->EncodeIndirectComputeCommand(sig, pso_compute_.ptr(), MaxCommandCount);
       cmd->max_count_buffer = CountBufferAddress;
       cmd->argument_buffer = ArgBufferAddress;
+
+      if (sig->UpdateRootArguments) {
+        cmd->rootsig_qwords = EncodeRootArgument(rootsig_compute_.ptr(), rootarg_compute_staging_, MaxCommandCount);
+        cmd->rootsig_qwords += allocator_->gpu_heap_buffer_address_;
+        cmd->rootsig_qwords_stride = rootsig_compute_->UploadQwords;
+        cmd->static_samplers = EncodeStaticSamplers(rootsig_compute_.ptr());
+        cmd->static_samplers += allocator_->gpu_heap_buffer_address_;
+      }
+
       return;
     }
     IMPLEMENT_ME

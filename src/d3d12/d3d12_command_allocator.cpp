@@ -139,7 +139,7 @@ MTLD3D12CommandAllocatorImpl::Reset() {
 IndirectComputeCommandData *
 MTLD3D12CommandAllocatorImpl::EncodeIndirectComputeCommand(MTLD3D12CommandSignature *pCmdSig, MTLD3D12ComputePipelineState *pPSO, size_t MaxCount) {
   WMTIndirectCommandBufferInfo info;
-  info.inherit_buffers = 1;
+  info.inherit_buffers = !pCmdSig->UpdateRootArguments;
   info.inherit_pso = 1;
   info.inherit_cull_mode = 0;
   info.inherit_fill_mode = 0;

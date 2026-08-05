@@ -49,6 +49,7 @@ public:
   Initialize(const D3D12_COMMAND_SIGNATURE_DESC *pDesc, ID3D12RootSignature *pRootSignature) {
     std::stringstream source;
     D3D12_INDIRECT_ARGUMENT_TYPE side_effect = ~(D3D12_INDIRECT_ARGUMENT_TYPE){};
+    UpdateRootArguments = false;
 
     source << kSharedHeader;
 
@@ -62,6 +63,28 @@ public:
       case D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH: {
         side_effect = arg.Type;
         source << "packed_uint3 dispatch;\n";
+        break;
+      }
+      case D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT: {
+        UpdateRootArguments = true;
+        for (unsigned j = 0; j < arg.Constant.Num32BitValuesToSet; j++) {
+          source << "uint constant_" << i << "_" << j << ";\n";
+        }
+        break;
+      }
+      case D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW: {
+        UpdateRootArguments = true;
+        source << "ulong cb_" << i << ";\n";
+        break;
+      }
+      case D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW: {
+        UpdateRootArguments = true;
+        source << "ulong srv_" << i << ";\n";
+        break;
+      }
+      case D3D12_INDIRECT_ARGUMENT_TYPE_UNORDERED_ACCESS_VIEW: {
+        UpdateRootArguments = true;
+        source << "ulong uav_" << i << ";\n";
         break;
       }
       case D3D12_INDIRECT_ARGUMENT_TYPE_DRAW:
@@ -97,12 +120,66 @@ public:
     source << "compute_command cmd(command_data.cmd_buf, i);\n";
     source << "cmd.reset();\n";
     source << "if (i >= count) continue;\n";
+    source << "device ulong * rootsig_qwords = command_data.rootsig_qwords + "
+              "(i * command_data.rootsig_qwords_stride);\n";
+
+    if (UpdateRootArguments) {
+      source << "cmd.set_kernel_buffer(rootsig_qwords, " << SM50_BINDING_INDEX_ROOT_ARGUMENTS << ");\n";
+      source << "cmd.set_kernel_buffer(command_data.static_samplers," << SM50_BINDING_INDEX_STATIC_SAMPLERS << ");\n";
+    }
 
     for (unsigned i = 0; i < pDesc->NumArgumentDescs; i++) {
       auto &arg = pDesc->pArgumentDescs[i];
       switch (arg.Type) {
       case D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH: {
         source << "cmd.concurrent_dispatch_threadgroups(arg.dispatch, command_data.tgsize);\n";
+        break;
+      }
+      case D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT: {
+        auto parameter_index = arg.Constant.RootParameterIndex;
+        if (!pRootSignature)
+          return E_INVALIDARG;
+        auto rootsig = static_cast<MTLD3D12RootSignature *>(pRootSignature);
+        if (parameter_index >= rootsig->ParameterSlots)
+          return E_INVALIDARG;
+        auto offset = rootsig->SlotQwordOffsets[parameter_index];
+        for (unsigned j = 0; j < arg.Constant.Num32BitValuesToSet; j++) {
+          source << "reinterpret_cast<device uint *>(rootsig_qwords + " << offset << ")["
+                 << (j + arg.Constant.DestOffsetIn32BitValues) << "] = arg.constant_" << i << "_" << j << ";\n";
+        }
+        break;
+      }
+      case D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW: {
+        auto parameter_index = arg.ConstantBufferView.RootParameterIndex;
+        if (!pRootSignature)
+          return E_INVALIDARG;
+        auto rootsig = static_cast<MTLD3D12RootSignature *>(pRootSignature);
+        if (parameter_index >= rootsig->ParameterSlots)
+          return E_INVALIDARG;
+        auto offset = rootsig->SlotQwordOffsets[parameter_index];
+        source << "rootsig_qwords[" << offset << "] = arg.cb_" << i << ";\n";
+        break;
+      }
+      case D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW: {
+        auto parameter_index = arg.ShaderResourceView.RootParameterIndex;
+        if (!pRootSignature)
+          return E_INVALIDARG;
+        auto rootsig = static_cast<MTLD3D12RootSignature *>(pRootSignature);
+        if (parameter_index >= rootsig->ParameterSlots)
+          return E_INVALIDARG;
+        auto offset = rootsig->SlotQwordOffsets[parameter_index];
+        source << "rootsig_qwords[" << offset << "] = arg.srv_" << i << ";\n";
+        break;
+      }
+      case D3D12_INDIRECT_ARGUMENT_TYPE_UNORDERED_ACCESS_VIEW: {
+        auto parameter_index = arg.UnorderedAccessView.RootParameterIndex;
+        if (!pRootSignature)
+          return E_INVALIDARG;
+        auto rootsig = static_cast<MTLD3D12RootSignature *>(pRootSignature);
+        if (parameter_index >= rootsig->ParameterSlots)
+          return E_INVALIDARG;
+        auto offset = rootsig->SlotQwordOffsets[parameter_index];
+        source << "rootsig_qwords[" << offset << "] = arg.uav_" << i << ";\n";
         break;
       }
       default:

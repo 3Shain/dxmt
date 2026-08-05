@@ -109,6 +109,7 @@ public:
 class MTLD3D12CommandSignature : public ID3D12CommandSignature {
 public:
   D3D12_INDIRECT_ARGUMENT_TYPE CommandType;
+  UINT UpdateRootArguments : 1;
 
   WMT::Reference<WMT::ComputePipelineState> compute_resolver;
 
