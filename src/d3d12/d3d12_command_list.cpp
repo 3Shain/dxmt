@@ -30,6 +30,7 @@ enum class DirtyState {
   ScissorRect,
   ComputeRootArguments,
   ComputeRootSignature,
+  BlendFactor,
 };
 
 enum class DrawCallStatus {
@@ -145,6 +146,8 @@ class MTLD3D12GraphicsCommandListImpl : public MTLD3D12DeviceChild<MTLD3D12Graph
   Com<MTLD3D12RootSignature, false> rootsig_compute_;
   uint64_t rootarg_compute_staging_[64];
 
+  FLOAT blend_factor_[4];
+
 public:
   MTLD3D12GraphicsCommandListImpl(MTLD3D12Device *pDevice) : MTLD3D12DeviceChild<MTLD3D12GraphicsCommandList>(pDevice) {}
 
@@ -177,6 +180,11 @@ public:
 
     num_scissors = {};
     memset(scissors, 0, sizeof(scissors));
+
+    blend_factor_[0] = 1.0f;
+    blend_factor_[1] = 1.0f;
+    blend_factor_[2] = 1.0f;
+    blend_factor_[3] = 1.0f;
 
     rootsig_graphics_ = nullptr;
     memset(rootarg_graphics_staging_, 0, sizeof(rootarg_graphics_staging_));
@@ -355,6 +363,7 @@ public:
       }
       dirty_state_.set(DirtyState::VertexBuffer, DirtyState::GraphicsRootArguments, DirtyState::GraphicsRootSignature);
       dirty_state_.set(DirtyState::Viewport, DirtyState::ScissorRect);
+      dirty_state_.set(DirtyState::BlendFactor);
     }
     if (dirty_state_.test(DirtyState::VertexBuffer)) {
       EncodeVertexBuffers();
@@ -429,6 +438,17 @@ public:
       cmd.rect_count = num_viewports;
       dirty_state_.clr(DirtyState::ScissorRect);
     }
+
+    if (dirty_state_.test(DirtyState::BlendFactor)) {
+      auto &cmd = allocator_->EncodeRenderCommand<wmtcmd_render_setblendcolor>();
+      cmd.type = WMTRenderCommandSetBlendFactor;
+      cmd.red = blend_factor_[0];
+      cmd.green = blend_factor_[1];
+      cmd.blue = blend_factor_[2];
+      cmd.alpha = blend_factor_[3];
+      dirty_state_.clr(DirtyState::BlendFactor);
+    }
+
     return DrawCallStatus::Ordinary;
   }
 
@@ -801,7 +821,18 @@ public:
     dirty_state_.set(DirtyState::ScissorRect);
   };
 
-  void STDMETHODCALLTYPE OMSetBlendFactor(const FLOAT BlendFactors[4]) { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE
+  OMSetBlendFactor(const FLOAT BlendFactors[4]) {
+    if (BlendFactors) {
+      memcpy(blend_factor_, BlendFactors, std::size(blend_factor_) * sizeof(blend_factor_[0]));
+    } else {
+      blend_factor_[0] = 1.0f;
+      blend_factor_[1] = 1.0f;
+      blend_factor_[2] = 1.0f;
+      blend_factor_[3] = 1.0f;
+    }
+    dirty_state_.set(DirtyState::BlendFactor);
+  };
 
   void STDMETHODCALLTYPE OMSetStencilRef(UINT StencilRef) { IMPLEMENT_ME };
 
