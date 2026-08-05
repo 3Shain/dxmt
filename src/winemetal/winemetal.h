@@ -1214,6 +1214,8 @@ enum WMTRenderCommandType : uint16_t {
   WMTRenderCommandDXMTTessellationMeshDrawIndexedIndirect,
   WMTRenderCommandDispatchThreadsPerTile,
   WMTRenderCommandExecuteCommandsInBuffer,
+  WMTRenderCommandSetBlendFactor,
+  WMTRenderCommandSetStencilRef,
 };
 
 struct wmtcmd_render_nop {
@@ -1472,6 +1474,13 @@ struct wmtcmd_render_setblendcolor {
   float green;
   float blue;
   float alpha;
+  uint8_t stencil_ref;
+};
+
+struct wmtcmd_render_setstencilref {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
   uint8_t stencil_ref;
 };
 

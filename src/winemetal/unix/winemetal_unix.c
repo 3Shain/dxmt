@@ -984,6 +984,16 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
       [encoder setStencilReferenceValue:body->stencil_ref];
       break;
     }
+    case WMTRenderCommandSetBlendFactor: {
+      struct wmtcmd_render_setblendcolor *body = (struct wmtcmd_render_setblendcolor *)next;
+      [encoder setBlendColorRed:body->red green:body->green blue:body->blue alpha:body->alpha];
+      break;
+    }
+    case WMTRenderCommandSetStencilRef: {
+      struct wmtcmd_render_setstencilref *body = (struct wmtcmd_render_setstencilref *)next;
+      [encoder setStencilReferenceValue:body->stencil_ref];
+      break;
+    }
     case WMTRenderCommandSetVisibilityMode: {
       struct wmtcmd_render_setvisibilitymode *body = (struct wmtcmd_render_setvisibilitymode *)next;
       [encoder setVisibilityResultMode:(MTLVisibilityResultMode)body->mode offset:body->offset];
