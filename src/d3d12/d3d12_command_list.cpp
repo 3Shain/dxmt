@@ -283,7 +283,7 @@ public:
   }
 
   DrawCallStatus
-  PreDraw() {
+  PreDraw(bool SkipResourceBinding = false) {
     if (!allocator_->encoder_current || allocator_->encoder_current->type != EncoderType::Render) {
 
       allocator_->InvalidateCurrentPass();
@@ -361,10 +361,9 @@ public:
       dirty_state_.clr(DirtyState::VertexBuffer);
     }
 
-    if (dirty_state_.test(DirtyState::GraphicsRootArguments)) {
+    if (dirty_state_.test(DirtyState::GraphicsRootArguments) && !SkipResourceBinding) {
       if (rootsig_graphics_) {
-        auto [Ptr, Offset] = allocator_->AllocateGPUHeap(sizeof(uint64_t) * rootsig_graphics_->UploadQwords, 64);
-        memcpy(Ptr, rootarg_graphics_staging_, rootsig_graphics_->UploadQwords * sizeof(uint64_t));
+        auto Offset = EncodeRootArgument(rootsig_graphics_.ptr(), rootarg_graphics_staging_);
         auto &cmd_vsargbuf = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
         cmd_vsargbuf.type = WMTRenderCommandSetVertexBuffer;
         cmd_vsargbuf.buffer = allocator_->gpu_heap_buffer_;
@@ -379,11 +378,9 @@ public:
       dirty_state_.clr(DirtyState::GraphicsRootArguments);
     }
 
-    if (dirty_state_.test(DirtyState::GraphicsRootSignature)) {
+    if (dirty_state_.test(DirtyState::GraphicsRootSignature) && !SkipResourceBinding) {
       if (rootsig_graphics_) {
-        auto static_sampler_encode_size = sizeof(uint64_t) * rootsig_graphics_->NumStaticSamplers * 4;
-        auto [Ptr, Offset] = allocator_->AllocateGPUHeap(static_sampler_encode_size, 64);
-        memcpy(Ptr, rootsig_graphics_->EncodedStaticSamplers, static_sampler_encode_size);
+        auto Offset = EncodeStaticSamplers(rootsig_graphics_.ptr());
         auto &cmd_vsargbuf = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
         cmd_vsargbuf.type = WMTRenderCommandSetVertexBuffer;
         cmd_vsargbuf.buffer = allocator_->gpu_heap_buffer_;
@@ -1300,7 +1297,34 @@ public:
 
       return;
     }
-    IMPLEMENT_ME
+    WMTPrimitiveType primitive_type;
+    uint32_t cp_count;
+    if (!to_metal_primitive_type(topology_, primitive_type, cp_count))
+      return;
+    bool encode_binding = sig->UpdateRootArguments || sig->UpdateIndexBuffer || sig->UpdateVertexBuffers;
+    DrawCallStatus status = PreDraw(encode_binding);
+    if (status == DrawCallStatus::Invalid)
+      return;
+    if (status != DrawCallStatus::Ordinary) {
+      IMPLEMENT_ME // TODO: (potential) emulated pipeline
+    }
+
+    auto cmd = allocator_->EncodeIndirectRenderCommand(sig, pso_graphics_.ptr(), MaxCommandCount);
+    cmd->max_count_buffer = CountBufferAddress;
+    cmd->argument_buffer = ArgBufferAddress;
+    cmd->primitive_type = primitive_type;
+    cmd->index_buffer = index_buffer_address;
+    cmd->index_buffer_format = index_type == WMTIndexTypeUInt32 ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
+    if (!encode_binding)
+      return;
+    cmd->rootsig_qwords = EncodeRootArgument(rootsig_graphics_.ptr(), rootarg_graphics_staging_, MaxCommandCount);
+    cmd->rootsig_qwords += allocator_->gpu_heap_buffer_address_;
+    cmd->rootsig_qwords_stride = rootsig_graphics_->UploadQwords;
+    cmd->static_samplers = EncodeStaticSamplers(rootsig_graphics_.ptr());
+    cmd->static_samplers += allocator_->gpu_heap_buffer_address_;
+    auto [VBOffset, VBStride] = PopulateVertexBufferTable(MaxCommandCount);
+    cmd->vertex_buffer = allocator_->gpu_heap_buffer_address_ + VBOffset;
+    cmd->vertex_argbuf_stride = VBStride;
   };
 };
 

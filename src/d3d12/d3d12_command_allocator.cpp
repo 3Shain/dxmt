@@ -223,6 +223,101 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectComputeCommand(MTLD3D12CommandSignat
   return data;
 }
 
+IndirectRenderCommandData *
+MTLD3D12CommandAllocatorImpl::EncodeIndirectRenderCommand(
+    MTLD3D12CommandSignature *pCmdSig, MTLD3D12GraphicsPipelineState *pPSO, size_t MaxCount
+) {
+  WMTIndirectCommandBufferInfo info;
+  info.inherit_buffers = !(pCmdSig->UpdateVertexBuffers || pCmdSig->UpdateIndexBuffer || pCmdSig->UpdateRootArguments);
+  info.inherit_pso = 1;
+  info.inherit_cull_mode = 1;
+  info.inherit_fill_mode = 1;
+  info.inherit_front_facing = 1;
+  info.inherit_depth_bias = 1;
+  info.inherit_depth_clip_mode = 1;
+  info.inherit_depth_stencil_state = 1;
+  info.support_color_attachment_mapping = 0;
+  info.support_dynamic_attribute_stride = 0;
+  info.support_ray_tracing = 0;
+  info.type = pCmdSig->CommandType == D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED ? WMTIndirectCommandTypeDrawIndexed
+                                                                                : WMTIndirectCommandTypeDraw;
+  info.max_vertex_buffer_binding = 31;
+  info.max_fragment_buffer_binding = 31;
+  info.max_object_buffer_binding = 0;
+  info.max_mesh_buffer_binding = 0;
+  info.max_kernel_buffer_binding = 0;
+  info.max_kernel_threadgroup_memory_binding = 0;
+  info.max_object_threadgroup_memory_binding = 0;
+  info.gpu_resource_id = 0;
+
+  auto icb = device_->GetMTLDevice().newIndirectCommandBuffer(info, MaxCount, WMTResourceStorageModePrivate);
+
+  auto [Ptr, Offset] = AllocateGPUHeap(sizeof(IndirectRenderCommandData), 16);
+
+  auto data = reinterpret_cast<IndirectRenderCommandData *>(Ptr);
+
+  data->cmd_buf = info.gpu_resource_id;
+  data->max_count = MaxCount;
+
+  {
+    // populated outside
+    data->max_count_buffer = 0;
+    data->argument_buffer = 0;
+    data->rootsig_qwords = 0;
+    data->rootsig_qwords_stride = 0;
+    data->static_samplers = 0;
+    data->vertex_buffer = 0;
+    data->vertex_argbuf_stride = 0;
+    data->primitive_type = 0;
+    data->index_buffer = 0;
+    data->index_buffer_format = {};
+  }
+
+  {
+    /**
+     * TODO: move these out?
+     */
+
+    auto &cmd_use_icb = EncodeRenderCommand<wmtcmd_render_useresource>();
+    cmd_use_icb.type = WMTRenderCommandUseResource;
+    cmd_use_icb.stages = WMTRenderStageVertex;
+    cmd_use_icb.usage = WMTResourceUsageRead | WMTResourceUsageWrite;
+    cmd_use_icb.resource = icb;
+
+    auto &cmd_setpso_res = EncodeRenderCommand<wmtcmd_render_setpso>();
+    cmd_setpso_res.type = WMTRenderCommandSetPSO;
+    cmd_setpso_res.pso = pCmdSig->render_resolver;
+
+    auto &cmd_argbuf_res = EncodeRenderCommand<wmtcmd_render_setbuffer>();
+    cmd_argbuf_res.type = WMTRenderCommandSetVertexBuffer;
+    cmd_argbuf_res.buffer = gpu_heap_buffer_;
+    cmd_argbuf_res.offset = Offset;
+    cmd_argbuf_res.index = 30;
+
+    auto &cmd_draw_res = EncodeRenderCommand<wmtcmd_render_draw>();
+    cmd_draw_res.type = WMTRenderCommandDraw;
+    cmd_draw_res.primitive_type = WMTPrimitiveTypePoint;
+    cmd_draw_res.vertex_start = 0;
+    cmd_draw_res.vertex_count = 1;
+    cmd_draw_res.base_instance = 0;
+    cmd_draw_res.instance_count = 1;
+
+    auto &cmd_setpso = EncodeRenderCommand<wmtcmd_render_setpso>();
+    cmd_setpso.type = WMTRenderCommandSetPSO;
+    cmd_setpso.pso = pPSO->pso;
+  }
+
+  auto &cmd = EncodeRenderCommand<wmtcmd_render_executecommands>();
+  cmd.type = WMTRenderCommandExecuteCommandsInBuffer;
+  cmd.indirect_command_buffer = icb;
+  cmd.location = 0;
+  cmd.length = MaxCount;
+
+  icb_.push_back(std::move(icb));
+
+  return data;
+}
+
 template <>
 WMT::Reference<WMT::ComputePipelineState>
 SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::getComputePipeline(std::string name) {

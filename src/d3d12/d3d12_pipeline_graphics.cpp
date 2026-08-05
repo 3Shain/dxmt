@@ -462,6 +462,7 @@ public:
       }
 
       info.raster_sample_count = pDesc->SampleDesc.Count;
+      info.support_indirect_command_buffers = true;
 
       pso = metal.newRenderPipelineState(info, err);
 
