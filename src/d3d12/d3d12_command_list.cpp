@@ -692,11 +692,15 @@ public:
         if (!src)
           return;
 
-        auto &cmd_cp = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer>();
-        cmd_cp.type = WMTBlitCommandCopyFromTextureToBuffer;
+        auto src_planar_count = getPlanarCount(src->pixelFormat());
+        auto src_subresource_index = pSrc->SubresourceIndex / src_planar_count;
+        auto src_subresource_planar = pSrc->SubresourceIndex % src_planar_count;
+
+        auto &cmd_cp = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer_withblitoption>();
+        cmd_cp.type = WMTBlitCommandCopyFromTextureToBufferWithBlitOption;
         cmd_cp.src = src->current()->texture();
-        cmd_cp.level = pSrc->SubresourceIndex % src->miplevelCount();
-        cmd_cp.slice = pSrc->SubresourceIndex / src->miplevelCount();
+        cmd_cp.level = src_subresource_index % src->miplevelCount();
+        cmd_cp.slice = src_subresource_index / src->miplevelCount();
         cmd_cp.origin = {0, 0, 0};
         cmd_cp.size = {
             pDst->PlacedFootprint.Footprint.Width, pDst->PlacedFootprint.Footprint.Height,
@@ -708,6 +712,9 @@ public:
         cmd_cp.bytes_per_image = src->textureType() == WMTTextureType3D
                                      ? pDst->PlacedFootprint.Footprint.Height * pDst->PlacedFootprint.Footprint.RowPitch
                                      : 0;
+        cmd_cp.options = (src_planar_count > 1) ? (src_subresource_planar ? WMTBlitOptionStencilFromDepthStencil
+                                                                          : WMTBlitOptionDepthFromDepthStencil)
+                                                : WMTBlitOptionNone;
       } else {
         // so it is buffer to buffer copy?
         IMPLEMENT_ME
