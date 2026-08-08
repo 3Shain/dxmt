@@ -332,8 +332,9 @@ public:
       ID3D12Resource *pResource, const D3D12_SHADER_RESOURCE_VIEW_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor
   ) {
     if (!pResource) {
-      // null descriptor
-      IMPLEMENT_ME
+      auto [Heap, Index] = GetShaderVisibleDescriptorHeap(this, Descriptor);
+      Heap->AddShaderResourceView(Index, pDesc);
+      return;
     }
     auto d3d12res = static_cast<MTLD3D12Resource *>(pResource);
     d3d12res->CreateShaderResourceView(pDesc, Descriptor);
@@ -345,8 +346,9 @@ public:
       D3D12_CPU_DESCRIPTOR_HANDLE Descriptor
   ) {
     if (!pResource) {
-      // null descriptor
-      IMPLEMENT_ME
+      auto [Heap, Index] = GetShaderVisibleDescriptorHeap(this, Descriptor);
+      Heap->AddUnorderedAccessView(Index, pDesc);
+      return;
     }
     auto d3d12res = static_cast<MTLD3D12Resource *>(pResource);
     d3d12res->CreateUnorderedAccessView(pCounter, pDesc, Descriptor);

@@ -59,6 +59,7 @@ struct ShaderVisibleDescriptorGPUStorage {
     UAVBufferGPUStorage UAVBuffer;
     SRVTexelBufferGPUStorage SRVTexelBuffer;
     SRVBufferGPUStorage SRVBuffer;
+    std::array<uint64_t, 4> ZeroFilled;
   };
 
   ShaderVisibleDescriptorGPUStorage();
@@ -298,6 +299,42 @@ public:
         gpu_storage.SRVBuffer.pointer = 0;
         gpu_storage.SRVBuffer.metadata = 0;
       }
+    }
+    return S_OK;
+  }
+
+  virtual HRESULT
+  AddShaderResourceView(UINT Index, D3D12_SHADER_RESOURCE_VIEW_DESC const *pDesc) {
+    if (Index >= descriptors_.size())
+      return E_INVALIDARG;
+    if (!pDesc)
+      return E_INVALIDARG;
+    /**
+     * TODO: support null descriptor properly (respect different view dimensions)
+     */
+    auto &cpu_storage = descriptors_[Index];
+    cpu_storage.type = ShaderVisibleDescriptorType::Null;
+    if (mapped_argument_buffer_) {
+      auto &gpu_storage = mapped_argument_buffer_[Index];
+      gpu_storage.ZeroFilled = {{}};
+    }
+    return S_OK;
+  }
+
+  virtual HRESULT
+  AddUnorderedAccessView(UINT Index, D3D12_UNORDERED_ACCESS_VIEW_DESC const *pDesc) {
+    if (Index >= descriptors_.size())
+      return E_INVALIDARG;
+    if (!pDesc)
+      return E_INVALIDARG;
+    /**
+     * TODO: support null descriptor properly (respect different view dimensions)
+     */
+    auto &cpu_storage = descriptors_[Index];
+    cpu_storage.type = ShaderVisibleDescriptorType::Null;
+    if (mapped_argument_buffer_) {
+      auto &gpu_storage = mapped_argument_buffer_[Index];
+      gpu_storage.ZeroFilled = {{}};
     }
     return S_OK;
   }
