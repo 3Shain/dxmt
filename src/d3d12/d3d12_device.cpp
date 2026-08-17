@@ -85,7 +85,7 @@ public:
     *ppvObject = nullptr;
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D12Object) || riid == __uuidof(ID3D12Device) ||
-        riid == __uuidof(ID3D12Device1)) {
+        riid == __uuidof(ID3D12Device1) || riid == __uuidof(ID3D12Device2) || riid == __uuidof(ID3D12Device3)) {
       *ppvObject = ref(this);
       return S_OK;
     }
@@ -749,6 +749,29 @@ public:
   SetResidencyPriority(UINT ObjectCount, ID3D12Pageable *const *pObjects, const D3D12_RESIDENCY_PRIORITY *pPriorities) {
     return E_NOTIMPL;
   };
+
+  HRESULT STDMETHODCALLTYPE
+  CreatePipelineState(const D3D12_PIPELINE_STATE_STREAM_DESC *pDesc, REFIID riid, void **ppPipelineState) {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  OpenExistingHeapFromAddress(const void *pAddress, REFIID riid, void **ppHeap) {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  OpenExistingHeapFromFileMapping(HANDLE hFileMapping, REFIID riid, void **ppHeap) {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  EnqueueMakeResident(
+      D3D12_RESIDENCY_FLAGS Flags, UINT NumObjects, ID3D12Pageable *const *ppObjects, ID3D12Fence *pFence,
+      UINT64 FenceValue
+  ) {
+    return E_NOTIMPL;
+  }
 
   WMT::ResidencySet
   GetGlobalResidencySet() {
