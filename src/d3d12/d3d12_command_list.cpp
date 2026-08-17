@@ -217,7 +217,8 @@ public:
     *ppvObject = nullptr;
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D12Object) || riid == __uuidof(ID3D12DeviceChild) ||
-        riid == __uuidof(ID3D12CommandList) || riid == __uuidof(ID3D12GraphicsCommandList)) {
+        riid == __uuidof(ID3D12CommandList) || riid == __uuidof(ID3D12GraphicsCommandList) ||
+        riid == __uuidof(ID3D12GraphicsCommandList1) || riid == __uuidof(ID3D12GraphicsCommandList2)) {
       *ppvObject = ref(this);
       return S_OK;
     }
@@ -1378,6 +1379,52 @@ public:
     cmd->vertex_buffer = allocator_->gpu_heap_buffer_address_ + VBOffset;
     cmd->vertex_argbuf_stride = VBStride;
   };
+
+  void STDMETHODCALLTYPE
+  AtomicCopyBufferUINT(
+      ID3D12Resource *pDstBuffer, UINT64 DstOffset, ID3D12Resource *pSrcBuffer, UINT64 SrcOffset, UINT Dependencies,
+      ID3D12Resource *const *ppDependentResources, const D3D12_SUBRESOURCE_RANGE_UINT64 *pDependentSubresourceRanges
+  ) {
+    IMPLEMENT_ME
+  }
+
+  void STDMETHODCALLTYPE
+  AtomicCopyBufferUINT64(
+      ID3D12Resource *pDstBuffer, UINT64 DstOffset, ID3D12Resource *pSrcBuffer, UINT64 SrcOffset, UINT Dependencies,
+      ID3D12Resource *const *ppDependentResources, const D3D12_SUBRESOURCE_RANGE_UINT64 *pDependentSubresourceRanges
+  ) {
+    IMPLEMENT_ME
+  }
+
+  void STDMETHODCALLTYPE
+  OMSetDepthBounds(FLOAT Min, FLOAT Max) {
+    IMPLEMENT_ME
+  }
+
+  void STDMETHODCALLTYPE
+  SetSamplePositions(UINT NumSamplesPerPixel, UINT NumPixels, D3D12_SAMPLE_POSITION *pSamplePositions) {
+    IMPLEMENT_ME
+  }
+
+  void STDMETHODCALLTYPE
+  ResolveSubresourceRegion(
+      ID3D12Resource *pDstResource, UINT DstSubresource, UINT DstX, UINT DstY, ID3D12Resource *pSrcResource,
+      UINT SrcSubresource, D3D12_RECT *pSrcRect, DXGI_FORMAT Format, D3D12_RESOLVE_MODE ResolveMode
+  ) {
+    IMPLEMENT_ME
+  }
+
+  void STDMETHODCALLTYPE
+  SetViewInstanceMask(UINT Mask) {
+    IMPLEMENT_ME
+  }
+
+  void STDMETHODCALLTYPE
+  WriteBufferImmediate(
+      UINT Count, const D3D12_WRITEBUFFERIMMEDIATE_PARAMETER *pParams, const D3D12_WRITEBUFFERIMMEDIATE_MODE *pModes
+  ) {
+    IMPLEMENT_ME
+  }
 };
 
 HRESULT STDMETHODCALLTYPE

@@ -39,7 +39,7 @@
 
 namespace dxmt {
 
-class MTLD3D12GraphicsCommandList : public ID3D12GraphicsCommandList {
+class MTLD3D12GraphicsCommandList : public ID3D12GraphicsCommandList2 {
 public:
   EncoderData *entry;
   size_t encoder_count;
