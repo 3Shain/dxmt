@@ -890,6 +890,7 @@ enum WMTBlitCommandType : uint16_t {
   WMTBlitCommandCopyFromBufferToTextureWithBlitOption,
   WMTBlitCommandCopyFromTextureToBufferWithBlitOption,
   WMTBlitCommandResetCommandsInBuffer,
+  WMTBlitCommandCopyTexture,
 };
 
 enum WMTBlitOption : uint16_t {
@@ -1041,6 +1042,14 @@ struct wmtcmd_blit_resetcommands {
   obj_handle_t indirect_command_buffer;
   uint32_t location;
   uint32_t length;
+};
+
+struct wmtcmd_blit_copy_texture {
+  enum WMTBlitCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t src;
+  obj_handle_t dst;
 };
 
 WINEMETAL_API void MTLBlitCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);

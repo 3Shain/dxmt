@@ -781,6 +781,11 @@ _MTLBlitCommandEncoder_encodeCommands(void *obj) {
                            withRange:NSMakeRange(body->location, body->length)];
       break;
     }
+    case WMTBlitCommandCopyTexture: {
+      struct wmtcmd_blit_copy_texture *body = (struct wmtcmd_blit_copy_texture *)next;
+      [encoder copyFromTexture:(id<MTLTexture>)body->src toTexture:(id<MTLTexture>)body->dst];
+      break;
+    }
     }
 
     next = next->next.ptr;
