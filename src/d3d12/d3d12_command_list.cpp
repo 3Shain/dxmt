@@ -628,7 +628,7 @@ public:
 
       auto dst_planar_count = getPlanarCount(dst->pixelFormat());
       auto dst_subresource_index = pDst->SubresourceIndex / dst_planar_count;
-      auto dst_subresource_planar = pDst->SubresourceIndex % dst_planar_count;
+      auto dst_subresource_planar = dst_planar_count > 1 ? (pDst->SubresourceIndex % dst_planar_count) : 0;
 
       if (pSrc->Type == D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT) {
         auto &src = static_cast<MTLD3D12Resource *>(pSrc->pResource)->buffer;
@@ -661,12 +661,61 @@ public:
         if (!src)
           return;
         auto src_planar_count = getPlanarCount(src->pixelFormat());
+        auto src_subresource_index = pSrc->SubresourceIndex / src_planar_count;
+        auto src_subresource_planar = src_planar_count > 1 ? (pSrc->SubresourceIndex % src_planar_count) : 0;
         if (!pSrcBox)
           IMPLEMENT_ME
 
         // copy between depth-stencil texture is tricky
-        if (dst_planar_count > 1 || src_planar_count > 1)
-          IMPLEMENT_ME
+        if (dst_planar_count > 1 || src_planar_count > 1) {
+          // in this path, one/both of dst/src would be depth-stencil texture
+
+          if (dst_planar_count > 1 && src_planar_count > 1 && dst_subresource_planar != src_subresource_planar) {
+            WARN("CopyTextureRegion: unmatched planar"); // just in case
+            return;
+          }
+
+          auto texel_size = (dst_subresource_planar == 1 || src_subresource_planar == 1) ? 1 : 4;
+          auto width = pSrcBox->right - pSrcBox->left;
+          auto height = pSrcBox->bottom - pSrcBox->top;
+          auto bytes_per_row = align(width * texel_size, 256);
+          auto bytes_per_image = bytes_per_row * height;
+
+          auto [temp_buffer, temp_buffer_offset] = allocator_->AllocateTempBuffer(bytes_per_image, 256);
+
+          auto &cmd_to_tmp = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer_withblitoption>();
+          cmd_to_tmp.type = WMTBlitCommandCopyFromTextureToBufferWithBlitOption;
+          cmd_to_tmp.src = src->current()->texture();
+          cmd_to_tmp.level = src_subresource_index % src->miplevelCount();
+          cmd_to_tmp.slice = src_subresource_index / src->miplevelCount();
+          cmd_to_tmp.origin = {pSrcBox->left, pSrcBox->top, pSrcBox->front};
+          cmd_to_tmp.size = {width, height, pSrcBox->back - pSrcBox->front};
+          cmd_to_tmp.dst = temp_buffer;
+          cmd_to_tmp.offset = temp_buffer_offset;
+          cmd_to_tmp.bytes_per_image = 0; // DSV cannot be 3D
+          cmd_to_tmp.bytes_per_row = bytes_per_row;
+          cmd_to_tmp.options = (src_planar_count > 1) ? (src_subresource_planar ? WMTBlitOptionStencilFromDepthStencil
+                                                                                : WMTBlitOptionDepthFromDepthStencil)
+                                                      : WMTBlitOptionNone;
+
+          auto &cmd_to_tex = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture_withblitoption>();
+          cmd_to_tex.type = WMTBlitCommandCopyFromBufferToTextureWithBlitOption;
+          cmd_to_tex.src = temp_buffer;
+          cmd_to_tex.src_offset = temp_buffer_offset;
+          cmd_to_tex.bytes_per_image = 0; // DSV cannot be 3D
+          cmd_to_tex.bytes_per_row = bytes_per_row;
+          cmd_to_tex.dst = dst->current()->texture();
+          cmd_to_tex.level = dst_subresource_index % dst->miplevelCount();
+          cmd_to_tex.slice = dst_subresource_index / dst->miplevelCount();
+          cmd_to_tex.origin = {DstX, DstY, DstZ};
+          cmd_to_tex.size = {
+              pSrcBox->right - pSrcBox->left, pSrcBox->bottom - pSrcBox->top, pSrcBox->back - pSrcBox->front
+          };
+          cmd_to_tex.options = (dst_planar_count > 1) ? (dst_subresource_planar ? WMTBlitOptionStencilFromDepthStencil
+                                                                                : WMTBlitOptionDepthFromDepthStencil)
+                                                      : WMTBlitOptionNone;
+          return;
+        }
 
         auto &cmd_cp = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_texture_to_texture>();
         cmd_cp.type = WMTBlitCommandCopyFromTextureToTexture;
