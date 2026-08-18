@@ -149,7 +149,7 @@ public:
 
     backbuffer_desc_ = D3D12_RESOURCE_DESC{
         .Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-        .Alignment = 1,
+        .Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT,
         .Width = desc_.Width,
         .Height = desc_.Height,
         .DepthOrArraySize = 1,
@@ -160,7 +160,7 @@ public:
                 .Count = 1,
                 .Quality = 0,
             },
-        .Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+        .Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN,
         .Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
     };
     if (desc_.BufferUsage & DXGI_USAGE_UNORDERED_ACCESS)
