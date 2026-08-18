@@ -141,6 +141,8 @@ EncodeComponentMapping(UINT Shader4ComponentMapping, WMTPixelFormat Format) {
 
 class MTLD3D12Texture : public MTLD3D12Pageable<MTLD3D12Resource> {
   D3D12_RESOURCE_DESC desc_;
+  D3D12_HEAP_PROPERTIES heap_props_;
+  D3D12_HEAP_FLAGS heap_flags_;
 
 public:
   MTLD3D12Texture(MTLD3D12Device *pDevice) : MTLD3D12Pageable<MTLD3D12Resource>(pDevice) {}
@@ -152,6 +154,8 @@ public:
   ) {
     // TODO: validate and normalize
     desc_ = *pDesc;
+    heap_props_ = *pHeapProps;
+    heap_flags_ = HeapFlags;
 
     switch (InitialState) {
     case D3D12_RESOURCE_STATE_RENDER_TARGET: {
@@ -239,7 +243,11 @@ public:
 
   virtual HRESULT STDMETHODCALLTYPE
   GetHeapProperties(D3D12_HEAP_PROPERTIES *pHeapProps, D3D12_HEAP_FLAGS *pFlags) {
-    return E_NOTIMPL;
+    if (pHeapProps)
+      *pHeapProps = heap_props_;
+    if (pFlags)
+      *pFlags = heap_flags_;
+    return S_OK;
   };
 
   virtual HRESULT STDMETHODCALLTYPE
