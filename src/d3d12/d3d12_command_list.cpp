@@ -798,7 +798,16 @@ public:
       return;
     }
 
-    IMPLEMENT_ME
+    // TODO: handle reinterpret copy
+    if (pDst->texture->pixelFormat() != pSrc->texture->pixelFormat()) {
+      WARN("CopyResource: TODO: reinterpret copy");
+      return;
+    }
+
+    auto &cmd_cp = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_texture>();
+    cmd_cp.type = WMTBlitCommandCopyTexture;
+    cmd_cp.src = pSrc->texture->current()->texture();
+    cmd_cp.dst = pDst->texture->current()->texture();
   };
 
   void STDMETHODCALLTYPE CopyTiles(
