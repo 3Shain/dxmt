@@ -2132,4 +2132,9 @@ WINEMETAL_API obj_handle_t MTLDevice_newIndirectCommandBuffer(
 WINEMETAL_API obj_handle_t
 MTLDevice_newLibraryWithSource(obj_handle_t device, const char *source, uint64_t length, obj_handle_t *err_out);
 
+WINEMETAL_API void MTLTexture_getBytes(
+    obj_handle_t texture, struct WMTOrigin origin, struct WMTSize size, uint64_t level, uint64_t slice,
+    struct WMTMemoryPointer data, uint64_t bytes_per_row, uint64_t bytes_per_image
+);
+
 #endif
