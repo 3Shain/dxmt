@@ -752,7 +752,223 @@ public:
 
   HRESULT STDMETHODCALLTYPE
   CreatePipelineState(const D3D12_PIPELINE_STATE_STREAM_DESC *pDesc, REFIID riid, void **ppPipelineState) {
-    return E_NOTIMPL;
+    const char *stream_start = reinterpret_cast<const char *>(pDesc->pPipelineStateSubobjectStream);
+    const char *stream_end = stream_start + pDesc->SizeInBytes;
+
+    D3D12_COMPUTE_PIPELINE_STATE_DESC desc_cs{};
+    D3D12_GRAPHICS_PIPELINE_STATE_DESC desc_graphics{};
+    {
+      desc_graphics.DepthStencilState.DepthEnable = TRUE;
+      desc_graphics.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+      desc_graphics.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+      desc_graphics.DepthStencilState.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+      desc_graphics.DepthStencilState.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+      desc_graphics.DepthStencilState.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+      desc_graphics.DepthStencilState.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+      desc_graphics.DepthStencilState.BackFace = desc_graphics.DepthStencilState.FrontFace;
+      desc_graphics.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+      desc_graphics.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+      desc_graphics.RasterizerState.DepthClipEnable = TRUE;
+      desc_graphics.RasterizerState.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+      desc_graphics.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+      desc_graphics.SampleDesc.Count = 1;
+      desc_graphics.SampleDesc.Quality = 0;
+      desc_graphics.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
+    }
+
+    uint32_t defined_type = 0;
+
+    while (stream_start < stream_end) {
+      if (stream_start + sizeof(D3D12_PIPELINE_STATE_SUBOBJECT_TYPE) > stream_end) {
+        ERR("CreatePipelineState: invalid stream");
+        return E_INVALIDARG;
+      }
+      auto type = *reinterpret_cast<const D3D12_PIPELINE_STATE_SUBOBJECT_TYPE *>(stream_start);
+
+      if (defined_type & (1 << type)) {
+        ERR("CreatePipelineState: duplicated subobejct type ", type);
+        return E_INVALIDARG;
+      }
+      defined_type |= (1 << type);
+
+#define GET_STREAM_DATA(data_type)                                                                                     \
+  using subobject_t = struct {                                                                                         \
+    D3D12_PIPELINE_STATE_SUBOBJECT_TYPE type;                                                                          \
+    data_type data;                                                                                                    \
+  };                                                                                                                   \
+  auto subobject = reinterpret_cast<subobject_t const *>(stream_start);                                                \
+  if (stream_start + sizeof(*subobject) > stream_end) {                                                                \
+    ERR("CreatePipelineState: invalid stream");                                                                        \
+    return E_INVALIDARG;                                                                                               \
+  }                                                                                                                    \
+  stream_start += align(sizeof(*subobject), sizeof(void *));
+
+      switch (type) {
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_ROOT_SIGNATURE: {
+        GET_STREAM_DATA(ID3D12RootSignature *);
+        desc_cs.pRootSignature = subobject->data;
+        desc_graphics.pRootSignature = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_VS: {
+        GET_STREAM_DATA(D3D12_SHADER_BYTECODE);
+        desc_graphics.VS = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_PS: {
+        GET_STREAM_DATA(D3D12_SHADER_BYTECODE);
+        desc_graphics.PS = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DS: {
+        GET_STREAM_DATA(D3D12_SHADER_BYTECODE);
+        desc_graphics.DS = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_HS: {
+        GET_STREAM_DATA(D3D12_SHADER_BYTECODE);
+        desc_graphics.HS = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_GS: {
+        GET_STREAM_DATA(D3D12_SHADER_BYTECODE);
+        desc_graphics.GS = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_CS: {
+        GET_STREAM_DATA(D3D12_SHADER_BYTECODE);
+        desc_cs.CS = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_STREAM_OUTPUT: {
+        GET_STREAM_DATA(D3D12_STREAM_OUTPUT_DESC);
+        desc_graphics.StreamOutput = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_BLEND: {
+        GET_STREAM_DATA(D3D12_BLEND_DESC);
+        desc_graphics.BlendState = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_SAMPLE_MASK: {
+        GET_STREAM_DATA(UINT);
+        desc_graphics.SampleMask = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RASTERIZER: {
+        GET_STREAM_DATA(D3D12_RASTERIZER_DESC);
+        desc_graphics.RasterizerState = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL: {
+        GET_STREAM_DATA(D3D12_DEPTH_STENCIL_DESC);
+        desc_graphics.DepthStencilState = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_INPUT_LAYOUT: {
+        GET_STREAM_DATA(D3D12_INPUT_LAYOUT_DESC);
+        desc_graphics.InputLayout = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_IB_STRIP_CUT_VALUE: {
+        GET_STREAM_DATA(D3D12_INDEX_BUFFER_STRIP_CUT_VALUE);
+        desc_graphics.IBStripCutValue = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_PRIMITIVE_TOPOLOGY: {
+        GET_STREAM_DATA(D3D12_PRIMITIVE_TOPOLOGY_TYPE);
+        desc_graphics.PrimitiveTopologyType = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RENDER_TARGET_FORMATS: {
+        GET_STREAM_DATA(D3D12_RT_FORMAT_ARRAY);
+        memcpy(desc_graphics.RTVFormats, subobject->data.RTFormats, sizeof(desc_graphics.RTVFormats));
+        desc_graphics.NumRenderTargets = subobject->data.NumRenderTargets;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL_FORMAT: {
+        GET_STREAM_DATA(DXGI_FORMAT);
+        desc_graphics.DSVFormat = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_SAMPLE_DESC: {
+        GET_STREAM_DATA(DXGI_SAMPLE_DESC);
+        desc_graphics.SampleDesc = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_NODE_MASK: {
+        GET_STREAM_DATA(UINT);
+        desc_graphics.NodeMask = subobject->data;
+        desc_cs.NodeMask = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_CACHED_PSO: {
+        GET_STREAM_DATA(D3D12_CACHED_PIPELINE_STATE);
+        desc_graphics.CachedPSO = subobject->data;
+        desc_cs.CachedPSO = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_FLAGS: {
+        GET_STREAM_DATA(D3D12_PIPELINE_STATE_FLAGS);
+        desc_graphics.Flags = subobject->data;
+        desc_cs.Flags = subobject->data;
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL1: {
+        GET_STREAM_DATA(D3D12_DEPTH_STENCIL_DESC1);
+        desc_graphics.DepthStencilState.StencilEnable = subobject->data.StencilEnable;
+        desc_graphics.DepthStencilState.DepthEnable = subobject->data.DepthEnable;
+        desc_graphics.DepthStencilState.DepthFunc = subobject->data.DepthFunc;
+        desc_graphics.DepthStencilState.DepthWriteMask = subobject->data.DepthWriteMask;
+        desc_graphics.DepthStencilState.StencilWriteMask = subobject->data.StencilWriteMask;
+        desc_graphics.DepthStencilState.BackFace = subobject->data.BackFace;
+        desc_graphics.DepthStencilState.FrontFace = subobject->data.FrontFace;
+        if (subobject->data.DepthBoundsTestEnable) {
+          WARN("CreatePipelineState: ignore DepthBoundsTestEnable");
+        }
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_VIEW_INSTANCING: {
+        GET_STREAM_DATA(D3D12_VIEW_INSTANCING_DESC);
+        if (subobject->data.Flags) {
+          WARN("CreatePipelineState: ignore ViewInstancing");
+        }
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_AS: {
+        GET_STREAM_DATA(D3D12_SHADER_BYTECODE);
+        if (subobject->data.pShaderBytecode) {
+          ERR("CreatePipelineState: unsupported AS");
+          return E_NOTIMPL;
+        }
+        break;
+      }
+      case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_MS: {
+        GET_STREAM_DATA(D3D12_SHADER_BYTECODE);
+        if (subobject->data.pShaderBytecode) {
+          ERR("CreatePipelineState: unsupported MS");
+          return E_NOTIMPL;
+        }
+        break;
+      }
+      default:
+        ERR("CreatePipelineState: unhandled subobject type ", type);
+        return E_INVALIDARG;
+      }
+    }
+
+    if (desc_cs.CS.pShaderBytecode) {
+      uint32_t incompatible_type =
+          (1 << D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_VS | 1 << D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_AS |
+           1 << D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_MS);
+      if (defined_type & incompatible_type) {
+        ERR("CreatePipelineState: invalid compute pipeline state stream");
+        return E_INVALIDARG;
+      }
+      return CreateComputePipelineState(&desc_cs, riid, ppPipelineState);
+    }
+
+    return CreateGraphicsPipelineState(&desc_graphics, riid, ppPipelineState);
   }
 
   HRESULT STDMETHODCALLTYPE
