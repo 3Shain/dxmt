@@ -20,6 +20,7 @@
 
 #include "d3d12_pageable.hpp"
 #include "dxmt_command_clear.hpp"
+#include "dxmt_ring_bump_allocator.hpp"
 
 namespace dxmt {
 
@@ -89,6 +90,9 @@ class MTLD3D12CommandAllocatorImpl : public MTLD3D12Pageable<MTLD3D12CommandAllo
   small_vector<WMT::Reference<WMT::IndirectCommandBuffer>, 4> icb_;
 
   ClearUAV<MTLD3D12CommandAllocatorImpl> clear_uav_;
+
+  RingBumpState<GpuPrivateBufferBlockAllocator> copy_temp_allocator_;
+  uint64_t copy_temp_version_;
 
 public:
   MTLD3D12CommandAllocatorImpl(MTLD3D12Device *pDevice, D3D12_COMMAND_LIST_TYPE Type);
@@ -214,6 +218,13 @@ public:
     gpu_heap_offset_ = aligned + Length;
     assert(gpu_heap_offset_ < kGPUHeapSize);
     return {ptr_add(gpu_heap_, aligned), aligned};
+  }
+
+  std::tuple<WMT::Buffer, uint64_t>
+  AllocateTempBuffer(size_t Size, size_t Alignment) {
+    assert(copy_temp_version_);
+    auto [block, offset] = copy_temp_allocator_.allocate(copy_temp_version_, copy_temp_version_ - 1, Size, Alignment);
+    return {block.buffer, offset};
   }
 
   IndirectComputeCommandData *EncodeIndirectComputeCommand(MTLD3D12CommandSignature *pCmdSig, MTLD3D12ComputePipelineState *pPSO, size_t MaxCount);

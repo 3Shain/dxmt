@@ -24,7 +24,11 @@ namespace dxmt {
 MTLD3D12CommandAllocatorImpl::MTLD3D12CommandAllocatorImpl(MTLD3D12Device *pDevice, D3D12_COMMAND_LIST_TYPE Type) :
     MTLD3D12Pageable<MTLD3D12CommandAllocator>(pDevice),
     type_(Type),
-    clear_uav_(device_->GetMTLDevice(), *this) {}
+    clear_uav_(device_->GetMTLDevice(), *this),
+    copy_temp_allocator_(
+        {device_->GetMTLDevice(), WMTResourceHazardTrackingModeUntracked | WMTResourceStorageModePrivate}
+    ),
+    copy_temp_version_(0) {}
 
 HRESULT
 CreateCommandAllocator(MTLD3D12Device *pDevice, D3D12_COMMAND_LIST_TYPE Type, REFIID riid, void **ppCommandAllocator) {
@@ -76,6 +80,8 @@ MTLD3D12CommandAllocatorImpl::Initialize() {
   encoder_count_ = 0;
 
   icb_.clear();
+
+  copy_temp_allocator_.free_blocks(copy_temp_version_++);
 
   return S_OK;
 }
