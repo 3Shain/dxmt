@@ -338,14 +338,14 @@ public:
         if (dsv_planar_flags & 1) {
           auto &rt = render->depth;
           rt.attachment = AttachmentDesc.Texture->view(AttachmentDesc.View);
-          rt.depth_plane = 0;
+          rt.depth_plane = 0; // DSV cannot be 3D
           rt.load_action = WMTLoadActionLoad;
           rt.store_action = WMTStoreActionStore;
         }
         if (dsv_planar_flags & 2) {
           auto &rt = render->stencil;
           rt.attachment = AttachmentDesc.Texture->view(AttachmentDesc.View);
-          rt.depth_plane = AttachmentDesc.DepthPlane;
+          rt.depth_plane = 0; // DSV cannot be 3D
           rt.load_action = WMTLoadActionLoad;
           rt.store_action = WMTStoreActionStore;
         }
@@ -1205,6 +1205,7 @@ public:
     encoder_info->array_length = AttachmentDesc.RenderTargetArrayLength;
     encoder_info->width = AttachmentDesc.Width;
     encoder_info->height = AttachmentDesc.Height;
+    encoder_info->depth_plane = 0;
 
     allocator_->InvalidateCurrentPass();
   };
@@ -1231,6 +1232,7 @@ public:
     encoder_info->array_length = AttachmentDesc.RenderTargetArrayLength;
     encoder_info->width = AttachmentDesc.Width;
     encoder_info->height = AttachmentDesc.Height;
+    encoder_info->depth_plane = AttachmentDesc.DepthPlane;
 
     allocator_->InvalidateCurrentPass();
   };

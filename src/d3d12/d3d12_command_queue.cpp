@@ -121,12 +121,14 @@ public:
                 info.depth.texture = data->attachment.texture();
                 info.depth.load_action = WMTLoadActionClear;
                 info.depth.store_action = WMTStoreActionStore;
+                info.depth.depth_plane = data->depth_plane;
               }
               if (data->clear_dsv & 2) {
                 info.stencil.clear_stencil = data->depth_stencil.second;
                 info.stencil.texture = data->attachment.texture();
                 info.stencil.load_action = WMTLoadActionClear;
                 info.stencil.store_action = WMTStoreActionStore;
+                info.stencil.depth_plane = data->depth_plane;
               }
               info.render_target_width = data->width;
               info.render_target_height = data->height;
@@ -135,6 +137,7 @@ public:
               info.colors[0].texture = data->attachment.texture();
               info.colors[0].load_action = WMTLoadActionClear;
               info.colors[0].store_action = WMTStoreActionStore;
+              info.colors[0].depth_plane = data->depth_plane;
             }
             info.render_target_array_length = data->array_length;
             auto encoder = cmdbuf.renderCommandEncoder(info);
