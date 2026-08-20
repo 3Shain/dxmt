@@ -106,9 +106,6 @@ to_metal_primitive_type(D3D12_PRIMITIVE_TOPOLOGY topo, WMTPrimitiveType &primiti
   return true;
 }
 
-/* FIXME: it's not *public* */
-unsigned getPlanarCount(WMTPixelFormat format);
-
 // `Graphics`CommandList is a really confusing name
 class MTLD3D12GraphicsCommandListImpl : public MTLD3D12DeviceChild<MTLD3D12GraphicsCommandList> {
 
@@ -621,63 +618,98 @@ public:
     if (!PreBlit())
       return;
 
+    auto src_desc = pSrc->pResource->GetDesc();
+    auto dst_desc = pDst->pResource->GetDesc();
+    uint32_t src_level = 0, src_slice = 0, src_planar = 0;
+    uint32_t dst_level = 0, dst_slice = 0, dst_planar = 0;
+    D3D12_BOX src_box, full_src_box;
+
+    if (pSrc->Type == D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT) {
+      full_src_box = {
+          0, 0, 0,
+          pSrc->PlacedFootprint.Footprint.Width,
+          pSrc->PlacedFootprint.Footprint.Height,
+          pSrc->PlacedFootprint.Footprint.Depth
+      };
+    } else {
+      DecomposeSubresource(src_desc, pSrc->SubresourceIndex, &src_level, &src_slice, &src_planar);
+      full_src_box = GetResourceExtent(src_desc, src_level);
+    }
+    src_box = pSrcBox ? *pSrcBox : full_src_box;
+
+    // discard invalid & empty box
+    if (src_box.left >= src_box.right || src_box.front >= src_box.back || src_box.top >= src_box.bottom)
+      return;
+
     if (pDst->Type == D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX) {
       auto &dst = static_cast<MTLD3D12Resource *>(pDst->pResource)->texture;
       if (!dst)
         return;
 
-      auto dst_planar_count = getPlanarCount(dst->pixelFormat());
-      auto dst_subresource_index = pDst->SubresourceIndex / dst_planar_count;
-      auto dst_subresource_planar = dst_planar_count > 1 ? (pDst->SubresourceIndex % dst_planar_count) : 0;
+      DecomposeSubresource(dst_desc, pDst->SubresourceIndex, &dst_level, &dst_slice, &dst_planar);
+
+      MTL_DXGI_FORMAT_DESC dst_format;
+      if (FAILED(MTLQueryDXGIFormat(device_->GetMTLDevice(), dst_desc.Format, dst_format))) {
+        WARN("CopyTextureRegion: unsupported format ", dst_desc.Format);
+        return;
+      }
+      auto dst_planar_count = dst_format.PlanarCount;
 
       if (pSrc->Type == D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT) {
         auto &src = static_cast<MTLD3D12Resource *>(pSrc->pResource)->buffer;
         if (!src)
           return;
-        if (pSrcBox)
-          IMPLEMENT_ME
+
+        MTL_DXGI_FORMAT_DESC src_format;
+        if (FAILED(MTLQueryDXGIFormat(device_->GetMTLDevice(), pSrc->PlacedFootprint.Footprint.Format, src_format))) {
+          WARN("CopyTextureRegion: unsupported format ", pSrc->PlacedFootprint.Footprint.Format);
+          return;
+        }
+
+        auto block_width = src_format.Flag & MTL_DXGI_FORMAT_BC ? 4 : 1;
+        auto src_depth_pitch = dst->textureType() == WMTTextureType3D
+                                   ? (pSrc->PlacedFootprint.Footprint.Height / block_width) * pSrc->PlacedFootprint.Footprint.RowPitch
+                                   : 0;
 
         auto &cmd_cp = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture_withblitoption>();
         cmd_cp.type = WMTBlitCommandCopyFromBufferToTextureWithBlitOption;
         cmd_cp.src = src->current()->buffer();
-        cmd_cp.src_offset = pSrc->PlacedFootprint.Offset;
+        cmd_cp.src_offset = pSrc->PlacedFootprint.Offset + (src_box.left / block_width) * src_format.BytesPerTexel +
+                            (src_box.top / block_width) * pSrc->PlacedFootprint.Footprint.RowPitch + src_box.front * src_depth_pitch;
         cmd_cp.bytes_per_row = pSrc->PlacedFootprint.Footprint.RowPitch;
-        cmd_cp.bytes_per_image = dst->textureType() == WMTTextureType3D
-                                     ? pSrc->PlacedFootprint.Footprint.Height * pSrc->PlacedFootprint.Footprint.RowPitch
-                                     : 0;
-        cmd_cp.size = {
-            pSrc->PlacedFootprint.Footprint.Width, pSrc->PlacedFootprint.Footprint.Height,
-            pSrc->PlacedFootprint.Footprint.Depth
-        };
+        cmd_cp.bytes_per_image = src_depth_pitch;
+        cmd_cp.size = {src_box.right - src_box.left, src_box.bottom - src_box.top, src_box.back - src_box.front};
         cmd_cp.dst = dst->current()->texture();
-        cmd_cp.level = dst_subresource_index % dst->miplevelCount();
-        cmd_cp.slice = dst_subresource_index / dst->miplevelCount();
-        cmd_cp.options = (dst_planar_count > 1) ? (dst_subresource_planar ? WMTBlitOptionStencilFromDepthStencil
-                                                                          : WMTBlitOptionDepthFromDepthStencil)
-                                                : WMTBlitOptionNone;
+        cmd_cp.level = dst_level;
+        cmd_cp.slice = dst_slice;
+        cmd_cp.options = (dst_planar_count > 1)
+                             ? (dst_planar ? WMTBlitOptionStencilFromDepthStencil : WMTBlitOptionDepthFromDepthStencil)
+                             : WMTBlitOptionNone;
         cmd_cp.origin = {DstX, DstY, DstZ};
       } else {
         auto &src = static_cast<MTLD3D12Resource *>(pSrc->pResource)->texture;
         if (!src)
           return;
-        auto src_planar_count = getPlanarCount(src->pixelFormat());
-        auto src_subresource_index = pSrc->SubresourceIndex / src_planar_count;
-        auto src_subresource_planar = src_planar_count > 1 ? (pSrc->SubresourceIndex % src_planar_count) : 0;
-        if (!pSrcBox)
-          IMPLEMENT_ME
+
+        MTL_DXGI_FORMAT_DESC src_format;
+        if (FAILED(MTLQueryDXGIFormat(device_->GetMTLDevice(), src_desc.Format, src_format))) {
+          WARN("CopyTextureRegion: unsupported format ", src_desc.Format);
+          return;
+        }
+        auto src_planar_count = src_format.PlanarCount;
 
         // copy between depth-stencil texture is tricky
         if (dst_planar_count > 1 || src_planar_count > 1) {
           // in this path, one/both of dst/src would be depth-stencil texture
 
-          if (dst_planar_count > 1 && src_planar_count > 1 && dst_subresource_planar != src_subresource_planar) {
+          if (dst_planar_count > 1 && src_planar_count > 1 && dst_planar != src_planar) {
             WARN("CopyTextureRegion: unmatched planar"); // just in case
             return;
           }
 
-          auto texel_size = (dst_subresource_planar == 1 || src_subresource_planar == 1) ? 1 : 4;
-          auto width = pSrcBox->right - pSrcBox->left;
-          auto height = pSrcBox->bottom - pSrcBox->top;
+          auto texel_size = (dst_planar == 1 || src_planar == 1) ? 1 : 4;
+          auto width = src_box.right - src_box.left;
+          auto height = src_box.bottom - src_box.top;
           auto bytes_per_row = align(width * texel_size, 256);
           auto bytes_per_image = bytes_per_row * height;
 
@@ -686,16 +718,16 @@ public:
           auto &cmd_to_tmp = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer_withblitoption>();
           cmd_to_tmp.type = WMTBlitCommandCopyFromTextureToBufferWithBlitOption;
           cmd_to_tmp.src = src->current()->texture();
-          cmd_to_tmp.level = src_subresource_index % src->miplevelCount();
-          cmd_to_tmp.slice = src_subresource_index / src->miplevelCount();
-          cmd_to_tmp.origin = {pSrcBox->left, pSrcBox->top, pSrcBox->front};
-          cmd_to_tmp.size = {width, height, pSrcBox->back - pSrcBox->front};
+          cmd_to_tmp.level = src_level;
+          cmd_to_tmp.slice = src_slice;
+          cmd_to_tmp.origin = {src_box.left, src_box.top, src_box.front};
+          cmd_to_tmp.size = {width, height, src_box.back - src_box.front};
           cmd_to_tmp.dst = temp_buffer;
           cmd_to_tmp.offset = temp_buffer_offset;
           cmd_to_tmp.bytes_per_image = 0; // DSV cannot be 3D
           cmd_to_tmp.bytes_per_row = bytes_per_row;
-          cmd_to_tmp.options = (src_planar_count > 1) ? (src_subresource_planar ? WMTBlitOptionStencilFromDepthStencil
-                                                                                : WMTBlitOptionDepthFromDepthStencil)
+          cmd_to_tmp.options = (src_planar_count > 1) ? (src_planar ? WMTBlitOptionStencilFromDepthStencil
+                                                                    : WMTBlitOptionDepthFromDepthStencil)
                                                       : WMTBlitOptionNone;
 
           auto &cmd_to_tex = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture_withblitoption>();
@@ -705,14 +737,12 @@ public:
           cmd_to_tex.bytes_per_image = 0; // DSV cannot be 3D
           cmd_to_tex.bytes_per_row = bytes_per_row;
           cmd_to_tex.dst = dst->current()->texture();
-          cmd_to_tex.level = dst_subresource_index % dst->miplevelCount();
-          cmd_to_tex.slice = dst_subresource_index / dst->miplevelCount();
+          cmd_to_tex.level = dst_level;
+          cmd_to_tex.slice = dst_slice;
           cmd_to_tex.origin = {DstX, DstY, DstZ};
-          cmd_to_tex.size = {
-              pSrcBox->right - pSrcBox->left, pSrcBox->bottom - pSrcBox->top, pSrcBox->back - pSrcBox->front
-          };
-          cmd_to_tex.options = (dst_planar_count > 1) ? (dst_subresource_planar ? WMTBlitOptionStencilFromDepthStencil
-                                                                                : WMTBlitOptionDepthFromDepthStencil)
+          cmd_to_tex.size = {src_box.right - src_box.left, src_box.bottom - src_box.top, src_box.back - src_box.front};
+          cmd_to_tex.options = (dst_planar_count > 1) ? (dst_planar ? WMTBlitOptionStencilFromDepthStencil
+                                                                    : WMTBlitOptionDepthFromDepthStencil)
                                                       : WMTBlitOptionNone;
           return;
         }
@@ -720,51 +750,58 @@ public:
         auto &cmd_cp = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_texture_to_texture>();
         cmd_cp.type = WMTBlitCommandCopyFromTextureToTexture;
         cmd_cp.src = src->current()->texture();
-        cmd_cp.src_level = pSrc->SubresourceIndex % src->miplevelCount();
-        cmd_cp.src_slice = pSrc->SubresourceIndex / src->miplevelCount();
-        cmd_cp.src_origin = {pSrcBox->left, pSrcBox->top, pSrcBox->front};
-        cmd_cp.src_size = {
-            pSrcBox->right - pSrcBox->left, pSrcBox->bottom - pSrcBox->top, pSrcBox->back - pSrcBox->front
-        };
+        cmd_cp.src_level = src_level;
+        cmd_cp.src_slice = src_slice;
+        cmd_cp.src_origin = {src_box.left, src_box.top, src_box.front};
+        cmd_cp.src_size = {src_box.right - src_box.left, src_box.bottom - src_box.top, src_box.back - src_box.front};
         cmd_cp.dst = dst->current()->texture();
-        cmd_cp.dst_level = pDst->SubresourceIndex % dst->miplevelCount();
-        cmd_cp.dst_slice = pDst->SubresourceIndex / dst->miplevelCount();
+        cmd_cp.dst_level = dst_level;
+        cmd_cp.dst_slice = dst_slice;
         cmd_cp.dst_origin = {DstX, DstY, DstZ};
       }
     } else if (pDst->Type == D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT) {
       auto &dst = static_cast<MTLD3D12Resource *>(pDst->pResource)->buffer;
       if (!dst)
         return;
-      if (pSrcBox)
-        IMPLEMENT_ME
+
+      MTL_DXGI_FORMAT_DESC dst_format;
+      if (FAILED(MTLQueryDXGIFormat(device_->GetMTLDevice(), pDst->PlacedFootprint.Footprint.Format, dst_format))) {
+        WARN("CopyTextureRegion: unsupported format ", pDst->PlacedFootprint.Footprint.Format);
+        return;
+      }
+
       if (pSrc->Type == D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX) {
         auto &src = static_cast<MTLD3D12Resource *>(pSrc->pResource)->texture;
         if (!src)
           return;
 
-        auto src_planar_count = getPlanarCount(src->pixelFormat());
-        auto src_subresource_index = pSrc->SubresourceIndex / src_planar_count;
-        auto src_subresource_planar = pSrc->SubresourceIndex % src_planar_count;
+        MTL_DXGI_FORMAT_DESC src_format;
+        if (FAILED(MTLQueryDXGIFormat(device_->GetMTLDevice(), src_desc.Format, src_format))) {
+          WARN("CopyTextureRegion: unsupported format ", src_desc.Format);
+          return;
+        }
+        auto src_planar_count = src_format.PlanarCount;
+
+        auto block_width = dst_format.Flag & MTL_DXGI_FORMAT_BC ? 4 : 1;
+        auto dst_depth_pitch = src->textureType() == WMTTextureType3D
+                                   ? (pDst->PlacedFootprint.Footprint.Height / block_width) * pDst->PlacedFootprint.Footprint.RowPitch
+                                   : 0;
 
         auto &cmd_cp = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer_withblitoption>();
         cmd_cp.type = WMTBlitCommandCopyFromTextureToBufferWithBlitOption;
         cmd_cp.src = src->current()->texture();
-        cmd_cp.level = src_subresource_index % src->miplevelCount();
-        cmd_cp.slice = src_subresource_index / src->miplevelCount();
-        cmd_cp.origin = {0, 0, 0};
-        cmd_cp.size = {
-            pDst->PlacedFootprint.Footprint.Width, pDst->PlacedFootprint.Footprint.Height,
-            pDst->PlacedFootprint.Footprint.Depth
-        };
+        cmd_cp.level = src_level;
+        cmd_cp.slice = src_slice;
+        cmd_cp.origin = {src_box.left, src_box.top, src_box.front};
+        cmd_cp.size = {src_box.right - src_box.left, src_box.bottom - src_box.top, src_box.back - src_box.front};
         cmd_cp.dst = dst->current()->buffer();
-        cmd_cp.offset = pDst->PlacedFootprint.Offset;
+        cmd_cp.offset = pDst->PlacedFootprint.Offset + (DstX / block_width) * dst_format.BytesPerTexel +
+                        (DstY / block_width) * pDst->PlacedFootprint.Footprint.RowPitch + DstZ * dst_depth_pitch;
         cmd_cp.bytes_per_row = pDst->PlacedFootprint.Footprint.RowPitch;
-        cmd_cp.bytes_per_image = src->textureType() == WMTTextureType3D
-                                     ? pDst->PlacedFootprint.Footprint.Height * pDst->PlacedFootprint.Footprint.RowPitch
-                                     : 0;
-        cmd_cp.options = (src_planar_count > 1) ? (src_subresource_planar ? WMTBlitOptionStencilFromDepthStencil
-                                                                          : WMTBlitOptionDepthFromDepthStencil)
-                                                : WMTBlitOptionNone;
+        cmd_cp.bytes_per_image = dst_depth_pitch;
+        cmd_cp.options = (src_planar_count > 1)
+                             ? (src_planar ? WMTBlitOptionStencilFromDepthStencil : WMTBlitOptionDepthFromDepthStencil)
+                             : WMTBlitOptionNone;
       } else {
         // so it is buffer to buffer copy?
         IMPLEMENT_ME

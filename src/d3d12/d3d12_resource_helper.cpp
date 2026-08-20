@@ -17,6 +17,7 @@
  */
 
 #include "d3d12_device.hpp"
+#include "util_bit.hpp"
 
 namespace dxmt {
 
@@ -376,6 +377,58 @@ ValidateHeapProperties(const D3D12_HEAP_PROPERTIES *pHeapProps, D3D12_HEAP_FLAGS
 
   // TODO(d3d12): check NodeMask
   return S_OK;
+}
+
+D3D12_BOX
+GetResourceExtent(const D3D12_RESOURCE_DESC &Desc, UINT MipSlice) {
+  D3D12_BOX box{0, 0, 0, 1, 1, 1};
+  switch (Desc.Dimension) {
+  default:
+    break;
+  case D3D12_RESOURCE_DIMENSION_TEXTURE3D:
+    box.back = std::max<uint32_t>(1u, Desc.DepthOrArraySize >> MipSlice);
+    [[fallthrough]];
+  case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
+    box.bottom = std::max<uint32_t>(1u, Desc.Height >> MipSlice);
+    [[fallthrough]];
+  case D3D12_RESOURCE_DIMENSION_BUFFER:
+  case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
+    box.right = std::max<uint32_t>(1u, Desc.Width >> MipSlice);
+    break;
+  }
+  return box;
+}
+
+UINT
+DecomposeSubresource(
+    const D3D12_RESOURCE_DESC &Desc, UINT Subresource, UINT *pMipSlice, UINT *pArraySlice, UINT *pPlaneSlice
+) {
+  uint32_t ExtentOr = Desc.Width;
+  uint32_t ArraySize = 1;
+  switch (Desc.Dimension) {
+  default:
+    return 1;
+  case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
+    ArraySize = Desc.DepthOrArraySize;
+    break;
+  case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
+    ExtentOr |= Desc.Height;
+    ArraySize = Desc.DepthOrArraySize;
+    break;
+  case D3D12_RESOURCE_DIMENSION_TEXTURE3D:
+    ExtentOr |= Desc.Height | Desc.DepthOrArraySize;
+    break;
+  }
+  auto MaxMipLevels = 32 - bit::lzcnt(ExtentOr);
+  auto MipLevels = Desc.MipLevels ? Desc.MipLevels : MaxMipLevels;
+
+  if (pMipSlice)
+    *pMipSlice = Subresource % MipLevels;
+  if (pArraySlice)
+    *pArraySlice = ((Subresource / MipLevels) % ArraySize);
+  if (pPlaneSlice)
+    *pPlaneSlice = (Subresource / (MipLevels * ArraySize));
+  return MipLevels;
 }
 
 } // namespace dxmt

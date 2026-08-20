@@ -333,4 +333,11 @@ HRESULT ValidateResourceDescs(const D3D12_RESOURCE_DESC *pDesc, D3D12_HEAP_TYPE 
 
 HRESULT ValidateHeapProperties(const D3D12_HEAP_PROPERTIES *pHeapProps, D3D12_HEAP_FLAGS Flags, bool AdapterIsNUMA);
 
+D3D12_BOX GetResourceExtent(const D3D12_RESOURCE_DESC &Desc, UINT MipSlice);
+
+UINT DecomposeSubresource(
+    const D3D12_RESOURCE_DESC &Desc, UINT Subresource = 0, UINT *pMipSlice = NULL, UINT *pArraySlice = NULL,
+    UINT *pPlaneSlice = NULL
+);
+
 } // namespace dxmt
