@@ -416,6 +416,11 @@ public:
       data_ps.type = SM50_SHADER_PSO_PIXEL_SHADER;
       data_ps.next = &common;
 
+      memset(data_ps.pixel_formats, 0, sizeof(data_ps.pixel_formats));
+      for (unsigned i = 0; i < pDesc->NumRenderTargets; i++) {
+        data_ps.pixel_formats[i] = ORIGINAL_FORMAT(info.colors[i].pixel_format);
+      }
+
       SM50_SHADER_ROOT_SIGNATURE_DATA rootsig;
       rootsig.type = SM50_SHADER_ROOT_SIGNATURE;
       if (pDesc->pRootSignature) {

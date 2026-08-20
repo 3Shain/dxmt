@@ -234,6 +234,87 @@ void setup_metal_version(llvm::Module &module, SM50_SHADER_METAL_VERSION metal_v
   }
 }
 
+RegisterComponentType
+component_type_from_pixel_format(air::MTLPixelFormat format) {
+  switch (format) {
+  case air::MTLPixelFormat::R8Sint:
+  case air::MTLPixelFormat::R16Sint:
+  case air::MTLPixelFormat::RG8Sint:
+  case air::MTLPixelFormat::R32Sint:
+  case air::MTLPixelFormat::RG16Sint:
+  case air::MTLPixelFormat::RGBA8Sint:
+  case air::MTLPixelFormat::RG32Sint:
+  case air::MTLPixelFormat::RGBA16Sint:
+  case air::MTLPixelFormat::RGBA32Sint:
+    return RegisterComponentType::Int;
+  case air::MTLPixelFormat::R8Uint:
+  case air::MTLPixelFormat::R16Uint:
+  case air::MTLPixelFormat::RG8Uint:
+  case air::MTLPixelFormat::R32Uint:
+  case air::MTLPixelFormat::RG16Uint:
+  case air::MTLPixelFormat::RGBA8Uint:
+  case air::MTLPixelFormat::RGB10A2Uint:
+  case air::MTLPixelFormat::RG32Uint:
+  case air::MTLPixelFormat::RGBA16Uint:
+  case air::MTLPixelFormat::RGBA32Uint:
+    return RegisterComponentType::Uint;
+  case air::MTLPixelFormat::A8Unorm:
+  case air::MTLPixelFormat::R8Unorm:
+  case air::MTLPixelFormat::R8Unorm_sRGB:
+  case air::MTLPixelFormat::R8Snorm:
+  case air::MTLPixelFormat::R16Unorm:
+  case air::MTLPixelFormat::R16Snorm:
+  case air::MTLPixelFormat::R16Float:
+  case air::MTLPixelFormat::RG8Unorm:
+  case air::MTLPixelFormat::RG8Unorm_sRGB:
+  case air::MTLPixelFormat::RG8Snorm:
+  case air::MTLPixelFormat::B5G6R5Unorm:
+  case air::MTLPixelFormat::A1BGR5Unorm:
+  case air::MTLPixelFormat::ABGR4Unorm:
+  case air::MTLPixelFormat::BGR5A1Unorm:
+  case air::MTLPixelFormat::R32Float:
+  case air::MTLPixelFormat::RG16Unorm:
+  case air::MTLPixelFormat::RG16Snorm:
+  case air::MTLPixelFormat::RG16Float:
+  case air::MTLPixelFormat::RGBA8Unorm:
+  case air::MTLPixelFormat::RGBA8Unorm_sRGB:
+  case air::MTLPixelFormat::RGBA8Snorm:
+  case air::MTLPixelFormat::BGRA8Unorm:
+  case air::MTLPixelFormat::BGRA8Unorm_sRGB:
+  case air::MTLPixelFormat::RGB10A2Unorm:
+  case air::MTLPixelFormat::RG11B10Float:
+  case air::MTLPixelFormat::RGB9E5Float:
+  case air::MTLPixelFormat::BGR10A2Unorm:
+  case air::MTLPixelFormat::BGR10_XR:
+  case air::MTLPixelFormat::BGR10_XR_sRGB:
+  case air::MTLPixelFormat::RG32Float:
+  case air::MTLPixelFormat::RGBA16Unorm:
+  case air::MTLPixelFormat::RGBA16Snorm:
+  case air::MTLPixelFormat::RGBA16Float:
+  case air::MTLPixelFormat::BGRA10_XR:
+  case air::MTLPixelFormat::BGRA10_XR_sRGB:
+  case air::MTLPixelFormat::RGBA32Float:
+  case air::MTLPixelFormat::BC1_RGBA:
+  case air::MTLPixelFormat::BC1_RGBA_sRGB:
+  case air::MTLPixelFormat::BC2_RGBA:
+  case air::MTLPixelFormat::BC2_RGBA_sRGB:
+  case air::MTLPixelFormat::BC3_RGBA:
+  case air::MTLPixelFormat::BC3_RGBA_sRGB:
+  case air::MTLPixelFormat::BC4_RUnorm:
+  case air::MTLPixelFormat::BC4_RSnorm:
+  case air::MTLPixelFormat::BC5_RGUnorm:
+  case air::MTLPixelFormat::BC5_RGSnorm:
+  case air::MTLPixelFormat::BC6H_RGBFloat:
+  case air::MTLPixelFormat::BC6H_RGBUfloat:
+  case air::MTLPixelFormat::BC7_RGBAUnorm:
+  case air::MTLPixelFormat::BC7_RGBAUnorm_sRGB:
+    return RegisterComponentType::Float;
+  default:
+    break;
+  }
+  return RegisterComponentType::Unknown;
+}
+
 llvm::Error convert_dxbc_pixel_shader(
   SM50ShaderInternal *pShaderInternal, const char *name,
   llvm::LLVMContext &context, llvm::Module &module,
@@ -250,12 +331,14 @@ llvm::Error convert_dxbc_pixel_shader(
   bool pso_dual_source_blending = false;
   bool pso_disable_depth_output = false;
   uint32_t pso_unorm_output_reg_mask = 0;
+  uint32_t *pso_pixel_formats = nullptr;
   SM50_SHADER_PSO_PIXEL_SHADER_DATA *pso_data = nullptr;
   if (args_get_data<SM50_SHADER_PSO_PIXEL_SHADER, SM50_SHADER_PSO_PIXEL_SHADER_DATA>(pArgs, &pso_data)) {
     pso_dual_source_blending = pso_data->dual_source_blending;
     pso_disable_depth_output = pso_data->disable_depth_output;
     pso_unorm_output_reg_mask = pso_data->unorm_output_reg_mask;
     pso_sample_mask = pso_data->sample_mask;
+    pso_pixel_formats = pso_data->pixel_formats;
   }
   SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
   SM50_SHADER_FLAG shader_flags = {};
@@ -285,6 +368,8 @@ llvm::Error convert_dxbc_pixel_shader(
     sig_ctx.disable_depth_output = pso_disable_depth_output;
     sig_ctx.pull_mode_reg_mask = shader_info->pull_mode_reg_mask;
     sig_ctx.unorm_output_reg_mask = pso_unorm_output_reg_mask;
+    if (pso_pixel_formats)
+      memcpy(sig_ctx.pixel_formats, pso_pixel_formats, sizeof(sig_ctx.pixel_formats));
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
     }
