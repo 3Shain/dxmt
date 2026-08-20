@@ -26,6 +26,7 @@
 #include "dxmt_buffer.hpp"
 #include "dxmt_command.hpp"
 #include "dxmt_fence.hpp"
+#include "dxmt_format.hpp"
 #include "dxmt_presenter.hpp"
 #include "dxmt_texture.hpp"
 #include "log/log.hpp"
@@ -175,6 +176,8 @@ public:
   virtual BufferAllocation *LookupBufferByVA(D3D12_GPU_VIRTUAL_ADDRESS VA, uint64_t *pOffset) = 0;
 
   virtual InternalCommandLibrary& GetLib() = 0;
+
+  virtual FormatCapability GetMTLPixelFormatCapability(WMTPixelFormat Format) = 0;
 
   EventListener event_listener;
 };

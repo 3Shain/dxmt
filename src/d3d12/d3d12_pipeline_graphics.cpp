@@ -364,10 +364,10 @@ public:
 
         rt.write_mask = kColorWriteMaskMap[renderTarget.RenderTargetWriteMask];
         if (renderTarget.BlendEnable) {
-          // TODO
-          // if (!any_bit_set(device_->GetMTLPixelFormatCapability(rt.pixel_format) & FormatCapability::Blend)) {
-          //   return E_INVALIDARG;
-          // }
+          if (!any_bit_set(device_->GetMTLPixelFormatCapability(rt.pixel_format) & FormatCapability::Blend)) {
+            WARN("CreateGraphicsPipelineState: pixel format ", rt.pixel_format, " is not blendable");
+            return E_INVALIDARG;
+          }
           if (BlendFactorIsDualSource(renderTarget.SrcBlendAlpha) || BlendFactorIsDualSource(renderTarget.SrcBlend) ||
               BlendFactorIsDualSource(renderTarget.DestBlendAlpha) || BlendFactorIsDualSource(renderTarget.DestBlend)) {
             dual_source_blending = true;

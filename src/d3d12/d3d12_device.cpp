@@ -39,6 +39,7 @@ class MTLD3D12DeviceImpl : public MTLD3D12Object<ComObject<MTLD3D12Device>> {
   std::map<uint64_t, BufferAllocation *> interval_map_;
 
   InternalCommandLibrary command_library;
+  FormatCapabilityInspector format_inspector_;
 
 public:
   MTLD3D12DeviceImpl(IMTLDXGIAdapter *adapter) : adapter_(adapter), command_library(adapter_->GetMTLDevice()) {}
@@ -53,6 +54,7 @@ public:
       ERR("Failed to create MTLResidencySet: ", err.description().getUTF8String());
       return E_FAIL;
     }
+    format_inspector_.Inspect(GetMTLDevice());
     return S_OK;
   };
 
@@ -1047,6 +1049,14 @@ public:
   GetLib() {
     return command_library;
   }
+
+  virtual FormatCapability
+  GetMTLPixelFormatCapability(WMTPixelFormat Format) final {
+    Format = ORIGINAL_FORMAT(Format);
+    if (!format_inspector_.textureCapabilities.contains(Format))
+      return FormatCapability(0);
+    return format_inspector_.textureCapabilities.at(Format);
+  };
 };
 
 HRESULT
