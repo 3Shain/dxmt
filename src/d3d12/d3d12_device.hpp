@@ -206,8 +206,8 @@ HRESULT CreateCommittedTexture(
 
 HRESULT
 CreatePlacedTexture(
-    MTLD3D12Device *pDevice, MTLD3D12Heap *pHeap, const D3D12_RESOURCE_DESC *pDesc, D3D12_RESOURCE_STATES InitialState,
-    const D3D12_CLEAR_VALUE *OptimizedClearValue, REFIID riid, void **ppResource
+    MTLD3D12Device *pDevice, MTLD3D12Heap *pHeap, UINT64 HeapOffset, const D3D12_RESOURCE_DESC *pDesc,
+    D3D12_RESOURCE_STATES InitialState, const D3D12_CLEAR_VALUE *OptimizedClearValue, REFIID riid, void **ppResource
 );
 
 HRESULT CreateCommittedBuffer(
@@ -218,8 +218,8 @@ HRESULT CreateCommittedBuffer(
 
 HRESULT
 CreatePlacedBuffer(
-    MTLD3D12Device *pDevice, MTLD3D12Heap *pHeap, const D3D12_RESOURCE_DESC *pDesc, D3D12_RESOURCE_STATES InitialState,
-    const D3D12_CLEAR_VALUE *OptimizedClearValue, REFIID riid, void **ppResource
+    MTLD3D12Device *pDevice, MTLD3D12Heap *pHeap, UINT64 HeapOffset, const D3D12_RESOURCE_DESC *pDesc,
+    D3D12_RESOURCE_STATES InitialState, const D3D12_CLEAR_VALUE *OptimizedClearValue, REFIID riid, void **ppResource
 );
 
 HRESULT

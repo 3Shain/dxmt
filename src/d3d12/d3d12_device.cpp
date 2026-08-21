@@ -553,9 +553,9 @@ public:
     case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
     case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
     case D3D12_RESOURCE_DIMENSION_TEXTURE3D:
-      return CreatePlacedTexture(this, d3d12heap, pDesc, InitialState, OptimizedClearValue, riid, ppResource);
+      return CreatePlacedTexture(this, d3d12heap, Offset, pDesc, InitialState, OptimizedClearValue, riid, ppResource);
     case D3D12_RESOURCE_DIMENSION_BUFFER:
-      return CreatePlacedBuffer(this, d3d12heap, pDesc, InitialState, OptimizedClearValue, riid, ppResource);
+      return CreatePlacedBuffer(this, d3d12heap, Offset, pDesc, InitialState, OptimizedClearValue, riid, ppResource);
     default:
       break;
     }

@@ -150,7 +150,7 @@ public:
   HRESULT
   Initialize(
       const D3D12_HEAP_PROPERTIES *pHeapProps, D3D12_HEAP_FLAGS HeapFlags, const D3D12_RESOURCE_DESC *pDesc,
-      D3D12_RESOURCE_STATES InitialState, MTLD3D12Heap *pHeap
+      D3D12_RESOURCE_STATES InitialState, MTLD3D12Heap *pHeap, UINT64 HeapOffset
   ) {
     // TODO: validate and normalize
     desc_ = *pDesc;
@@ -747,7 +747,7 @@ CreateCommittedTexture(
     REFIID riid, void **ppResource
 ) {
   auto texture = Com(new MTLD3D12Texture(pDevice));
-  HRESULT hr = texture->Initialize(pHeapProps, HeapFlags, pDesc, InitialState, nullptr);
+  HRESULT hr = texture->Initialize(pHeapProps, HeapFlags, pDesc, InitialState, nullptr, 0);
   if (FAILED(hr))
     return hr;
   if (!ppResource)
@@ -757,8 +757,8 @@ CreateCommittedTexture(
 
 HRESULT
 CreatePlacedTexture(
-    MTLD3D12Device *pDevice, MTLD3D12Heap *pHeap, const D3D12_RESOURCE_DESC *pDesc, D3D12_RESOURCE_STATES InitialState,
-    const D3D12_CLEAR_VALUE *OptimizedClearValue, REFIID riid, void **ppResource
+    MTLD3D12Device *pDevice, MTLD3D12Heap *pHeap, UINT64 HeapOffset, const D3D12_RESOURCE_DESC *pDesc,
+    D3D12_RESOURCE_STATES InitialState, const D3D12_CLEAR_VALUE *OptimizedClearValue, REFIID riid, void **ppResource
 ) {
   auto texture = Com(new MTLD3D12Texture(pDevice));
   D3D12_HEAP_DESC heap_desc = pHeap->GetDesc();
@@ -766,7 +766,7 @@ CreatePlacedTexture(
   if (heap_desc.Flags & D3D12_HEAP_FLAG_ALLOW_ONLY_BUFFERS)
     return E_INVALIDARG;
 
-  HRESULT hr = texture->Initialize(&heap_desc.Properties, heap_desc.Flags, pDesc, InitialState, pHeap);
+  HRESULT hr = texture->Initialize(&heap_desc.Properties, heap_desc.Flags, pDesc, InitialState, pHeap, HeapOffset);
   if (FAILED(hr))
     return hr;
   if (!ppResource)
