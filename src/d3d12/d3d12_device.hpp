@@ -157,7 +157,7 @@ public:
   virtual void ReleasePrivate() = 0;
 };
 
-class MTLD3D12Device : public ID3D12Device3 {
+class MTLD3D12Device : public ID3D12Device4 {
 public:
   virtual WMT::Device GetMTLDevice() = 0;
 
