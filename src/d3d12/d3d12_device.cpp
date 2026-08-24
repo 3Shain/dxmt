@@ -274,6 +274,14 @@ public:
       out->DynamicDepthBiasSupported = FALSE; // TODO(d3d12): ID3D12GraphicsCommandList9::RSSetDepthBias
       return S_OK;
     }
+    case D3D12_FEATURE_D3D12_OPTIONS2: {
+      if (DataSize != sizeof(D3D12_FEATURE_DATA_D3D12_OPTIONS2))
+        return E_INVALIDARG;
+      auto *out = reinterpret_cast<D3D12_FEATURE_DATA_D3D12_OPTIONS2 *>(pFeatureData);
+      out->DepthBoundsTestSupported = FALSE;
+      out->ProgrammableSamplePositionsTier = D3D12_PROGRAMMABLE_SAMPLE_POSITIONS_TIER_NOT_SUPPORTED;
+      return S_OK;
+    }
     case D3D12_FEATURE_FORMAT_SUPPORT: {
       if (DataSize != sizeof(D3D12_FEATURE_DATA_FORMAT_SUPPORT))
         return E_INVALIDARG;
