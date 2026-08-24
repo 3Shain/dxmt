@@ -119,6 +119,33 @@ PopulateWMTTextureInfo(WMT::Device Device, WMTTextureInfo &InfoOut, const D3D12_
   // TODO: decide storage mode
   InfoOut.options = WMTResourceHazardTrackingModeUntracked;
 
+  if (Desc.Alignment) {
+    if (Desc.Alignment != D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT &&
+        Desc.Alignment != D3D12_SMALL_RESOURCE_PLACEMENT_ALIGNMENT &&
+        (Desc.SampleDesc.Count == 1 || Desc.Alignment != D3D12_DEFAULT_MSAA_RESOURCE_PLACEMENT_ALIGNMENT))
+      return E_INVALIDARG;
+
+    if (Desc.Alignment == D3D12_SMALL_RESOURCE_PLACEMENT_ALIGNMENT) {
+      // Textures with UNKNOWN layout without MSAA and without render-target nor depth-stencil flags may be created with
+      // 4KB Alignment
+      if (Desc.Layout != D3D12_TEXTURE_LAYOUT_UNKNOWN)
+        return E_INVALIDARG;
+      if (Desc.Flags & (D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL | D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET))
+        return E_INVALIDARG;
+      if (Desc.SampleDesc.Count > 1)
+        return E_INVALIDARG;
+
+      WMTTextureInfo info_one_slice = InfoOut;
+      info_one_slice.mipmap_level_count = 1;
+      info_one_slice.array_length = 1;
+      auto size_and_align = Device.heapTextureSizeAndAlign(info_one_slice);
+      // Applications can create smaller aligned resources when the estimated size of the most-detailed mip level is a
+      // total of the larger alignment restriction or less.
+      if (size_and_align.size > D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT)
+        return E_INVALIDARG;
+    }
+  }
+
   return S_OK;
 };
 
@@ -174,6 +201,17 @@ public:
 
     if (!desc_.MipLevels)
       desc_.MipLevels = texture_info.mipmap_level_count;
+
+    if (!desc_.Alignment) {
+      desc_.Alignment = desc_.SampleDesc.Count > 1 ? D3D12_DEFAULT_MSAA_RESOURCE_PLACEMENT_ALIGNMENT
+                                                   : D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+    }
+
+    if (pHeap) {
+      auto size_and_align = device_->GetMTLDevice().heapTextureSizeAndAlign(texture_info);
+      if (size_and_align.size + HeapOffset > pHeap->GetDesc().SizeInBytes)
+        return E_INVALIDARG;
+    }
 
     texture = new Texture(texture_info, device_->GetMTLDevice());
     Flags<TextureAllocationFlag> flags = {};

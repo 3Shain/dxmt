@@ -44,6 +44,19 @@ public:
     heap_props_ = *pHeapProps;
     heap_flags_ = HeapFlags;
 
+    if (desc_.Alignment) {
+      if (desc_.Alignment != D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT)
+        return E_INVALIDARG;
+    } else {
+      desc_.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+    }
+
+    if (pHeap) {
+      auto size_and_align = device_->GetMTLDevice().heapBufferSizeAndAlign(desc_.Width, {});
+      if (size_and_align.size + Offset > pHeap->GetDesc().SizeInBytes)
+        return E_INVALIDARG;
+    }
+
     buffer = new Buffer(desc_.Width, device_->GetMTLDevice());
 
     Flags<BufferAllocationFlag> flags;
