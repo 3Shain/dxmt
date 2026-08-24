@@ -28,6 +28,8 @@
 
 namespace dxmt {
 
+HRESULT PopulateWMTTextureInfo(WMT::Device Device, WMTTextureInfo &InfoOut, const D3D12_RESOURCE_DESC &Desc);
+
 class MTLD3D12DeviceImpl : public MTLD3D12Object<ComObject<MTLD3D12Device>> {
 
   Com<IMTLDXGIAdapter> adapter_;
@@ -491,10 +493,11 @@ public:
     );
   };
 
-  D3D12_RESOURCE_ALLOCATION_INFO *STDMETHODCALLTYPE GetResourceAllocationInfo(
+  D3D12_RESOURCE_ALLOCATION_INFO *STDMETHODCALLTYPE
+  GetResourceAllocationInfo(
       D3D12_RESOURCE_ALLOCATION_INFO *__ret, UINT VisibleMask, UINT ResourceDestCount, const D3D12_RESOURCE_DESC *pDescs
   ) {
-    IMPLEMENT_ME
+    return GetResourceAllocationInfo1(__ret, VisibleMask, ResourceDestCount, pDescs, nullptr);
   };
 
   D3D12_HEAP_PROPERTIES *STDMETHODCALLTYPE
@@ -1066,6 +1069,58 @@ public:
       D3D12_RESOURCE_ALLOCATION_INFO *__ret, UINT VisibleMask, UINT ResourceDestCount,
       const D3D12_RESOURCE_DESC *pDescs, D3D12_RESOURCE_ALLOCATION_INFO1 *pAllocationInfos
   ) {
+    D3D12_RESOURCE_ALLOCATION_INFO1 resource_info;
+    bool has_msaa_resource = false;
+
+    __ret->SizeInBytes = 0;
+    __ret->Alignment = 1;
+
+    for (unsigned i = 0; i < ResourceDestCount; i++) {
+      const D3D12_RESOURCE_DESC *desc = &pDescs[i];
+      has_msaa_resource |= desc->SampleDesc.Count > 1;
+
+      if (desc->Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
+        if (desc->Alignment && desc->Alignment != D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT) {
+          DEBUG("GetResourceAllocationInfo: invalid alignment ", desc->Alignment, " for buffer resource.\n");
+          goto invalid;
+        }
+        resource_info.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+        auto size_and_align = GetMTLDevice().heapBufferSizeAndAlign(desc->Width, {});
+        resource_info.SizeInBytes = size_and_align.size;
+      } else {
+        WMTTextureInfo texture_info;
+        if (FAILED(PopulateWMTTextureInfo(GetMTLDevice(), texture_info, *desc))) {
+          DEBUG("GetResourceAllocationInfo: invalid texture descriptor\n");
+          goto invalid;
+        }
+        auto size_and_align = GetMTLDevice().heapTextureSizeAndAlign(texture_info);
+        resource_info.SizeInBytes = size_and_align.size;
+        resource_info.Alignment = size_and_align.align;
+        auto requested_alignment = desc->Alignment              ? desc->Alignment
+                                   : desc->SampleDesc.Count > 1 ? D3D12_DEFAULT_MSAA_RESOURCE_PLACEMENT_ALIGNMENT
+                                                                : D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+        resource_info.Alignment = std::max(resource_info.Alignment, requested_alignment);
+      }
+
+      resource_info.SizeInBytes = align(resource_info.SizeInBytes, resource_info.Alignment);
+      resource_info.Offset = align(__ret->SizeInBytes, resource_info.Alignment);
+
+      if (pAllocationInfos)
+        pAllocationInfos[i] = resource_info;
+
+      __ret->SizeInBytes = resource_info.Offset + resource_info.SizeInBytes;
+      __ret->Alignment = std::max(__ret->Alignment, resource_info.Alignment);
+    }
+
+    __ret->SizeInBytes = align(__ret->SizeInBytes, __ret->Alignment);
+    return __ret;
+
+  invalid:
+
+    __ret->SizeInBytes = ~(uint64_t)0;
+    __ret->Alignment = has_msaa_resource ? D3D12_DEFAULT_MSAA_RESOURCE_PLACEMENT_ALIGNMENT
+                                         : D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
+    return __ret;
   }
 
   WMT::ResidencySet
