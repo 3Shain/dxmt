@@ -801,8 +801,13 @@ CreatePlacedTexture(
   auto texture = Com(new MTLD3D12Texture(pDevice));
   D3D12_HEAP_DESC heap_desc = pHeap->GetDesc();
 
-  if (heap_desc.Flags & D3D12_HEAP_FLAG_ALLOW_ONLY_BUFFERS)
-    return E_INVALIDARG;
+  if (pDesc->Flags & (D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)) {
+    if (heap_desc.Flags & D3D12_HEAP_FLAG_DENY_RT_DS_TEXTURES)
+      return E_INVALIDARG;
+  } else {
+    if (heap_desc.Flags & D3D12_HEAP_FLAG_DENY_NON_RT_DS_TEXTURES)
+      return E_INVALIDARG;
+  }
 
   HRESULT hr = texture->Initialize(&heap_desc.Properties, heap_desc.Flags, pDesc, InitialState, pHeap, HeapOffset);
   if (FAILED(hr))

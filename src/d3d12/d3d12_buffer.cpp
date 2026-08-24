@@ -277,6 +277,10 @@ CreatePlacedBuffer(
 ) {
   auto buffer = Com(new MTLD3D12Buffer(pDevice));
   D3D12_HEAP_DESC heap_desc = pHeap->GetDesc();
+
+  if (heap_desc.Flags & D3D12_HEAP_FLAG_DENY_BUFFERS)
+    return E_INVALIDARG;
+
   HRESULT hr = buffer->Initialize(&heap_desc.Properties, heap_desc.Flags, pDesc, OptimizedClearValue, pHeap, Offset);
   if (FAILED(hr))
     return hr;

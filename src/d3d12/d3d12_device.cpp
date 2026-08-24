@@ -535,7 +535,7 @@ public:
     hr = ValidateHeapProperties(pHeapProps, HeapFlags, advertise_numa_);
     if (FAILED(hr))
       return hr;
-    hr = ValidateResourceDescs(pDesc, pHeapProps->Type);
+    hr = ValidateResourceDescs(pDesc, pHeapProps);
     if (FAILED(hr))
       return hr;
     hr = ValidateResourceStates(InitialState, pHeapProps);
@@ -581,7 +581,7 @@ public:
     hr = ValidateHeapProperties(&heap_desc.Properties, heap_desc.Flags, advertise_numa_);
     if (FAILED(hr))
       return hr;
-    hr = ValidateResourceDescs(pDesc, heap_desc.Properties.Type);
+    hr = ValidateResourceDescs(pDesc, &heap_desc.Properties);
     if (FAILED(hr))
       return hr;
     hr = ValidateResourceStates(InitialState, &heap_desc.Properties);
