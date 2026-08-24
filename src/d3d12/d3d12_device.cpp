@@ -293,6 +293,19 @@ public:
       out->WriteBufferImmediateSupportFlags = D3D12_COMMAND_LIST_SUPPORT_FLAG_NONE;
       return S_OK;
     }
+    case D3D12_FEATURE_D3D12_OPTIONS1: {
+      if (DataSize != sizeof(D3D12_FEATURE_DATA_D3D12_OPTIONS1))
+        return E_INVALIDARG;
+      auto *out = reinterpret_cast<D3D12_FEATURE_DATA_D3D12_OPTIONS1 *>(pFeatureData);
+      out->WaveOps = 0;
+      out->WaveLaneCountMin = 0;
+      out->WaveLaneCountMax = 0;
+      out->TotalLaneCount = 0;
+      // If CheckFeatureSupport succeeds this value will always be true.
+      out->ExpandedComputeResourceStates = TRUE;
+      out->Int64ShaderOps = FALSE;
+      return S_OK;
+    }
     case D3D12_FEATURE_FORMAT_SUPPORT: {
       if (DataSize != sizeof(D3D12_FEATURE_DATA_FORMAT_SUPPORT))
         return E_INVALIDARG;
