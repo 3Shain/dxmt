@@ -282,6 +282,17 @@ public:
       out->ProgrammableSamplePositionsTier = D3D12_PROGRAMMABLE_SAMPLE_POSITIONS_TIER_NOT_SUPPORTED;
       return S_OK;
     }
+    case D3D12_FEATURE_D3D12_OPTIONS3: {
+      if (DataSize != sizeof(D3D12_FEATURE_DATA_D3D12_OPTIONS3))
+        return E_INVALIDARG;
+      auto *out = reinterpret_cast<D3D12_FEATURE_DATA_D3D12_OPTIONS3 *>(pFeatureData);
+      out->CastingFullyTypedFormatSupported = TRUE;
+      out->BarycentricsSupported = FALSE;
+      out->CopyQueueTimestampQueriesSupported = FALSE;
+      out->ViewInstancingTier = D3D12_VIEW_INSTANCING_TIER_NOT_SUPPORTED;
+      out->WriteBufferImmediateSupportFlags = D3D12_COMMAND_LIST_SUPPORT_FLAG_NONE;
+      return S_OK;
+    }
     case D3D12_FEATURE_FORMAT_SUPPORT: {
       if (DataSize != sizeof(D3D12_FEATURE_DATA_FORMAT_SUPPORT))
         return E_INVALIDARG;
