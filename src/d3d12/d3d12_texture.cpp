@@ -249,7 +249,16 @@ public:
 
   virtual HRESULT STDMETHODCALLTYPE
   Map(UINT Subresource, const D3D12_RANGE *pReadRange, void **ppData) {
-    return E_NOTIMPL;
+    if (!IsCpuVisibleHeap(&heap_props_))
+      return E_INVALIDARG;
+    UINT subresource_count = desc_.MipLevels;
+    if (desc_.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE3D)
+      subresource_count *= desc_.DepthOrArraySize;
+    if (Subresource >= subresource_count)
+      return E_INVALIDARG;
+    if (ppData || (desc_.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D && desc_.MipLevels > 1))
+      return E_INVALIDARG;
+    return S_OK;
   };
 
   virtual void STDMETHODCALLTYPE Unmap(UINT Subresource, const D3D12_RANGE *pWrittenRange) {};
@@ -269,14 +278,74 @@ public:
   WriteToSubresource(
       UINT DstSubresource, const D3D12_BOX *pDstBox, const void *pSrcData, UINT SrcRowPitch, UINT SrcSlicePitch
   ) {
-    return E_NOTIMPL;
+    if (desc_.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE3D)
+      SrcSlicePitch = 0;
+    if (desc_.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)
+      return E_INVALIDARG;
+    uint32_t Level = 0, Slice = 0, Plane = 0;
+    DecomposeSubresource(desc_, DstSubresource, &Level, &Slice, &Plane);
+    if (Plane)
+      return E_INVALIDARG;
+    D3D12_BOX full_box = GetResourceExtent(desc_, Level);
+    D3D12_BOX box = pDstBox ? *pDstBox : full_box;
+
+    if (!IsD3D12BoxInBounds(box, full_box))
+      return E_INVALIDARG;
+
+    if (box.left == box.right || box.top == box.bottom || box.front == box.back)
+      return S_OK;
+
+    MTL_DXGI_FORMAT_DESC Format;
+    if (FAILED(MTLQueryDXGIFormat(device_->GetMTLDevice(), desc_.Format, Format)))
+      return E_INVALIDARG;
+
+    if (Format.Flag & MTL_DXGI_FORMAT_BC) {
+      if ((box.left | box.right | box.top | box.bottom) & (Format.BlockSize - 1))
+        return E_INVALIDARG;
+    }
+
+    texture->current()->texture().replaceRegion(
+        {box.left, box.top, box.front}, {box.right - box.left, box.bottom - box.top, box.back - box.front}, Level,
+        Slice, pSrcData, SrcRowPitch, SrcSlicePitch
+    );
+    return S_OK;
   };
 
   virtual HRESULT STDMETHODCALLTYPE
   ReadFromSubresource(
       void *pDstData, UINT DstRowPitch, UINT DstSlicePitch, UINT SrcSubresource, const D3D12_BOX *pSrcBox
   ) {
-    return E_NOTIMPL;
+    if (desc_.Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE3D)
+      DstSlicePitch = 0;
+    if (desc_.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)
+      return E_INVALIDARG;
+    uint32_t Level = 0, Slice = 0, Plane = 0;
+    DecomposeSubresource(desc_, SrcSubresource, &Level, &Slice, &Plane);
+    if (Plane)
+      return E_INVALIDARG;
+    D3D12_BOX full_box = GetResourceExtent(desc_, Level);
+    D3D12_BOX box = pSrcBox ? *pSrcBox : full_box;
+
+    if (!IsD3D12BoxInBounds(box, full_box))
+      return E_INVALIDARG;
+
+    if (box.left == box.right || box.top == box.bottom || box.front == box.back)
+      return S_OK;
+
+    MTL_DXGI_FORMAT_DESC Format;
+    if (FAILED(MTLQueryDXGIFormat(device_->GetMTLDevice(), desc_.Format, Format)))
+      return E_INVALIDARG;
+
+    if (Format.Flag & MTL_DXGI_FORMAT_BC) {
+      if ((box.left | box.right | box.top | box.bottom) & (Format.BlockSize - 1))
+        return E_INVALIDARG;
+    }
+
+    texture->current()->texture().getBytes(
+        {box.left, box.top, box.front}, {box.right - box.left, box.bottom - box.top, box.back - box.front}, Level,
+        Slice, pDstData, DstRowPitch, DstSlicePitch
+    );
+    return S_OK;
   };
 
   virtual HRESULT STDMETHODCALLTYPE

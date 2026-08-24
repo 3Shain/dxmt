@@ -465,4 +465,22 @@ DecomposeSubresource(
   return MipLevels;
 }
 
+bool
+IsD3D12BoxInBounds(D3D12_BOX &box, D3D12_BOX &bounds) {
+  if (box.left < bounds.left)
+    return false;
+  if (box.top < bounds.top)
+    return false;
+  if (box.front < bounds.front)
+    return false;
+  if (box.right > bounds.right)
+    return false;
+  if (box.bottom > bounds.bottom)
+    return false;
+  if (box.back > bounds.back)
+    return false;
+
+  return true;
+}
+
 } // namespace dxmt

@@ -343,4 +343,8 @@ UINT DecomposeSubresource(
     UINT *pPlaneSlice = NULL
 );
 
+bool IsCpuVisibleHeap(const D3D12_HEAP_PROPERTIES *pHeapProps);
+
+bool IsD3D12BoxInBounds(D3D12_BOX &box, D3D12_BOX &bounds);
+
 } // namespace dxmt
