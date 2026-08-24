@@ -393,8 +393,9 @@ public:
       ID3D12Resource *pResource, const D3D12_RENDER_TARGET_VIEW_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor
   ) {
     if (!pResource) {
-      // null descriptor
-      IMPLEMENT_ME
+      auto [Heap, Index] = GetRenderTargetHeap(this, Descriptor);
+      Heap->AddRenderTarget(Index, nullptr);
+      return;
     }
     auto d3d12res = static_cast<MTLD3D12Resource *>(pResource);
     d3d12res->CreateRenderTargetView(pDesc, Descriptor);
@@ -405,8 +406,9 @@ public:
       ID3D12Resource *pResource, const D3D12_DEPTH_STENCIL_VIEW_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor
   ) {
     if (!pResource) {
-      // null descriptor
-      IMPLEMENT_ME
+      auto [Heap, Index] = GetRenderTargetHeap(this, Descriptor);
+      Heap->AddRenderTarget(Index, nullptr);
+      return;
     }
     auto d3d12res = static_cast<MTLD3D12Resource *>(pResource);
     d3d12res->CreateDepthStencilView(pDesc, Descriptor);
