@@ -589,7 +589,7 @@ public:
 
   HRESULT STDMETHODCALLTYPE
   MakeResident(UINT ObjectCount, ID3D12Pageable *const *objects) {
-    return E_NOTIMPL;
+    return S_OK;
   };
 
   HRESULT STDMETHODCALLTYPE
@@ -604,7 +604,7 @@ public:
 
   HRESULT STDMETHODCALLTYPE
   GetDeviceRemovedReason() {
-    return E_NOTIMPL;
+    return S_OK;
   };
 
   void STDMETHODCALLTYPE GetCopyableFootprints(
