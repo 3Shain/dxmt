@@ -1495,7 +1495,7 @@ public:
 
   void STDMETHODCALLTYPE
   OMSetDepthBounds(FLOAT Min, FLOAT Max) {
-    IMPLEMENT_ME
+    WARN("OMSetDepthBounds: ignoring (", Min, ", ", Max, ")");
   }
 
   void STDMETHODCALLTYPE
