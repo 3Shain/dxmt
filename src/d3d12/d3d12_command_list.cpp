@@ -962,7 +962,7 @@ public:
     auto &cmd_setdsso = allocator_->EncodeRenderCommand<wmtcmd_render_setdsso>();
     cmd_setdsso.type = WMTRenderCommandSetDSSO;
     cmd_setdsso.dsso = pso_graphics->dsso;
-    cmd_setdsso.stencil_ref = 0; /* FIXME */
+    cmd_setdsso.stencil_ref = stencil_ref_;
 
     auto &cmd_setrs = allocator_->EncodeRenderCommand<wmtcmd_render_setrasterizerstate>();
     cmd_setrs.type = WMTRenderCommandSetRasterizerState;
