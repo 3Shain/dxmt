@@ -709,20 +709,9 @@ public:
       view_descriptor.firstArraySlice = 0;
       view_descriptor.arraySize = 1;
       auto ArraySize = std::max<UINT16>(desc_.DepthOrArraySize >> ViewDesc.Texture3D.MipSlice, 1);
-      RenderTargetDesc.RenderTargetArrayLength = view_descriptor.arraySize;
-
-      if (ViewDesc.Texture3D.WSize == 1) {
-        RenderTargetDesc.DepthPlane = ViewDesc.Texture3D.FirstWSlice;
-      } else if (ViewDesc.Texture3D.FirstWSlice == 0) {
-        if (ArraySize != ViewDesc.Texture3D.WSize) {
-          WARN("Created a subview of 3D texture.");
-        }
-        RenderTargetDesc.RenderTargetArrayLength = ArraySize;
-      } else {
-        ERR("Failed to create 3D RTV, FirstWSlice:", ViewDesc.Texture3D.FirstWSlice,
-            " WSize:", ViewDesc.Texture3D.WSize, " MippedDepth:", ArraySize);
-      }
-
+      RenderTargetDesc.DepthPlane = ViewDesc.Texture3D.FirstWSlice;
+      RenderTargetDesc.RenderTargetArrayLength = ViewDesc.Texture3D.WSize == ~0u ? ArraySize : ViewDesc.Texture3D.WSize;
+      View = texture->createView(view_descriptor);
       break;
     }
     default:
