@@ -656,52 +656,66 @@ public:
       if (!pDesc)
         break;
 
+      UINT PlaneCount = 1;
+      UINT PerPlaneSubresources = DecomposeSubresource(*pDesc, 0);
+      DXGI_FORMAT PlaneFormats[2] = {};
+      UINT PlaneBytesPerTexel[2] = {};
+
       MTL_DXGI_FORMAT_DESC FormatDesc;
 
       if (pDesc->Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
         if (pDesc->Format != DXGI_FORMAT_UNKNOWN)
           break;
-        FormatDesc.PixelFormat = WMTPixelFormatInvalid;
-        FormatDesc.BytesPerTexel = 1;
+        PlaneFormats[0] = DXGI_FORMAT_UNKNOWN;
+        PlaneBytesPerTexel[0] = 1;
       } else {
         if (FAILED(MTLQueryDXGIFormat(GetMTLDevice(), pDesc->Format, FormatDesc)))
           break;
 
+        if (pDesc->Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE1D && pDesc->Height != 1)
+          break;
+
         if (FormatDesc.Flag & MTL_DXGI_FORMAT_BC)
           BlockWidth = 4;
-        if (FormatDesc.Flag & MTL_DXGI_FORMAT_DEPTH_PLANER)
-          IMPLEMENT_ME
-        if (FormatDesc.Flag & MTL_DXGI_FORMAT_STENCIL_PLANER)
-          IMPLEMENT_ME
-        if (FormatDesc.BytesPerTexel == 0)
-          IMPLEMENT_ME
+
+        if (FormatDesc.PlanarCount > 1) {
+          assert(FormatDesc.Flag & (MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER));
+          PlaneCount = FormatDesc.PlanarCount;
+          PlaneFormats[0] = DXGI_FORMAT_R32_TYPELESS;
+          PlaneBytesPerTexel[0] = 4;
+          PlaneFormats[1] = DXGI_FORMAT_R8_TYPELESS;
+          PlaneBytesPerTexel[1] = 1;
+        } else {
+          PlaneFormats[0] = pDesc->Format;
+          PlaneBytesPerTexel[0] = FormatDesc.BytesPerTexel;
+          if (PlaneBytesPerTexel[0] == 0)
+            IMPLEMENT_ME
+        }
+      }
+
+      if (pDesc->Dimension != D3D12_RESOURCE_DIMENSION_TEXTURE3D)
+        PerPlaneSubresources *= pDesc->DepthOrArraySize;
+
+      if (FirstSubresource >= PerPlaneSubresources * PlaneCount ||
+          SubresourceCount > PerPlaneSubresources * PlaneCount - FirstSubresource) {
+        WARN("GetCopyableFootprints: subresource is out of range");
+        break;
       }
 
       for (unsigned i = 0; i < SubresourceCount; i++) {
         auto Subresource = FirstSubresource + i;
-        auto MipLevel = Subresource % pDesc->MipLevels;
-        auto Width = std::max(1u, (UINT)pDesc->Width >> MipLevel);
-        Width = align(Width, BlockWidth);
-        auto Height = 1u;
-        switch (pDesc->Dimension) {
-        case D3D12_RESOURCE_DIMENSION_TEXTURE2D:
-        case D3D12_RESOURCE_DIMENSION_TEXTURE3D: {
-          Height = std::max(1u, pDesc->Height >> MipLevel);
-          break;
-        }
-        default:
-          break;
-        }
-        Height = align(Height, BlockWidth);
+        auto Plane = 0u, MipLevel = 0u;
+        DecomposeSubresource(*pDesc, Subresource, &MipLevel, NULL, &Plane);
+        auto Extent = GetResourceExtent(*pDesc, MipLevel);
+        auto Width = align(Extent.right, BlockWidth);
+        auto Height = align(Extent.bottom, BlockWidth);
         auto RowCount = Height / BlockWidth;
-        auto Depth = 1u;
-        if (pDesc->Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D)
-          Depth = std::max(1u, (UINT)pDesc->DepthOrArraySize >> MipLevel);
-        auto RowSize = (Width / BlockWidth) * FormatDesc.BytesPerTexel;
-        auto RowPitch = align(RowSize, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
+        auto Depth = Extent.back;
+        auto RowSize = (Width / BlockWidth) * PlaneBytesPerTexel[Plane];
+        auto RowPitch = align(RowSize, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT * PlaneCount);
         if (pLayouts) {
           pLayouts[i].Offset = BaseOffset + Offset;
-          pLayouts[i].Footprint.Format = pDesc->Format;
+          pLayouts[i].Footprint.Format = PlaneFormats[Plane];
           pLayouts[i].Footprint.Width = Width;
           pLayouts[i].Footprint.Height = Height;
           pLayouts[i].Footprint.Depth = Depth;
@@ -713,7 +727,8 @@ public:
           pRowSizeInBytes[i] = RowSize;
 
         auto SubresourceSize = RowPitch * (RowCount - 1) + RowSize;
-        SubresourceSize = align(SubresourceSize, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT) * (Depth - 1) + SubresourceSize;
+        SubresourceSize =
+            align(SubresourceSize, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT * PlaneCount) * (Depth - 1) + SubresourceSize;
 
         TotalBytes = Offset + SubresourceSize;
         Offset = align(TotalBytes, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
