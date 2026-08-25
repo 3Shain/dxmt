@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <functional>
 #include "./sha1.h"
 
 namespace dxmt {
