@@ -1177,9 +1177,10 @@ public:
 
   void STDMETHODCALLTYPE
   IASetIndexBuffer(const D3D12_INDEX_BUFFER_VIEW *pView) {
-    if (pView) {
+    auto index_buffer_allocation = pView ? device_->LookupBufferByVA(pView->BufferLocation, &index_offset) : nullptr;
+    if (index_buffer_allocation) {
       index_buffer_address = pView->BufferLocation;
-      index_buffer = device_->LookupBufferByVA(pView->BufferLocation, &index_offset)->buffer();
+      index_buffer = index_buffer_allocation->buffer();
       index_type = pView->Format == DXGI_FORMAT_R32_UINT ? WMTIndexTypeUInt32 : WMTIndexTypeUInt16;
     } else {
       index_buffer_address = 0;
