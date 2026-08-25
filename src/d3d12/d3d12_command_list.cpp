@@ -32,6 +32,8 @@ enum class DirtyState {
   ComputeRootSignature,
   BlendFactor,
   StencilRef,
+  GraphicsPipelineState,
+  ComputePipelineState,
 };
 
 enum class DrawCallStatus {
@@ -359,12 +361,36 @@ public:
         render->default_raster_sample_count = std::max(1u, pso_graphics_->forced_sample_count);
       }
 
-      if (pso_graphics_) {
-        UpdateGraphicsPSO(pso_graphics_.ptr());
-      }
       dirty_state_.set(DirtyState::VertexBuffer, DirtyState::GraphicsRootArguments, DirtyState::GraphicsRootSignature);
       dirty_state_.set(DirtyState::Viewport, DirtyState::ScissorRect);
       dirty_state_.set(DirtyState::BlendFactor, DirtyState::StencilRef);
+      dirty_state_.set(DirtyState::GraphicsPipelineState);
+    }
+
+    if (!pso_graphics_)
+      return DrawCallStatus::Invalid;
+
+    if (dirty_state_.test(DirtyState::GraphicsPipelineState)) {
+      auto &cmd_setpso = allocator_->EncodeRenderCommand<wmtcmd_render_setpso>();
+      cmd_setpso.type = WMTRenderCommandSetPSO;
+      cmd_setpso.pso = pso_graphics_->pso;
+
+      auto &cmd_setdsso = allocator_->EncodeRenderCommand<wmtcmd_render_setdsso>();
+      cmd_setdsso.type = WMTRenderCommandSetDSSO;
+      cmd_setdsso.dsso = pso_graphics_->dsso;
+      cmd_setdsso.stencil_ref = stencil_ref_;
+
+      auto &cmd_setrs = allocator_->EncodeRenderCommand<wmtcmd_render_setrasterizerstate>();
+      cmd_setrs.type = WMTRenderCommandSetRasterizerState;
+      cmd_setrs.cull_mode = pso_graphics_->cull_mode;
+      cmd_setrs.depth_clip_mode = pso_graphics_->depth_clip_mode;
+      cmd_setrs.fill_mode = pso_graphics_->fill_mode;
+      cmd_setrs.depth_bias = pso_graphics_->depth_bias;
+      cmd_setrs.depth_bias_clamp = pso_graphics_->depth_bias_clamp;
+      cmd_setrs.scole_scale = pso_graphics_->scole_scale;
+      cmd_setrs.winding = pso_graphics_->winding;
+
+      dirty_state_.clr(DirtyState::GraphicsPipelineState);
     }
     if (dirty_state_.test(DirtyState::VertexBuffer)) {
       EncodeVertexBuffers();
@@ -532,12 +558,18 @@ public:
       compute->cmd_head.next.set(0);
       compute->cmd_tail = (wmtcmd_base *)&compute->cmd_head;
       dirty_state_.set(DirtyState::ComputeRootArguments, DirtyState::ComputeRootSignature);
-      if (pso_compute_) {
-        auto &cmd_setpso = allocator_->EncodeComputeCommand<wmtcmd_compute_setpso>();
-        cmd_setpso.type = WMTComputeCommandSetPSO;
-        cmd_setpso.pso = pso_compute_->pso;
-        cmd_setpso.threadgroup_size = pso_compute_->threadgroup_size;
-      }
+      dirty_state_.set(DirtyState::ComputePipelineState);
+    }
+
+    if (!pso_compute_)
+        return false;
+
+    if (dirty_state_.test(DirtyState::ComputePipelineState)) {
+      auto &cmd_setpso = allocator_->EncodeComputeCommand<wmtcmd_compute_setpso>();
+      cmd_setpso.type = WMTComputeCommandSetPSO;
+      cmd_setpso.pso = pso_compute_->pso;
+      cmd_setpso.threadgroup_size = pso_compute_->threadgroup_size;
+      dirty_state_.clr(DirtyState::ComputePipelineState);
     }
 
     if (dirty_state_.test(DirtyState::ComputeRootArguments) && !SkipResourceBinding) {
@@ -953,33 +985,12 @@ public:
     dirty_state_.set(DirtyState::StencilRef);
   };
 
-  void
-  UpdateGraphicsPSO(MTLD3D12GraphicsPipelineState *pso_graphics) {
-    auto &cmd_setpso = allocator_->EncodeRenderCommand<wmtcmd_render_setpso>();
-    cmd_setpso.type = WMTRenderCommandSetPSO;
-    cmd_setpso.pso = pso_graphics->pso;
-
-    auto &cmd_setdsso = allocator_->EncodeRenderCommand<wmtcmd_render_setdsso>();
-    cmd_setdsso.type = WMTRenderCommandSetDSSO;
-    cmd_setdsso.dsso = pso_graphics->dsso;
-    cmd_setdsso.stencil_ref = stencil_ref_;
-
-    auto &cmd_setrs = allocator_->EncodeRenderCommand<wmtcmd_render_setrasterizerstate>();
-    cmd_setrs.type = WMTRenderCommandSetRasterizerState;
-    cmd_setrs.cull_mode = pso_graphics->cull_mode;
-    cmd_setrs.depth_clip_mode = pso_graphics->depth_clip_mode;
-    cmd_setrs.fill_mode = pso_graphics->fill_mode;
-    cmd_setrs.depth_bias = pso_graphics->depth_bias;
-    cmd_setrs.depth_bias_clamp = pso_graphics->depth_bias_clamp;
-    cmd_setrs.scole_scale = pso_graphics->scole_scale;
-    cmd_setrs.winding = pso_graphics->winding;
-  }
-
   void STDMETHODCALLTYPE
   SetPipelineState(ID3D12PipelineState *pPSO) {
     if (!pPSO) {
       pso_graphics_ = nullptr;
       pso_compute_ = nullptr;
+      dirty_state_.set(DirtyState::GraphicsPipelineState, DirtyState::ComputePipelineState);
       return;
     }
 
@@ -990,12 +1001,7 @@ public:
         return;
       pso_compute_ = compute_pso;
       pso_graphics_ = nullptr;
-      if (!allocator_->encoder_current || allocator_->encoder_current->type != EncoderType::Compute)
-        return;
-      auto &cmd_setpso = allocator_->EncodeComputeCommand<wmtcmd_compute_setpso>();
-      cmd_setpso.type = WMTComputeCommandSetPSO;
-      cmd_setpso.pso = pso_compute_->pso;
-      cmd_setpso.threadgroup_size = pso_compute_->threadgroup_size;
+      dirty_state_.set(DirtyState::GraphicsPipelineState, DirtyState::ComputePipelineState);
       return;
     }
 
@@ -1004,11 +1010,7 @@ public:
       return;
     pso_graphics_ = graphics_pso;
     pso_compute_ = nullptr;
-    if (!allocator_->encoder_current || allocator_->encoder_current->type != EncoderType::Render)
-      return;
-
-    UpdateGraphicsPSO(graphics_pso);
-    dirty_state_.set(DirtyState::VertexBuffer);
+    dirty_state_.set(DirtyState::GraphicsPipelineState, DirtyState::ComputePipelineState, DirtyState::VertexBuffer);
   };
 
   void STDMETHODCALLTYPE ResourceBarrier(UINT Count, const D3D12_RESOURCE_BARRIER *barriers) {
