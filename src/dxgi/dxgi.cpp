@@ -3,6 +3,7 @@
 #include "util_env.hpp"
 #include "winemetal.h"
 #include <mutex>
+#include <utility>
 
 namespace dxmt {
 Logger Logger::s_instance("dxgi.log");
@@ -85,6 +86,16 @@ extern "C" HRESULT __stdcall DXGIGetDebugInterface1(UINT Flags, REFIID riid,
 #endif
 
   return E_NOINTERFACE;
+}
+
+extern "C" HRESULT __stdcall DXGIDeclareAdapterRemovalSupport() {
+  static bool enabled = false;
+
+  if (std::exchange(enabled, true))
+    return DXGI_ERROR_ALREADY_EXISTS;
+
+  Logger::warn("DXGIDeclareAdapterRemovalSupport: stub");
+  return S_OK;
 }
 
 } // namespace dxmt
