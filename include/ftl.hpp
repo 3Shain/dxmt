@@ -3,6 +3,7 @@
 #include <utility>
 #include <vector>
 #include <algorithm>
+#include <iterator>
 
 template <class Tp, typename Func>
 auto operator | (const std::vector<Tp> &vec, Func &&f)  {
