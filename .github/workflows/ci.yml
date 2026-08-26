@@ -23,8 +23,8 @@ env:
   WINE_URL: https://github.com/3Shain/wine/releases/download/v8.16-3shain/wine.tar.gz
   WINE_ARM64EC_VERSION: wine-11.2
   WINE_ARM64EC_URL: https://github.com/3Shain/wine/releases/download/wine-11.2/wine-11.2.tar.gz
-  LLVM_MINGW_VERSION: "20251216"
-  LLVM_MINGW_DIR: llvm-mingw-20251216-ucrt-macos-universal
+  LLVM_MINGW_VERSION: "20260812"
+  LLVM_MINGW_DIR: llvm-mingw-20260812-ucrt-macos-universal
 
 jobs:
   setup-wine:
