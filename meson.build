@@ -60,6 +60,12 @@ if cpu_family == 'x86'
   ]
 endif
 
+if cpu_family == 'aarch64' and dxmt_crossbuild
+  compiler_args += [
+    '-marm64x',
+  ]
+endif
+
 native_compiler_args = [
   '-Wimplicit-fallthrough',
   '-Wno-unused-parameter',
