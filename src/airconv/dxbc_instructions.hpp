@@ -21,6 +21,7 @@
 #include "shader_common.hpp"
 #include <array>
 #include <map>
+#include <string>
 #include <string_view>
 #include <variant>
 #include "packed_variant_list.hpp"
