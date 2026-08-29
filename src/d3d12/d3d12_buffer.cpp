@@ -98,8 +98,6 @@ public:
       return E_INVALIDARG;
     if (heap_props_.Type == D3D12_HEAP_TYPE_DEFAULT)
       return E_INVALIDARG;
-    if (pReadRange && pReadRange->Begin != 0)
-      IMPLEMENT_ME
     if (ppData)
       *ppData = buffer->current()->mappedMemory(0);
     return S_OK;
