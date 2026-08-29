@@ -163,6 +163,8 @@ public:
 
   virtual D3D_FEATURE_LEVEL GetFeatureLevel() = 0;
 
+  virtual HRESULT GetAdapter(REFIID riid, void **ppAdapter) = 0;
+
   virtual WMT::ResidencySet GetGlobalResidencySet() = 0;
 
   virtual HRESULT RegisterResidency(WMT::Allocation allocation) = 0;
