@@ -359,10 +359,51 @@ public:
     }
   };
 
+  HRESULT GetOutputFromMonitor(
+          HMONITOR                  Monitor,
+          IDXGIOutput1**            ppOutput) {
+    if (!ppOutput)
+      return DXGI_ERROR_INVALID_CALL;
+
+    Com<IDXGIAdapter> adapter;
+    Com<IDXGIOutput> output;
+
+    if (FAILED(device_->GetAdapter(IID_PPV_ARGS(&adapter))))
+      return E_FAIL;
+
+    for (uint32_t i = 0; SUCCEEDED(adapter->EnumOutputs(i, &output)); i++) {
+      DXGI_OUTPUT_DESC outputDesc;
+      output->GetDesc(&outputDesc);
+      
+      if (outputDesc.Monitor == Monitor)
+        return output->QueryInterface(IID_PPV_ARGS(ppOutput));
+      
+      output = nullptr;
+    }
+    
+    return DXGI_ERROR_NOT_FOUND;
+  }
+
   HRESULT
   STDMETHODCALLTYPE
   GetContainingOutput(IDXGIOutput **ppOutput) final {
-    IMPLEMENT_ME
+    InitReturnPtr(ppOutput);
+    
+    if (!wsi::isWindow(hWnd))
+      return DXGI_ERROR_INVALID_CALL;
+    
+    Com<IDXGIOutput1> output;
+
+    if (target_ == nullptr) {
+      HRESULT hr = GetOutputFromMonitor(wsi::getWindowMonitor(hWnd), &output);
+
+      if (FAILED(hr))
+        return hr;
+    } else {
+      output = target_;
+    }
+
+    *ppOutput = output.ref();
     return S_OK;
   };
 
