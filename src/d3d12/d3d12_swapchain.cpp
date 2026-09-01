@@ -25,6 +25,8 @@
 #include "com/com_pointer.hpp"
 #include "log/log.hpp"
 #include "wsi_window.hpp"
+#include "config/config.hpp"
+#include <cfloat>
 
 /**
 Ref: https://learn.microsoft.com/en-us/windows/win32/api/dxgi1_3/nf-dxgi1_3-idxgiswapchain2-setmaximumframelatency
@@ -93,6 +95,8 @@ class MTLD3D12SwapChain final : public MTLDXGISubObject<IDXGISwapChain4, MTLD3D1
   DXGI_COLOR_SPACE_TYPE colorspace_ = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
   float scale_factor = 1.0;
   HUDState hud;
+  double init_refresh_rate_ = DBL_MAX;
+  int preferred_max_frame_rate = 0;
 
   std::vector<Com<MTLD3D12Resource>> backbuffers_;
 
@@ -143,6 +147,13 @@ public:
       fullscreen_desc_ = *pFullscreenDesc;
     } else {
       fullscreen_desc_.Windowed = true;
+    }
+
+    preferred_max_frame_rate = Config::getInstance().getOption<int>("d3d12.preferredMaxFrameRate", 0);
+    wsi::WsiMode current_mode;
+    if (wsi::getCurrentDisplayMode(monitor_, &current_mode) && current_mode.refreshRate.denominator != 0 &&
+        current_mode.refreshRate.numerator != 0) {
+      init_refresh_rate_ = (double)current_mode.refreshRate.numerator / (double)current_mode.refreshRate.denominator;
     }
 
     hud.initialize(GetVersionDescriptionText(12, device_->GetFeatureLevel()));
@@ -475,9 +486,13 @@ public:
     if (PresentFlags & DXGI_PRESENT_TEST)
       return hr;
 
+    double vsync_duration = std::max(
+        SyncInterval * 1.0 / (preferred_max_frame_rate ? preferred_max_frame_rate : init_refresh_rate_),
+        preferred_max_frame_rate ? 1.0 / preferred_max_frame_rate : 0
+    );
+
     auto &backbuffer = backbuffers_[presentation_count_ % backbuffers_.size()];
-    // TODO(d3d12): flush command queue and present
-    hr = queue_->Present(this->presenter.ptr(), backbuffer.ptr(), present_semaphore_);
+    hr = queue_->Present(this->presenter.ptr(), backbuffer.ptr(), present_semaphore_, vsync_duration);
 
     presentation_count_ += 1;
 
