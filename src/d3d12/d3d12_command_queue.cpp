@@ -22,6 +22,8 @@
 #include "d3d12_pageable.hpp"
 #include "dxgi_interfaces.h"
 #include "log/log.hpp"
+#include "util_env.hpp"
+#include <atomic>
 
 namespace dxmt {
 
@@ -34,9 +36,90 @@ class MTLD3D12CommandQueueImpl : public MTLD3D12Pageable<MTLD3D12CommandQueue, I
   WMT::Reference<WMT::CommandQueue> queue_;
   WMT::Reference<WMT::Fence> fence_;
 
+  std::atomic_uint64_t inflight_cmdbuf_seq_ = 1;
+  std::atomic_uint64_t inflight_cmdbuf_count_ = 0;
+  std::atomic_uint64_t inflight_cmdbuf_stop_ = 0;
+
+  struct InflightCommandBuffer {
+    WMT::Reference<WMT::CommandBuffer> cmdbuf{};
+    HANDLE semaphore{};
+  };
+
+  std::array<InflightCommandBuffer, kCommandQueueSize> inflight_cmdbuf_pool_;
+  dxmt::thread inflight_cmdbuf_wait_thread_;
+
+  dxmt::mutex mutex_commit_;
+
+  void
+  CommandBufferWaitingThread() {
+    env::setThreadName("dxmt-cmdbuf-waiting-thread");
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+
+    uint64_t internal_seq = 1;
+    for (;;) {
+      inflight_cmdbuf_seq_.wait(internal_seq, std::memory_order_acquire);
+      if (inflight_cmdbuf_stop_.load() == internal_seq)
+        break;
+      auto &inflight = inflight_cmdbuf_pool_[internal_seq % kCommandQueueSize];
+
+      if (inflight.cmdbuf.status() <= WMTCommandBufferStatusScheduled)
+        inflight.cmdbuf.waitUntilCompleted();
+      if (inflight.cmdbuf.status() == WMTCommandBufferStatusError)
+        ERR("Device error: ", inflight.cmdbuf.error().description().getUTF8String());
+
+      if (inflight.semaphore)
+        ReleaseSemaphore(inflight.semaphore, 1, nullptr);
+
+      inflight = {};
+
+      inflight_cmdbuf_count_.fetch_sub(1, std::memory_order_release);
+      inflight_cmdbuf_count_.notify_one();
+
+      internal_seq++;
+    }
+  };
+
+  struct CommittingScope {
+    MTLD3D12CommandQueueImpl *queue;
+    std::lock_guard<dxmt::mutex> lock;
+    uint64_t seq;
+    InflightCommandBuffer &inflight;
+    WMT::Reference<WMT::Object> pool;
+
+    CommittingScope(MTLD3D12CommandQueueImpl *queue) :
+        queue(queue),
+        lock(queue->mutex_commit_),
+        seq(queue->inflight_cmdbuf_seq_.load(std::memory_order_relaxed)),
+        inflight(queue->inflight_cmdbuf_pool_[seq % kCommandQueueSize]),
+        pool(WMT::MakeAutoreleasePool()) {
+      inflight.cmdbuf = queue->queue_.commandBuffer();
+    };
+
+    ~CommittingScope() {
+      inflight.cmdbuf.commit();
+      queue->inflight_cmdbuf_seq_.fetch_add(1, std::memory_order_release);
+      queue->inflight_cmdbuf_seq_.notify_one();
+      queue->inflight_cmdbuf_count_.fetch_add(1, std::memory_order_relaxed);
+    }
+  };
+
+  CommittingScope
+  StartCommitting() {
+    inflight_cmdbuf_count_.wait(kCommandQueueSize, std::memory_order_acquire);
+    return CommittingScope(this);
+  }
+
 public:
   MTLD3D12CommandQueueImpl(MTLD3D12Device *pDevice) :
-      MTLD3D12Pageable<MTLD3D12CommandQueue, IMTLSwapChainFactory>(pDevice) {}
+      MTLD3D12Pageable<MTLD3D12CommandQueue, IMTLSwapChainFactory>(pDevice),
+      inflight_cmdbuf_wait_thread_([this]() { this->CommandBufferWaitingThread(); }) {}
+
+  ~MTLD3D12CommandQueueImpl() {
+    std::lock_guard<dxmt::mutex> lock(mutex_commit_);
+    inflight_cmdbuf_stop_.store(inflight_cmdbuf_seq_.fetch_add(1));
+    inflight_cmdbuf_seq_.notify_one();
+    inflight_cmdbuf_wait_thread_.join();
+  }
 
   HRESULT
   Initialize(const D3D12_COMMAND_QUEUE_DESC *pDesc) {
@@ -100,9 +183,8 @@ public:
 
   void STDMETHODCALLTYPE
   ExecuteCommandLists(UINT Count, ID3D12CommandList *const *ppCommandLists) {
-    auto pool = WMT::MakeAutoreleasePool();
-
-    auto cmdbuf = queue_.commandBuffer();
+    auto scope = StartCommitting();
+    auto &cmdbuf = scope.inflight.cmdbuf;
     for (unsigned i = 0; i < Count; i++) {
       auto pCommandList = static_cast<MTLD3D12GraphicsCommandList *>(ppCommandLists[i]);
       EncoderData *current = pCommandList->entry;
@@ -244,9 +326,6 @@ public:
         current = current->next;
       }
     }
-    cmdbuf.commit();
-    // temporary workaround
-    cmdbuf.waitUntilCompleted();
   };
 
   void STDMETHODCALLTYPE SetMarker(UINT metadata, const void *data, UINT size) {};
@@ -257,19 +336,17 @@ public:
 
   HRESULT STDMETHODCALLTYPE
   Signal(ID3D12Fence *pFence, UINT64 Value) {
-    auto pool = WMT::MakeAutoreleasePool();
-    auto cmdbuf = queue_.commandBuffer();
+    auto scope = StartCommitting();
+    auto &cmdbuf = scope.inflight.cmdbuf;
     static_cast<MTLD3D12Fence *>(pFence)->fence->signal(cmdbuf, Value);
-    cmdbuf.commit();
     return S_OK;
   };
 
   HRESULT STDMETHODCALLTYPE
   Wait(ID3D12Fence *pFence, UINT64 Value) {
-    auto pool = WMT::MakeAutoreleasePool();
-    auto cmdbuf = queue_.commandBuffer();
+    auto scope = StartCommitting();
+    auto &cmdbuf = scope.inflight.cmdbuf;
     static_cast<MTLD3D12Fence *>(pFence)->fence->wait(cmdbuf, Value);
-    cmdbuf.commit();
     return S_OK;
   };
 
@@ -302,8 +379,8 @@ public:
 
   HRESULT
   Present(Presenter *presenter, ID3D12Resource *backbuffer, HANDLE hLantecyWaitable) {
-    auto pool = WMT::MakeAutoreleasePool();
-    auto cmdbuf = queue_.commandBuffer();
+    auto scope = StartCommitting();
+    auto &cmdbuf = scope.inflight.cmdbuf;
 
     auto g = reinterpret_cast<MTLD3D12Resource *>(backbuffer);
     auto &view = g->texture->view(g->texture->fullView);
@@ -316,13 +393,7 @@ public:
     );
 
     cmdbuf.presentDrawable(drawable);
-    cmdbuf.commit();
-
-    {
-      // temporary workaround
-      cmdbuf.waitUntilCompleted();
-      ReleaseSemaphore(hLantecyWaitable, 1, nullptr);
-    }
+    scope.inflight.semaphore = hLantecyWaitable;
 
     return S_OK;
   }
