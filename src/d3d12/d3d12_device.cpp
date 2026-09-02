@@ -318,6 +318,16 @@ public:
       out->MSPrimitivesPipelineStatisticIncludesCulledPrimitives = D3D12_TRI_STATE_FALSE;
       return S_OK;
     }
+    case D3D12_FEATURE_D3D12_OPTIONS4: {
+      if (DataSize != sizeof(D3D12_FEATURE_DATA_D3D12_OPTIONS4))
+        return E_INVALIDARG;
+      auto *out = reinterpret_cast<D3D12_FEATURE_DATA_D3D12_OPTIONS4 *>(pFeatureData);
+      out->MSAA64KBAlignedTextureSupported = TRUE;
+      out->Native16BitShaderOpsSupported = FALSE; // TODO(d3d12): should be true
+      // TODO(d3d12): revise when d3d12 shared resource is implemented
+      out->SharedResourceCompatibilityTier = D3D12_SHARED_RESOURCE_COMPATIBILITY_TIER_0;
+      return S_OK;
+    }
     case D3D12_FEATURE_FORMAT_SUPPORT: {
       if (DataSize != sizeof(D3D12_FEATURE_DATA_FORMAT_SUPPORT))
         return E_INVALIDARG;
