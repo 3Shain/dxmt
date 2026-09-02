@@ -24,10 +24,16 @@
 #include "log/log.hpp"
 #include "util_env.hpp"
 #include <atomic>
+#include "d3d10_1.h"
+#include "d3d11_4.h"
 
 namespace dxmt {
 
 constexpr auto kCommandQueueSize = 32u;
+
+const GUID kD3D12CommandQueueDownlevelUUID = {
+    0x38a8c5ef, 0x7ccb, 0x4e81, {0x91, 0x4f, 0xa6, 0xe9, 0xd0, 0x72, 0xc4, 0x94}
+};
 
 class MTLD3D12CommandQueueImpl : public MTLD3D12Pageable<MTLD3D12CommandQueue, IMTLSwapChainFactory> {
 
@@ -156,6 +162,16 @@ public:
       *ppvObject = ref_and_cast<IMTLSwapChainFactory>(this);
       return S_OK;
     }
+
+    if (riid == __uuidof(ID3D10Device) || riid == __uuidof(ID3D10Device1))
+      return E_NOINTERFACE;
+
+    if (riid == __uuidof(ID3D11Device) || riid == __uuidof(ID3D11Device1) || riid == __uuidof(ID3D11Device2) ||
+        riid == __uuidof(ID3D11Device3) || riid == __uuidof(ID3D11Device4) || riid == __uuidof(ID3D11Device5))
+      return E_NOINTERFACE;
+
+    if (riid == kD3D12CommandQueueDownlevelUUID)
+      return E_NOINTERFACE;
 
     if (logQueryInterfaceError(__uuidof(ID3D12CommandQueue), riid)) {
       WARN("D3D12CommandQueue: Unknown interface query ", str::format(riid));
