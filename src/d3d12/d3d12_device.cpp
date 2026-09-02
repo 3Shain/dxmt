@@ -25,8 +25,12 @@
 #include "dxmt_format.hpp"
 #include "log/log.hpp"
 #include <map>
+#include "d3d10_1.h"
+#include "d3d11_4.h"
 
 namespace dxmt {
+
+const GUID kD3D12DeviceDownlevelUUID = {0x74eaee3f, 0x2f4b, 0x476d, {0x82, 0xba, 0x2b, 0x85, 0xcb, 0x49, 0xe3, 0x10}};
 
 HRESULT PopulateWMTTextureInfo(WMT::Device Device, WMTTextureInfo &InfoOut, const D3D12_RESOURCE_DESC &Desc);
 
@@ -94,6 +98,20 @@ public:
       *ppvObject = ref(this);
       return S_OK;
     }
+
+    if (riid == __uuidof(IDXGIDevice) || riid == __uuidof(IDXGIDevice1) || riid == __uuidof(IDXGIDevice2) ||
+        riid == __uuidof(IDXGIDevice3) || riid == __uuidof(IDXGIDevice4))
+      return E_NOINTERFACE;
+
+    if (riid == __uuidof(ID3D10Device) || riid == __uuidof(ID3D10Device1))
+      return E_NOINTERFACE;
+
+    if (riid == __uuidof(ID3D11Device) || riid == __uuidof(ID3D11Device1) || riid == __uuidof(ID3D11Device2) ||
+        riid == __uuidof(ID3D11Device3) || riid == __uuidof(ID3D11Device4) || riid == __uuidof(ID3D11Device5))
+      return E_NOINTERFACE;
+
+    if (riid == kD3D12DeviceDownlevelUUID)
+      return E_NOINTERFACE;
 
     if (logQueryInterfaceError(__uuidof(ID3D12Device1), riid)) {
       WARN("D3D12Device: Unknown interface query ", str::format(riid));
