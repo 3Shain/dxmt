@@ -328,6 +328,14 @@ public:
       out->SharedResourceCompatibilityTier = D3D12_SHARED_RESOURCE_COMPATIBILITY_TIER_0;
       return S_OK;
     }
+    case D3D12_FEATURE_SHADER_CACHE: {
+      if (DataSize != sizeof(D3D12_FEATURE_DATA_SHADER_CACHE))
+        return E_INVALIDARG;
+      auto *out = reinterpret_cast<D3D12_FEATURE_DATA_SHADER_CACHE *>(pFeatureData);
+      out->SupportFlags =
+          D3D12_SHADER_CACHE_SUPPORT_AUTOMATIC_INPROC_CACHE | D3D12_SHADER_CACHE_SUPPORT_AUTOMATIC_DISK_CACHE;
+      return S_OK;
+    }
     case D3D12_FEATURE_FORMAT_SUPPORT: {
       if (DataSize != sizeof(D3D12_FEATURE_DATA_FORMAT_SUPPORT))
         return E_INVALIDARG;
