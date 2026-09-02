@@ -2012,7 +2012,8 @@ sm50_compilation_argument32_convert(
       data->max_potential_tess_factor = src->max_potential_tess_factor;
       break;
     }
-    case SM50_SHADER_ROOT_SIGNATURE: {
+    case SM50_SHADER_ROOT_SIGNATURE:
+    case SM50_SHADER_ROOT_SIGNATURE2: {
       struct SM50_SHADER_ROOT_SIGNATURE_DATA32 *src = (void *)args32;
       struct SM50_SHADER_ROOT_SIGNATURE_DATA *data = malloc(sizeof(struct SM50_SHADER_ROOT_SIGNATURE_DATA));
       last_arg->next = data;

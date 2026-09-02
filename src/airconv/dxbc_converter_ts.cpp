@@ -211,6 +211,8 @@ convert_dxbc_vertex_hull_shader(
   args_get_data<SM50_SHADER_IA_INPUT_LAYOUT, SM50_SHADER_IA_INPUT_LAYOUT_DATA>(pArgs, &ia_layout);
   SM50_SHADER_ROOT_SIGNATURE_DATA *rootsig = nullptr;
   args_get_data<SM50_SHADER_ROOT_SIGNATURE, SM50_SHADER_ROOT_SIGNATURE_DATA>(pArgs, &rootsig);
+  SM50_SHADER_ROOT_SIGNATURE_DATA *rootsig_vs = nullptr;
+  args_get_data<SM50_SHADER_ROOT_SIGNATURE2, SM50_SHADER_ROOT_SIGNATURE_DATA>(pArgs, &rootsig_vs);
 
   bool is_indexed_draw = ia_layout && ia_layout->index_buffer_format > 0;
 
@@ -244,9 +246,9 @@ convert_dxbc_vertex_hull_shader(
     }
   }
 
-  auto binding_map = rootsig ? setup_binding_rootsig(
+  auto binding_map = rootsig_vs ? setup_binding_rootsig(
                                    &vertex_shader_info, func_signature, module, D3D10_SB_VERTEX_SHADER,
-                                   rootsig->bytecode, rootsig->bytecode_length
+                                   rootsig_vs->bytecode, rootsig_vs->bytecode_length
                                )
                              : setup_binding_table2(
                                    &vertex_shader_info, func_signature, module, SM50_BINDING_INDEX_CONSTANT_BUFFER2,
