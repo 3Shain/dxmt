@@ -1196,6 +1196,9 @@ enum WMTRenderCommandType : uint16_t {
   WMTRenderCommandSetViewports,
   WMTRenderCommandSetScissorRects,
   WMTRenderCommandSetPSO,
+  /**
+  \deprecated use \ref WMTRenderCommandSetDepthStencilState
+  */
   WMTRenderCommandSetDSSO,
   WMTRenderCommandSetBlendFactorAndStencilRef,
   WMTRenderCommandSetVisibilityMode,
@@ -1225,6 +1228,7 @@ enum WMTRenderCommandType : uint16_t {
   WMTRenderCommandExecuteCommandsInBuffer,
   WMTRenderCommandSetBlendFactor,
   WMTRenderCommandSetStencilRef,
+  WMTRenderCommandSetDepthStencilState,
 };
 
 struct wmtcmd_render_nop {
@@ -1473,6 +1477,13 @@ struct wmtcmd_render_setdsso {
   struct WMTMemoryPointer next;
   obj_handle_t dsso;
   uint8_t stencil_ref;
+};
+
+struct wmtcmd_render_setdepthstencilstate {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t depth_stencil_state;
 };
 
 struct wmtcmd_render_setblendcolor {
