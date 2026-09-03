@@ -375,10 +375,9 @@ public:
       cmd_setpso.type = WMTRenderCommandSetPSO;
       cmd_setpso.pso = pso_graphics_->pso;
 
-      auto &cmd_setdsso = allocator_->EncodeRenderCommand<wmtcmd_render_setdsso>();
-      cmd_setdsso.type = WMTRenderCommandSetDSSO;
-      cmd_setdsso.dsso = pso_graphics_->dsso;
-      cmd_setdsso.stencil_ref = stencil_ref_;
+      auto &cmd_setdsso = allocator_->EncodeRenderCommand<wmtcmd_render_setdepthstencilstate>();
+      cmd_setdsso.type = WMTRenderCommandSetDepthStencilState;
+      cmd_setdsso.depth_stencil_state = pso_graphics_->dsso;
 
       auto &cmd_setrs = allocator_->EncodeRenderCommand<wmtcmd_render_setrasterizerstate>();
       cmd_setrs.type = WMTRenderCommandSetRasterizerState;
@@ -981,7 +980,9 @@ public:
 
   void STDMETHODCALLTYPE
   OMSetStencilRef(UINT StencilRef) {
-    stencil_ref_ = StencilRef;
+    if (stencil_ref_ == (UINT8)StencilRef)
+      return;
+    stencil_ref_ = (UINT8)StencilRef;
     dirty_state_.set(DirtyState::StencilRef);
   };
 
