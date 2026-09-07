@@ -1024,6 +1024,7 @@ public:
         desc_graphics.DepthStencilState.DepthFunc = subobject->data.DepthFunc;
         desc_graphics.DepthStencilState.DepthWriteMask = subobject->data.DepthWriteMask;
         desc_graphics.DepthStencilState.StencilWriteMask = subobject->data.StencilWriteMask;
+        desc_graphics.DepthStencilState.StencilReadMask = subobject->data.StencilReadMask;
         desc_graphics.DepthStencilState.BackFace = subobject->data.BackFace;
         desc_graphics.DepthStencilState.FrontFace = subobject->data.FrontFace;
         if (subobject->data.DepthBoundsTestEnable) {
