@@ -275,6 +275,10 @@ public:
         return E_INVALIDARG;
 
       rt.write_mask = kColorWriteMaskMap[renderTarget.RenderTargetWriteMask];
+
+      if (rt.pixel_format == WMTPixelFormatRGB9E5Float)
+        rt.write_mask = (rt.write_mask & ~WMTColorWriteMaskAlpha) ? WMTColorWriteMaskAll : 0;
+
       if (renderTarget.BlendEnable) {
         if (!any_bit_set(device_->GetMTLPixelFormatCapability(rt.pixel_format) & FormatCapability::Blend)) {
           WARN("CreateGraphicsPipelineState: pixel format ", rt.pixel_format, " is not blendable");
