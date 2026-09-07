@@ -289,19 +289,6 @@ public:
     return {offset, stride};
   }
 
-  void
-  EncodeVertexBuffers() {
-    auto [Offset, Stride] = PopulateVertexBufferTable(1);
-    if (!Stride)
-      return;
-
-    auto &cmd = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
-    cmd.type = WMTRenderCommandSetVertexBuffer;
-    cmd.buffer = allocator_->gpu_heap_buffer_;
-    cmd.offset = Offset;
-    cmd.index = SM50_BINDING_INDEX_VERTEX_BUFFER;
-  }
-
   DrawCallStatus
   PreDraw(bool SkipResourceBinding = false) {
     if (!allocator_->encoder_current || allocator_->encoder_current->type != EncoderType::Render) {
@@ -404,7 +391,14 @@ public:
       dirty_state_.clr(DirtyState::GraphicsPipelineState);
     }
     if (dirty_state_.test(DirtyState::VertexBuffer)) {
-      EncodeVertexBuffers();
+      auto [Offset, Stride] = PopulateVertexBufferTable(1);
+      if (Stride) {
+        auto &cmd_vsvb = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+        cmd_vsvb.type = WMTRenderCommandSetVertexBuffer;
+        cmd_vsvb.buffer = allocator_->gpu_heap_buffer_;
+        cmd_vsvb.offset = Offset;
+        cmd_vsvb.index = SM50_BINDING_INDEX_VERTEX_BUFFER;
+      }
       dirty_state_.clr(DirtyState::VertexBuffer);
     }
 
