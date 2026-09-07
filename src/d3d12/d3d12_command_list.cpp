@@ -154,13 +154,8 @@ public:
 
   ~MTLD3D12GraphicsCommandListImpl() {}
 
-  HRESULT
-  Initialize(ID3D12CommandAllocator *pAllocator, ID3D12PipelineState *pInitialPipelineState) {
-    auto allocator = static_cast<MTLD3D12CommandAllocatorImpl *>(pAllocator);
-
-    if (allocator_ != allocator)
-      allocator_ = allocator;
-
+  void
+  ResetState(ID3D12PipelineState *pInitialPipelineState) {
     pso_graphics_ = nullptr;
     pso_compute_ = nullptr;
     if (auto pso = static_cast<MTLD3D12PipelineState *>(pInitialPipelineState)) {
@@ -202,6 +197,16 @@ public:
     index_offset = 0;
 
     dirty_state_.clrAll();
+  }
+
+  HRESULT
+  Initialize(ID3D12CommandAllocator *pAllocator, ID3D12PipelineState *pInitialPipelineState) {
+    auto allocator = static_cast<MTLD3D12CommandAllocatorImpl *>(pAllocator);
+
+    if (allocator_ != allocator)
+      allocator_ = allocator;
+
+    ResetState(pInitialPipelineState);
 
     encoder_count = std::numeric_limits<size_t>::max();
     return allocator_->StartRecord(&entry);
@@ -248,7 +253,11 @@ public:
     return Initialize(pAllocator, pInitialState);
   };
 
-  void STDMETHODCALLTYPE ClearState(ID3D12PipelineState *pPipelineState) { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE
+  ClearState(ID3D12PipelineState *pPipelineState) {
+    allocator_->InvalidateCurrentPass();
+    ResetState(pPipelineState);
+  };
 
   std::tuple<uint64_t, uint64_t>
   PopulateVertexBufferTable(uint32_t Count) {
