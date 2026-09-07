@@ -386,7 +386,10 @@ public:
 
       auto &cmd_setdsso = allocator_->EncodeRenderCommand<wmtcmd_render_setdepthstencilstate>();
       cmd_setdsso.type = WMTRenderCommandSetDepthStencilState;
-      cmd_setdsso.depth_stencil_state = pso_graphics_->dsso;
+      cmd_setdsso.depth_stencil_state = pso_graphics_->GetDepthStencilState(
+        static_cast<RenderEncoderData *>(allocator_->encoder_current)->dsv_planar_flags,
+        static_cast<RenderEncoderData *>(allocator_->encoder_current)->dsv_readonly_flags
+      );
 
       auto &cmd_setrs = allocator_->EncodeRenderCommand<wmtcmd_render_setrasterizerstate>();
       cmd_setrs.type = WMTRenderCommandSetRasterizerState;

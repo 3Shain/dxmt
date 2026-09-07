@@ -237,6 +237,13 @@ protected:
   MTL_SHADER_REFLECTION ref_vs;
   MTL_SHADER_REFLECTION ref_ps;
 
+  WMT::Reference<WMT::DepthStencilState> dsso;
+  WMT::Reference<WMT::DepthStencilState> dsso_depth_readonly;
+  WMT::Reference<WMT::DepthStencilState> dsso_stencil_readonly;
+  WMT::Reference<WMT::DepthStencilState> dsso_readonly;
+  WMT::Reference<WMT::DepthStencilState> dsso_no_stencil;
+  WMT::Reference<WMT::DepthStencilState> dsso_readonly_no_stencil;
+
 public:
   MTLD3D12GraphicsPipelineStateImpl(MTLD3D12Device *pDevice) :
       MTLD3D12Pageable<MTLD3D12GraphicsPipelineState>(pDevice) {
@@ -338,7 +345,8 @@ public:
   }
 
   void
-  InitializeDSSO(const D3D12_GRAPHICS_PIPELINE_STATE_DESC *pDesc, WMTDepthStencilInfo &info) {
+  InitializeDSSO(const D3D12_GRAPHICS_PIPELINE_STATE_DESC *pDesc) {
+    WMTDepthStencilInfo info;
     info.depth_compare_function = WMTCompareFunctionAlways;
     info.depth_write_enabled = false;
     info.front_stencil.enabled = false;
@@ -365,6 +373,48 @@ public:
       info.back_stencil.stencil_compare_function = kCompareFunctionMap[pDesc->DepthStencilState.BackFace.StencilFunc];
       info.back_stencil.write_mask = pDesc->DepthStencilState.StencilWriteMask;
       info.back_stencil.read_mask = pDesc->DepthStencilState.StencilReadMask;
+    }
+
+    auto metal = device_->GetMTLDevice();
+    dsso = metal.newDepthStencilState(info);
+    {
+      auto info_depth_readonly = info;
+      info_depth_readonly.depth_write_enabled = false;
+      dsso_depth_readonly = metal.newDepthStencilState(info_depth_readonly);
+    }
+    {
+      auto info_stencil_readonly = info;
+      info_stencil_readonly.back_stencil.stencil_fail_op = WMTStencilOperationKeep;
+      info_stencil_readonly.back_stencil.depth_stencil_pass_op = WMTStencilOperationKeep;
+      info_stencil_readonly.back_stencil.depth_fail_op = WMTStencilOperationKeep;
+      info_stencil_readonly.front_stencil.stencil_fail_op = WMTStencilOperationKeep;
+      info_stencil_readonly.front_stencil.depth_stencil_pass_op = WMTStencilOperationKeep;
+      info_stencil_readonly.front_stencil.depth_fail_op = WMTStencilOperationKeep;
+      dsso_stencil_readonly = metal.newDepthStencilState(info_stencil_readonly);
+    }
+    {
+      auto info_readonly = info;
+      info_readonly.depth_write_enabled = false;
+      info_readonly.back_stencil.stencil_fail_op = WMTStencilOperationKeep;
+      info_readonly.back_stencil.depth_stencil_pass_op = WMTStencilOperationKeep;
+      info_readonly.back_stencil.depth_fail_op = WMTStencilOperationKeep;
+      info_readonly.front_stencil.stencil_fail_op = WMTStencilOperationKeep;
+      info_readonly.front_stencil.depth_stencil_pass_op = WMTStencilOperationKeep;
+      info_readonly.front_stencil.depth_fail_op = WMTStencilOperationKeep;
+      dsso_readonly = metal.newDepthStencilState(info_readonly);
+    }
+    {
+      auto info_nostencil = info;
+      info_nostencil.back_stencil.enabled = false;
+      info_nostencil.front_stencil.enabled = false;
+      dsso_no_stencil = metal.newDepthStencilState(info_nostencil);
+    }
+    {
+      auto info_nostencil = info;
+      info_nostencil.depth_write_enabled = false;
+      info_nostencil.back_stencil.enabled = false;
+      info_nostencil.front_stencil.enabled = false;
+      dsso_readonly_no_stencil = metal.newDepthStencilState(info_nostencil);
     }
   }
 
@@ -544,17 +594,7 @@ public:
     }
 
     // DSSO
-    {
-      WMTDepthStencilInfo info;
-      InitializeDSSO(pDesc, info);
-
-      dsso = metal.newDepthStencilState(info);
-
-      if (!dsso) {
-        ERR("Failed to create DSSO");
-        return E_FAIL;
-      }
-    }
+    InitializeDSSO(pDesc);
 
     InitializeRasterizerState(pDesc);
 
@@ -586,6 +626,32 @@ public:
   GetCachedBlob(ID3DBlob **blob) {
     IMPLEMENT_ME
     return E_NOTIMPL;
+  }
+
+  virtual WMT::DepthStencilState
+  GetDepthStencilState(UINT DSVPlanar, UINT DSVReadonlyFlags) {
+    if (!DSVPlanar)
+      return device_->default_depth_stencil_state;
+
+    if (DSVPlanar == 1) {
+      if (DSVReadonlyFlags & 1)
+        return dsso_readonly_no_stencil;
+      else
+        return dsso_no_stencil;
+    }
+
+    assert(DSVPlanar == 3);
+
+    switch (DSVReadonlyFlags) {
+    case 3:
+      return dsso_readonly;
+    case 2:
+      return dsso_stencil_readonly;
+    case 1:
+      return dsso_depth_readonly;
+    default:
+      return dsso;
+    }
   }
 };
 

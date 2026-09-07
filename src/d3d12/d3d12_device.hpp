@@ -133,7 +133,6 @@ public:
 class MTLD3D12GraphicsPipelineState : public MTLD3D12PipelineState {
 public:
   WMT::Reference<WMT::RenderPipelineState> pso;
-  WMT::Reference<WMT::DepthStencilState> dsso;
   uint32_t slot_mask = 0;
   enum WMTTriangleFillMode fill_mode;
   enum WMTCullMode cull_mode;
@@ -143,6 +142,8 @@ public:
   float scole_scale;
   float depth_bias_clamp;
   uint32_t forced_sample_count;
+
+  virtual WMT::DepthStencilState GetDepthStencilState(UINT DSVPlanar, UINT DSVReadonlyFlags) = 0;
 
   virtual void AddRefPrivate() = 0;
   virtual void ReleasePrivate() = 0;
@@ -182,6 +183,8 @@ public:
   virtual FormatCapability GetMTLPixelFormatCapability(WMTPixelFormat Format) = 0;
 
   EventListener event_listener;
+
+  WMT::Reference<WMT::DepthStencilState> default_depth_stencil_state;
 };
 
 HRESULT CreateD3D12Device(IMTLDXGIAdapter *adapter, REFIID riid, void **ppDevice);

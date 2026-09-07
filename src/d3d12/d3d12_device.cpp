@@ -61,6 +61,11 @@ public:
       return E_FAIL;
     }
     format_inspector_.Inspect(GetMTLDevice());
+    
+    WMTDepthStencilInfo info{};
+    info.depth_compare_function = WMTCompareFunctionAlways;
+    default_depth_stencil_state = GetMTLDevice().newDepthStencilState(info);
+
     return S_OK;
   };
 
