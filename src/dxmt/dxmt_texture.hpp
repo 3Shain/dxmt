@@ -38,6 +38,7 @@ enum class TextureAllocationFlag : uint32_t {
   GpuManaged = 4,
   Shared = 5,
   ShaderReadonly = 6,
+  AllocatedOnHeap = 7,
 };
 
 struct TextureViewDescriptor {
@@ -275,6 +276,7 @@ public:
   TextureViewKey fullView;
 
   Rc<TextureAllocation> allocate(Flags<TextureAllocationFlag> flags);
+  Rc<TextureAllocation> allocate(Flags<TextureAllocationFlag> flags, WMT::Heap heap, uint64_t heap_offset = 0);
   Rc<TextureAllocation> import(mach_port_t mach_port);
 
   TextureView &view(TextureViewKey key);

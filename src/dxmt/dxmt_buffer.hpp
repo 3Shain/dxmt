@@ -40,6 +40,7 @@ enum class BufferAllocationFlag : uint32_t {
   /* will allocate at least one page of memory and try to suballocate from that */
   SuballocateFromOnePage = 5,
   CpuPlaced = 6,
+  AllocatedOnHeap = 7,
 };
 
 struct BufferViewKey {
@@ -147,6 +148,10 @@ public:
 
 private:
   BufferAllocation(WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags);
+  BufferAllocation(
+      WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags, WMT::Heap heap,
+      uint64_t heap_offset
+  );
   void free();
 
   BufferAllocation(const BufferAllocation &) = delete;
@@ -179,6 +184,7 @@ public:
   }
 
   Rc<BufferAllocation> allocate(Flags<BufferAllocationFlag> flags);
+  Rc<BufferAllocation> allocate(Flags<BufferAllocationFlag> flags, WMT::Heap heap, uint64_t heap_offset);
 
   Rc<BufferAllocation> rename(Rc<BufferAllocation> &&newAllocation);
 

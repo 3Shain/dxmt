@@ -50,6 +50,26 @@ BufferAllocation::BufferAllocation(WMT::Device device, const WMTBufferInfo &info
   mappedMemory_ = info_.memory.get_accessible_or_null();
 };
 
+BufferAllocation::BufferAllocation(
+    WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags, WMT::Heap heap,
+    uint64_t heap_offset
+) :
+    info_(info),
+    flags_(flags) {
+  info_.length = info_.length;
+  suballocation_size_ = info_.length;
+  if (flags_.test(BufferAllocationFlag::SuballocateFromOnePage)) {
+    assert(0 && "heap-backed buffer doesn't support suballocation");
+  }
+  fenceTrackers.resize(suballocation_count_);
+  if (flags_.test(BufferAllocationFlag::CpuPlaced)) {
+    assert(0 && "heap doesn't support placed buffer");
+  }
+  obj_ = heap.newBuffer(info_, heap_offset);
+  gpuAddress_ = info_.gpu_address;
+  mappedMemory_ = info_.memory.get_accessible_or_null();
+}
+
 void
 BufferAllocation::free() {
   if (placed_buffer) {
@@ -165,6 +185,26 @@ Buffer::allocate(Flags<BufferAllocationFlag> flags) {
   info.length = length_;
   info.options = options;
   return new BufferAllocation(device_, info, flags);
+};
+
+Rc<BufferAllocation>
+Buffer::allocate(Flags<BufferAllocationFlag> flags, WMT::Heap heap, uint64_t heap_offset) {
+  WMTResourceOptions options = WMTResourceHazardTrackingModeUntracked;
+  if (flags.test(BufferAllocationFlag::CpuWriteCombined)) {
+    options |= WMTResourceOptionCPUCacheModeWriteCombined;
+  }
+  if (flags.test(BufferAllocationFlag::CpuInvisible)) {
+    options |= WMTResourceStorageModePrivate;
+  }
+  if (flags.test(BufferAllocationFlag::GpuManaged)) {
+    options |= WMTResourceStorageModeManaged;
+  }
+  WMTBufferInfo info;
+  info.memory.set(0);
+  info.length = length_;
+  info.options = options;
+  flags.set(BufferAllocationFlag::AllocatedOnHeap);
+  return new BufferAllocation(device_, info, flags, heap, heap_offset);
 };
 
 Rc<BufferAllocation>

@@ -204,6 +204,25 @@ Texture::allocate(Flags<TextureAllocationFlag> flags) {
 }
 
 Rc<TextureAllocation>
+Texture::allocate(Flags<TextureAllocationFlag> flags, WMT::Heap heap, uint64_t heap_offset) {
+  WMTResourceOptions options = WMTResourceHazardTrackingModeUntracked;
+  WMTTextureInfo info = info_; // copy
+  info.mach_port = 0;
+  if (flags.test(TextureAllocationFlag::CpuWriteCombined)) {
+    options |= WMTResourceOptionCPUCacheModeWriteCombined;
+  }
+  if (flags.test(TextureAllocationFlag::CpuInvisible)) {
+    options |= WMTResourceStorageModePrivate;
+  }
+  if (flags.test(TextureAllocationFlag::GpuManaged)) {
+    options |= WMTResourceStorageModeManaged;
+  }
+  info.options = options;
+  flags.set(TextureAllocationFlag::AllocatedOnHeap);
+  return new TextureAllocation(this, heap.newTexture(info, heap_offset), info, flags);
+}
+
+Rc<TextureAllocation>
 Texture::import(mach_port_t mach_port) {
   Flags<TextureAllocationFlag> flags;
   WMTTextureInfo info;
