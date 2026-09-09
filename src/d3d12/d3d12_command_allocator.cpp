@@ -139,6 +139,10 @@ MTLD3D12CommandAllocatorImpl::Reset() {
   }
   encoder_lists_.clear();
 
+  for (auto ptr : spilled_cpu_heap_)
+    free(ptr);
+  spilled_cpu_heap_.clear();
+
   return Initialize();
 };
 
