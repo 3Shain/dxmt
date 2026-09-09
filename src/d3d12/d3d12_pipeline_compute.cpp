@@ -20,14 +20,13 @@
 #include "com/com_pointer.hpp"
 #include "d3d12_device.hpp"
 #include "d3d12_pageable.hpp"
+#include "d3d12_pipeline.hpp"
 #include "log/log.hpp"
-#include "airconv_public.h"
 
 namespace dxmt {
 
 class MTLD3D12ComputePipelineStateImpl : public MTLD3D12Pageable<MTLD3D12ComputePipelineState> {
 
-  sm50_shader_t shader_cs;
   MTL_SHADER_REFLECTION ref_cs;
 
 public:
@@ -38,7 +37,8 @@ public:
   HRESULT
   Initialize(const D3D12_COMPUTE_PIPELINE_STATE_DESC *pDesc) {
 
-    sm50_error_t sm50_err;
+    SM50Shader shader_cs;
+    SM50Error sm50_err;
 
     SM50_SHADER_ROOT_SIGNATURE_DATA rootsig;
     rootsig.type = SM50_SHADER_ROOT_SIGNATURE;
@@ -56,14 +56,12 @@ public:
     common.metal_version = SM50_SHADER_METAL_310;
     common.next = &rootsig;
 
-    if (SM50Initialize(pDesc->CS.pShaderBytecode, pDesc->CS.BytecodeLength, &shader_cs, &ref_cs, &sm50_err)) {
-      ERR("Failed to parse cs shader");
-      return E_FAIL;
-    }
+    if (HRESULT hr = InitializeShader(pDesc->CS, &shader_cs, &ref_cs); FAILED(hr))
+      return hr;
 
     threadgroup_size = {ref_cs.ThreadgroupSize[0], ref_cs.ThreadgroupSize[1], ref_cs.ThreadgroupSize[2]};
 
-    sm50_bitcode_t cs_bitcode;
+    SM50ShaderBitcode cs_bitcode;
 
     if (SM50Compile(shader_cs, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&common, "cs_main", &cs_bitcode, &sm50_err)) {
       ERR("Failed to compile cs shader");

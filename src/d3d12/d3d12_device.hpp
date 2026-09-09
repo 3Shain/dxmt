@@ -129,6 +129,9 @@ public:
 class MTLD3D12PipelineState : public ID3D12PipelineState {
 public:
   UINT IsComputePipelineState;
+
+  static HRESULT
+  InitializeShader(D3D12_SHADER_BYTECODE Bytecode, sm50_shader_t *ppShader, struct MTL_SHADER_REFLECTION *pRefl);
 };
 
 class MTLD3D12GraphicsPipelineState : public MTLD3D12PipelineState {

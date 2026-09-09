@@ -32,6 +32,7 @@ typedef enum DXBCFourCC
     DXBC_InterfaceData              = DXBC_FOURCC('I','F','C','E'),
     DXBC_ShaderFeatureInfo          = DXBC_FOURCC('S','F','I','0'),
     DXBC_RootSignature              = DXBC_FOURCC('R','T','S','0'),
+    DXBC_DXIL                       = DXBC_FOURCC('D','X','I','L'),
 } DXBCFourCC;
 #undef DXBC_FOURCC
 

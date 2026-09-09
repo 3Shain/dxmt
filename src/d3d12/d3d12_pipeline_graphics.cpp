@@ -18,11 +18,12 @@
 
 #include "d3d12_device.hpp"
 #include "d3d12_pageable.hpp"
+#include "d3d12_pipeline.hpp"
 #include "dxmt_format.hpp"
 #include "com/com_object.hpp"
 #include "com/com_pointer.hpp"
 #include "sha1/sha1_util.hpp"
-#include "airconv_public.h"
+#include "DXBCParser/BlobContainer.h"
 #include "DXBCParser/DXBCUtils.h"
 
 namespace dxmt {
@@ -230,10 +231,30 @@ ExtractMTLInputLayoutElements(
   return S_OK;
 }
 
+HRESULT
+MTLD3D12PipelineState::InitializeShader(
+    D3D12_SHADER_BYTECODE Bytecode, sm50_shader_t *ppShader, struct MTL_SHADER_REFLECTION *pRefl
+) {
+  using namespace microsoft;
+  HRESULT hr;
+  CDXBCParser Parser;
+  if (FAILED(hr = Parser.ReadDXBC(Bytecode.pShaderBytecode, Bytecode.BytecodeLength)))
+    return hr;
+
+  if (Parser.FindNextMatchingBlob(microsoft::DXBC_DXIL) != DXBC_BLOB_NOT_FOUND)
+    return E_NOTIMPL;
+
+  SM50Error error;
+  if (SM50Initialize(Bytecode.pShaderBytecode, Bytecode.BytecodeLength, ppShader, pRefl, &error)) {
+    ERR("Failed to initialize shader: ", SM50GetErrorMessageString(error));
+    return E_FAIL;
+  }
+
+  return S_OK;
+}
+
 class MTLD3D12GraphicsPipelineStateImpl : public MTLD3D12Pageable<MTLD3D12GraphicsPipelineState> {
 protected:
-  sm50_shader_t shader_vs;
-  sm50_shader_t shader_ps;
   MTL_SHADER_REFLECTION ref_vs;
   MTL_SHADER_REFLECTION ref_ps;
 
@@ -459,7 +480,9 @@ public:
     }
 
     HRESULT hr;
-    sm50_error_t sm50_err;
+
+    SM50Shader shader_vs, shader_ps;
+    SM50Error sm50_err;
     auto metal = device_->GetMTLDevice();
     WMT::Reference<WMT::Error> err;
     WMT::Reference<WMT::Function> vs_func, ps_func;
@@ -471,10 +494,8 @@ public:
     common.next = nullptr;
 
     if (pDesc->VS.pShaderBytecode) {
-      if (SM50Initialize(pDesc->VS.pShaderBytecode, pDesc->VS.BytecodeLength, &shader_vs, &ref_vs, &sm50_err)) {
-        ERR("Failed to parse vs shader");
-        return E_FAIL;
-      }
+      if (FAILED(hr = InitializeShader(pDesc->VS, &shader_vs, &ref_vs)))
+        return hr;
       SM50_SHADER_IA_INPUT_LAYOUT_DATA data_ia_layout;
       data_ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
       data_ia_layout.index_buffer_format = SM50_INDEX_BUFFER_FORMAT_NONE;
@@ -506,7 +527,7 @@ public:
       }
       rootsig.next = &data_ia_layout;
 
-      sm50_bitcode_t vs_bitcode;
+      SM50ShaderBitcode vs_bitcode;
 
       if (SM50Compile(
               shader_vs, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&rootsig, "vs_main", &vs_bitcode, &sm50_err
@@ -538,10 +559,8 @@ public:
 
       std::string ps_name = "ps_main" + sha1.string().substr(0, 8);
 
-      if (SM50Initialize(pDesc->PS.pShaderBytecode, pDesc->PS.BytecodeLength, &shader_ps, &ref_ps, &sm50_err)) {
-        ERR("Failed to parse ps shader");
-        return E_FAIL;
-      }
+      if (FAILED(hr = InitializeShader(pDesc->PS, &shader_ps, &ref_ps)))
+        return hr;
       SM50_SHADER_PSO_PIXEL_SHADER_DATA data_ps;
       data_ps.dual_source_blending = dual_source_blending;
       data_ps.disable_depth_output = false;
@@ -566,7 +585,7 @@ public:
       }
       rootsig.next = &data_ps;
 
-      sm50_bitcode_t ps_bitcode;
+      SM50ShaderBitcode ps_bitcode;
       if (SM50Compile(
               shader_ps, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&rootsig, ps_name.c_str(), &ps_bitcode, &sm50_err
           )) {
