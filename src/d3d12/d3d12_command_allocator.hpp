@@ -91,6 +91,7 @@ class MTLD3D12CommandAllocatorImpl : public MTLD3D12Pageable<MTLD3D12CommandAllo
   small_vector<WMT::Reference<WMT::IndirectCommandBuffer>, 4> icb_;
 
   ClearUAV<MTLD3D12CommandAllocatorImpl> clear_uav_;
+  ClearRTV<MTLD3D12CommandAllocatorImpl> clear_rtv_;
 
   RingBumpState<GpuPrivateBufferBlockAllocator> copy_temp_allocator_;
   uint64_t copy_temp_version_;
