@@ -1261,14 +1261,28 @@ public:
   ClearRenderTargetView(
       D3D12_CPU_DESCRIPTOR_HANDLE RTV, const FLOAT Color[4], UINT RectCount, const D3D12_RECT *Rects
   ) {
-    if (Rects || RectCount > 1) {
-      ERR("ClearRenderTargetView: unhandled parameter Rects=", Rects, " RectCount=", RectCount);
-      return;
-    }
     auto [Heap, Index] = GetRenderTargetHeap(device_, RTV);
     auto AttachmentDesc = Heap->GetRenderTarget(Index);
     if (!AttachmentDesc.Texture)
       return;
+    if (Rects) {
+      allocator_->clear_rtv_.begin(AttachmentDesc.Texture, AttachmentDesc.View, AttachmentDesc.DepthPlane);
+      for (unsigned i = 0; i < RectCount; i++) {
+        auto rect = Rects[i];
+        uint32_t rect_offset_x = std::max(rect.left, (LONG)0);
+        uint32_t rect_offset_y = std::max(rect.top, (LONG)0);
+        int32_t rect_width = rect.right - rect_offset_x;
+        int32_t rect_height = rect.bottom - rect_offset_y;
+        if (rect_height <= 0 || rect_width <= 0)
+          continue;
+        allocator_->clear_rtv_.clear(
+            rect_offset_x, rect_offset_y, rect_width, rect_height, AttachmentDesc.RenderTargetArrayLength,
+            {Color[0], Color[1], Color[2], Color[3]}
+        );
+      }
+      allocator_->clear_rtv_.end();
+      return;
+    }
     allocator_->InvalidateCurrentPass();
     auto encoder_info = allocator_->AllocatePass<ClearEncoderData>();
     encoder_info->type = EncoderType::Clear;
