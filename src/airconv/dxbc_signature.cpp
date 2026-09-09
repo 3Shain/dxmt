@@ -587,6 +587,7 @@ void handle_signature_ps(
           });
         };
       });
+      sm50_shader->ps_has_coverage_output = 1;
       break;
     }
 

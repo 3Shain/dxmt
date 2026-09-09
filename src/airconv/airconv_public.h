@@ -94,6 +94,11 @@ struct MTL_POST_TESSELLATOR_REFLECTION {
   uint32_t MaxPotentialTessFactor;
 };
 
+struct MTL_PIXEL_SHADER_REFLECTION {
+  uint32_t ValidRenderTargets;
+  uint32_t HasCoverageOutput;
+};
+
 struct MTL_SHADER_REFLECTION {
   uint32_t ConstanttBufferTableBindIndex;
   uint32_t ArgumentBufferBindIndex;
@@ -104,7 +109,11 @@ struct MTL_SHADER_REFLECTION {
     struct MTL_TESSELLATOR_REFLECTION Tessellator;
     struct MTL_GEOMETRY_SHADER_REFLECTION GeometryShader;
     struct MTL_POST_TESSELLATOR_REFLECTION PostTessellator;
+    /**
+    \deprecated for compatibility, use PixelShader.ValidRenderTargets instead
+     */
     uint32_t PSValidRenderTargets;
+    struct MTL_PIXEL_SHADER_REFLECTION PixelShader;
   };
   uint16_t ConstantBufferSlotMask;
   uint16_t SamplerSlotMask;
