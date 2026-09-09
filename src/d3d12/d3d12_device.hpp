@@ -85,6 +85,7 @@ public:
 
 class MTLD3D12Heap : public ID3D12Heap {
 public:
+  WMT::Reference<WMT::Heap> heap;
 };
 
 class MTLD3D12Fence : public ID3D12Fence1 {

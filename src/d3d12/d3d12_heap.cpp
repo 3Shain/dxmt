@@ -29,7 +29,11 @@ class MTLD3D12HeapImpl : public MTLD3D12Pageable<MTLD3D12Heap> {
 public:
   MTLD3D12HeapImpl(MTLD3D12Device *pDevice) : MTLD3D12Pageable<MTLD3D12Heap>(pDevice) {}
 
-  ~MTLD3D12HeapImpl() {}
+  ~MTLD3D12HeapImpl() {
+    if (heap)
+      device_->UnregisterResidency(heap);
+    heap = {};
+  }
 
   HRESULT
   STDMETHODCALLTYPE
@@ -76,6 +80,16 @@ public:
     auto size_aligned = align(pDesc->SizeInBytes, desc_.Alignment);
     if (!size_aligned)
       return E_INVALIDARG;
+
+    WMTHeapInfo info;
+    info.options = {}; // FIXME: ensure this agrees with {Buffer|Texture}AllocationFlag?
+    info.size = size_aligned;
+    info.sparse_page_size = WMTSparsePageSize16;
+    info.type = WMTHeapTypePlacement;
+
+    heap = device_->GetMTLDevice().newHeap(info);
+
+    device_->RegisterResidency(heap);
 
     return S_OK;
   }

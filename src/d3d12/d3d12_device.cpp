@@ -1217,6 +1217,8 @@ public:
   RegisterResidencyAndVA(BufferAllocation *allocation) {
     std::unique_lock<dxmt::mutex> lock(residency_lock_);
     interval_map_.emplace(allocation->gpuAddress(), allocation);
+    if (allocation->flags().test(BufferAllocationFlag::AllocatedOnHeap))
+      return S_OK;
     auto buffer = allocation->buffer();
     residency_set_.addAllocations(&buffer, 1);
     residency_set_.commit();
@@ -1227,6 +1229,8 @@ public:
   UnregisterResidencyAndVA(BufferAllocation *allocation) {
     std::unique_lock<dxmt::mutex> lock(residency_lock_);
     interval_map_.erase(allocation->gpuAddress());
+    if (allocation->flags().test(BufferAllocationFlag::AllocatedOnHeap))
+      return S_OK;
     auto buffer = allocation->buffer();
     residency_set_.removeAllocations(&buffer, 1);
     residency_set_.commit();

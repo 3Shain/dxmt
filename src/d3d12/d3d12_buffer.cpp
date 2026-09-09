@@ -60,7 +60,10 @@ public:
     buffer = new Buffer(desc_.Width, device_->GetMTLDevice());
 
     Flags<BufferAllocationFlag> flags;
-    buffer->rename(buffer->allocate(flags));
+    if (pHeap)
+      buffer->rename(buffer->allocate(flags, pHeap->heap, Offset));
+    else
+      buffer->rename(buffer->allocate(flags));
     device_->RegisterResidencyAndVA(buffer->current());
 
     return S_OK;
