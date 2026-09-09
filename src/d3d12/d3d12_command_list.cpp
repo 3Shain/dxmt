@@ -1233,20 +1233,32 @@ public:
       D3D12_CPU_DESCRIPTOR_HANDLE DSV, D3D12_CLEAR_FLAGS Flags, FLOAT Depth, UINT8 Stencil, UINT RectCount,
       const D3D12_RECT *Rects
   ) {
-    if (Rects || RectCount > 1) {
-      ERR("ClearDepthStencilView: unhandled parameter Rects=", Rects, " RectCount=", RectCount);
-      return;
-    }
-    if ((Flags & 3) == 0)
-      return;
     auto [Heap, Index] = GetRenderTargetHeap(device_, DSV);
     auto AttachmentDesc = Heap->GetRenderTarget(Index);
     if (!AttachmentDesc.Texture)
       return;
+    auto CheckedFlags = Flags & DepthStencilPlanarFlags(AttachmentDesc.Texture->pixelFormat(AttachmentDesc.View));
+    if (!CheckedFlags)
+      return;
+    if (Rects) {
+      allocator_->clear_rtv_.begin(AttachmentDesc.Texture, AttachmentDesc.View, 0, CheckedFlags);
+      for (unsigned i = 0; i < RectCount; i++) {
+        auto rect = Rects[i];
+        uint32_t rect_offset_x = std::max(rect.left, (LONG)0);
+        uint32_t rect_offset_y = std::max(rect.top, (LONG)0);
+        int32_t rect_width = rect.right - rect_offset_x;
+        int32_t rect_height = rect.bottom - rect_offset_y;
+        if (rect_height <= 0 || rect_width <= 0)
+          continue;
+        allocator_->clear_rtv_.clear(rect_offset_x, rect_offset_y, rect_width, rect_height, Depth, Stencil);
+      }
+      allocator_->clear_rtv_.end();
+      return;
+    }
     allocator_->InvalidateCurrentPass();
     auto encoder_info = allocator_->AllocatePass<ClearEncoderData>();
     encoder_info->type = EncoderType::Clear;
-    encoder_info->clear_dsv = Flags & 3;
+    encoder_info->clear_dsv = CheckedFlags;
     encoder_info->depth_stencil = {Depth, Stencil};
     encoder_info->attachment = AttachmentDesc.Texture->view(AttachmentDesc.View);
     encoder_info->array_length = AttachmentDesc.RenderTargetArrayLength;
