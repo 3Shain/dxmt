@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include "dxmt_command_constants.hpp"
 #include "dxmt_command_context.hpp"
 #include "dxmt_format.hpp"
 
@@ -350,6 +351,171 @@ private:
     uint32_t size[2];
   };
   DXMTClearMetadata meta_temp_;
+};
+
+template <typename Context> class ClearRTV {
+public:
+  ClearRTV(WMT::Device device, Context &ctx) : device_(device), ctx_(ctx) {
+    auto library = ctx_.getDefaultLibrary();
+    vs_clear_ = library.newFunction("vs_clear_rt");
+    fs_clear_depth_ = library.newFunction("fs_clear_rt_depth");
+    fs_clear_float_ = library.newFunction("fs_clear_rt_float");
+    fs_clear_sint_ = library.newFunction("fs_clear_rt_sint");
+    fs_clear_uint_ = library.newFunction("fs_clear_rt_uint");
+
+    WMTDepthStencilInfo ds_info;
+    ds_info.front_stencil.enabled = false;
+    ds_info.back_stencil.enabled = false;
+    ds_info.depth_compare_function = WMTCompareFunctionAlways;
+    ds_info.depth_write_enabled = false;
+    depth_readonly_state_ = device.newDepthStencilState(ds_info);
+
+    ds_info.depth_write_enabled = true;
+    depth_write_state_ = device.newDepthStencilState(ds_info);
+
+    ds_info.front_stencil.enabled = true;
+    ds_info.front_stencil.depth_stencil_pass_op = WMTStencilOperationReplace;
+    ds_info.front_stencil.depth_fail_op = WMTStencilOperationReplace;
+    ds_info.front_stencil.stencil_fail_op = WMTStencilOperationReplace;
+    ds_info.front_stencil.stencil_compare_function = WMTCompareFunctionAlways;
+    ds_info.front_stencil.read_mask = 0xff;
+    ds_info.front_stencil.write_mask = 0xff;
+    depth_stencil_write_state_ = device.newDepthStencilState(ds_info);
+
+    ds_info.depth_write_enabled = false;
+    stencil_write_state_ = device.newDepthStencilState(ds_info);
+  }
+
+  void
+  begin(Rc<Texture> texture, TextureViewKey view, uint32_t depth_plane, uint32_t dsv_flag = 0) {
+    assert(!clearing_texture_);
+
+    WMT::Reference<WMT::Error> err;
+
+    auto format = texture->pixelFormat(view);
+
+    union {
+      uint64_t u64;
+      struct {
+        uint32_t dsv_flag     : 2;
+        uint32_t sample_count : 30;
+        WMTPixelFormat format;
+      };
+    } key;
+    static_assert(sizeof(key) == sizeof(uint64_t));
+    key.dsv_flag = dsv_flag;
+    key.sample_count = texture->sampleCount();
+    key.format = format;
+
+    if (!pso_cache_.contains(key.u64)) {
+      WMTRenderPipelineInfo pipeline_info;
+      WMT::InitializeRenderPipelineInfo(pipeline_info);
+      pipeline_info.raster_sample_count = texture->sampleCount();
+      pipeline_info.vertex_function = vs_clear_;
+      if (dsv_flag) {
+        pipeline_info.fragment_function = fs_clear_depth_;
+        pipeline_info.depth_pixel_format = dsv_flag & 1 ? format : WMTPixelFormatInvalid;
+        pipeline_info.stencil_pixel_format = dsv_flag & 2 ? format : WMTPixelFormatInvalid;
+      } else if (IsIntegerFormat(format)) {
+        pipeline_info.colors[0].pixel_format = format;
+        if (MTLGetUnsignedIntegerFormat(format) == format) {
+          pipeline_info.fragment_function = fs_clear_uint_;
+        } else {
+          pipeline_info.fragment_function = fs_clear_sint_;
+        }
+      } else {
+        pipeline_info.colors[0].pixel_format = format;
+        pipeline_info.fragment_function = fs_clear_float_;
+      }
+      pipeline_info.rasterization_enabled = true;
+      pipeline_info.input_primitive_topology = WMTPrimitiveTopologyClassTriangle;
+      auto pso = device_.newRenderPipelineState(pipeline_info, err);
+      pso_cache_.emplace(key.u64, std::move(pso));
+    }
+
+    WMT::RenderPipelineState pso = pso_cache_.at(key.u64);
+
+    if (!pso)
+      return;
+
+    auto width = texture->width(view);
+    auto height = texture->height(view);
+
+    ctx_.startRenderPass();
+    if (dsv_flag)
+      ctx_.setDepthStencilAttachment(texture, view, dsv_flag);
+    else
+      ctx_.setColorAttachment(0, texture, view, depth_plane);
+    ctx_.setRenderPSO(pso);
+    ctx_.setViewport({0.0, 0.0, (double)width, (double)height, 0.0, 1.0});
+
+    switch (dsv_flag) {
+    case 3:
+      ctx_.setDepthStencilState(depth_stencil_write_state_);
+      break;
+    case 2:
+      ctx_.setDepthStencilState(stencil_write_state_);
+      break;
+    case 1:
+      ctx_.setDepthStencilState(depth_write_state_);
+      break;
+    default:
+      ctx_.setDepthStencilState(depth_readonly_state_);
+      break;
+    }
+
+    clearing_texture_ = std::move(texture);
+    clearing_texture_view_ = view;
+  }
+
+  void
+  clear(
+      uint32_t offset_x, uint32_t offset_y, uint32_t width, uint32_t height, uint32_t array_length,
+      const std::array<float, 4> &color
+  ) {
+    if (!clearing_texture_)
+      return;
+    ctx_.setScissorRect({offset_x, offset_y, width, height});
+    auto temp = ctx_.setFragmentBytes(kCustomBufferArgumentIndex0, sizeof(color));
+    memcpy(temp, color.data(), sizeof(color));
+    ctx_.draw(WMTPrimitiveTypeTriangle, 0, 3, 0, std::max(array_length, 1u));
+  }
+
+  void
+  clear(uint32_t offset_x, uint32_t offset_y, uint32_t width, uint32_t height, float depth, uint8_t stencil) {
+    if (!clearing_texture_)
+      return;
+    ctx_.setScissorRect({offset_x, offset_y, width, height});
+    const std::array<float, 4> color = {depth, depth, depth, depth};
+    auto temp = ctx_.setFragmentBytes(kCustomBufferArgumentIndex0, sizeof(color));
+    memcpy(temp, color.data(), sizeof(color));
+    ctx_.setStencilReference(stencil);
+    ctx_.draw(WMTPrimitiveTypeTriangle, 0, 3, 0, std::max(clearing_texture_->arrayLength(clearing_texture_view_), 1u));
+  }
+
+  void
+  end() {
+    if (!clearing_texture_)
+      return;
+    ctx_.endPass();
+    clearing_texture_ = nullptr;
+    clearing_texture_view_ = 0;
+  }
+
+  WMT::Device device_;
+  SimpleCommandContext<Context> ctx_;
+  WMT::Reference<WMT::Function> vs_clear_;
+  WMT::Reference<WMT::Function> fs_clear_float_;
+  WMT::Reference<WMT::Function> fs_clear_uint_;
+  WMT::Reference<WMT::Function> fs_clear_sint_;
+  WMT::Reference<WMT::Function> fs_clear_depth_;
+  WMT::Reference<WMT::DepthStencilState> depth_write_state_;
+  WMT::Reference<WMT::DepthStencilState> depth_stencil_write_state_;
+  WMT::Reference<WMT::DepthStencilState> stencil_write_state_;
+  WMT::Reference<WMT::DepthStencilState> depth_readonly_state_;
+  std::unordered_map<uint64_t, WMT::Reference<WMT::RenderPipelineState>> pso_cache_;
+  Rc<Texture> clearing_texture_;
+  TextureViewKey clearing_texture_view_;
 };
 
 } // namespace dxmt
