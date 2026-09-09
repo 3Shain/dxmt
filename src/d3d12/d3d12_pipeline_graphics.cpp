@@ -362,6 +362,8 @@ public:
     info.raster_sample_count = pDesc->SampleDesc.Count;
     info.support_indirect_command_buffers = true;
 
+    info.alpha_to_coverage_enabled = pDesc->BlendState.AlphaToCoverageEnable && !ref_ps.PixelShader.HasCoverageOutput;
+
     return S_OK;
   }
 
