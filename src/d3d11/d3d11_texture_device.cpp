@@ -529,6 +529,19 @@ ImportSharedTextureInternal(
   return device_texture->QueryInterface(riid, ppTexture);
 }
 
+/* sRGB and linear variants of the same base format are view-compatible in
+ * Metal, and a typeless D3D11 desc resolves to the linear variant while an
+ * imported texture may be the sRGB one (e.g. an OpenXR runtime's swapchain).
+ * Treat the pair as equal when validating an import. */
+static WMTPixelFormat
+strip_srgb(WMTPixelFormat format) {
+  switch (format) {
+  case WMTPixelFormatRGBA8Unorm_sRGB: return WMTPixelFormatRGBA8Unorm;
+  case WMTPixelFormatBGRA8Unorm_sRGB: return WMTPixelFormatBGRA8Unorm;
+  default: return format;
+  }
+}
+
 HRESULT
 ImportMTLTexture2D(
     MTLD3D11Device *pDevice, const D3D11_TEXTURE2D_DESC1 *pDesc, uint64_t mtlTexture, ID3D11Texture2D **ppTexture2D
@@ -559,12 +572,26 @@ ImportMTLTexture2D(
       expectedInfo.mipmap_level_count != mtlInfo.mipmap_level_count ||
       expectedInfo.array_length != mtlInfo.array_length || expectedInfo.sample_count != mtlInfo.sample_count ||
       expectedInfo.type != mtlInfo.type ||
-      ORIGINAL_FORMAT(expectedInfo.pixel_format) != ORIGINAL_FORMAT(mtlInfo.pixel_format)) {
+      strip_srgb((WMTPixelFormat)ORIGINAL_FORMAT(expectedInfo.pixel_format)) !=
+          strip_srgb((WMTPixelFormat)ORIGINAL_FORMAT(mtlInfo.pixel_format))) {
     ERR("ImportMTLTexture2D: texture property mismatch");
     return E_INVALIDARG;
   }
 
-  if ((mtlInfo.usage & expectedInfo.usage) != expectedInfo.usage) {
+  WMTTextureUsage required_usage = expectedInfo.usage;
+  /* A typeless desc adds PixelFormatView for casting views, but for the
+   * RGBA8/BGRA8 families every legal cast is an sRGB<->linear pair, which
+   * Metal exempts from PixelFormatView - don't demand it of imported
+   * textures we didn't create. */
+  switch (strip_srgb((WMTPixelFormat)ORIGINAL_FORMAT(mtlInfo.pixel_format))) {
+  case WMTPixelFormatRGBA8Unorm:
+  case WMTPixelFormatBGRA8Unorm:
+    required_usage = (WMTTextureUsage)(required_usage & ~WMTTextureUsagePixelFormatView);
+    break;
+  default:
+    break;
+  }
+  if ((mtlInfo.usage & required_usage) != required_usage) {
     ERR("ImportMTLTexture2D: insufficient Metal texture usage");
     return E_INVALIDARG;
   }
