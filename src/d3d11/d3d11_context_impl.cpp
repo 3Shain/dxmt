@@ -833,8 +833,8 @@ public:
         return ClearRenderTargetView(rtv, Color);
       }
       InvalidateCurrentPass(true);
-      EmitST([texture = rtv->texture(), view = rtv->viewId()](ArgumentEncodingContext &enc) {
-        enc.clear_rt_cmd.begin(texture, view);
+      EmitST([texture = rtv->texture(), view = rtv->viewId(), plane = rtv->description().DepthPlane](ArgumentEncodingContext &enc) {
+        enc.clear_rt_cmd.begin(texture, view, plane);
       });
       for (unsigned i = 0; i < NumRects; i++) {
         auto rect = pRect[i];
@@ -844,8 +844,8 @@ public:
         int32_t rect_height = rect.bottom - rect_offset_y;
         if (rect_height <= 0 || rect_width <= 0)
           continue;
-        EmitOP([=](ArgumentEncodingContext &enc) {
-          enc.clear_rt_cmd.clear(rect_offset_x, rect_offset_y, rect_width, rect_height, color);
+        EmitOP([=, array_length = rtv->description().RenderTargetArrayLength](ArgumentEncodingContext &enc) {
+          enc.clear_rt_cmd.clear(rect_offset_x, rect_offset_y, rect_width, rect_height, array_length, color);
         });
       }
       EmitST([](ArgumentEncodingContext &enc) { 
@@ -875,7 +875,7 @@ public:
       }
       InvalidateCurrentPass(true);
       EmitST([texture = dsv->texture(), view = dsv->viewId()](ArgumentEncodingContext &enc) {
-        enc.clear_rt_cmd.begin(texture, view);
+        enc.clear_rt_cmd.begin(texture, view, 0, D3D11_CLEAR_DEPTH);
       });
       for (unsigned i = 0; i < NumRects; i++) {
         auto rect = pRect[i];
@@ -885,8 +885,8 @@ public:
         int32_t rect_height = rect.bottom - rect_offset_y;
         if (rect_height <= 0 || rect_width <= 0)
           continue;
-        EmitOP([=](ArgumentEncodingContext &enc) {
-          enc.clear_rt_cmd.clear(rect_offset_x, rect_offset_y, rect_width, rect_height, color);
+        EmitOP([=, depth = color[0]](ArgumentEncodingContext &enc) {
+          enc.clear_rt_cmd.clear(rect_offset_x, rect_offset_y, rect_width, rect_height, depth, 0);
         });
       }
       EmitST([](ArgumentEncodingContext &enc) { 

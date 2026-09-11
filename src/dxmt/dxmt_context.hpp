@@ -831,7 +831,7 @@ public:
 
   InternalCommandLibrary &lib;
   EmulatedCommandContext emulated_cmd;
-  ClearRenderTargetContext clear_rt_cmd;
+  ClearRTV<ArgumentEncodingContext> clear_rt_cmd;
   DepthStencilBlitContext blit_depth_stencil_cmd;
   ClearUAV<ArgumentEncodingContext> clear_uav_cmd;
   MTLFXMVScaleContext mv_scale_cmd;

@@ -32,7 +32,7 @@ namespace dxmt {
 ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Device device, InternalCommandLibrary &lib) :
     lib(lib),
     emulated_cmd(device, lib, *this),
-    clear_rt_cmd(device, lib, *this),
+    clear_rt_cmd(device, *this),
     blit_depth_stencil_cmd(device, lib, *this),
     clear_uav_cmd(device, *this),
     mv_scale_cmd(device, lib, *this),
@@ -1683,6 +1683,132 @@ SimpleCommandContext<ArgumentEncodingContext>::setComputeBytes(uint32_t index, u
   setmeta.length = length;
   setmeta.index = index;
   return temp;
+}
+
+template <>
+WMT::Library
+SimpleCommandContext<ArgumentEncodingContext>::getDefaultLibrary() {
+  return ctx.lib.getLibrary();
+}
+
+template <>
+void
+SimpleCommandContext<ArgumentEncodingContext>::startRenderPass() {
+  auto render = ctx.startRenderPass(0, 0, 0, 0);
+  render->render_target_width = 16384;
+  render->render_target_height = 16384;
+  render->render_target_array_length = 0;
+  render->default_raster_sample_count = 1;
+}
+
+template <>
+void
+SimpleCommandContext<ArgumentEncodingContext>::setColorAttachment(
+    uint32_t index, const Rc<Texture> &texture, uint64_t viewId, uint32_t depth_plane
+) {
+  auto encoder = static_cast<RenderEncoderData *>(ctx.encoder_current);
+
+  encoder->colors[index].attachment = ctx.access<PipelineStage::Pixel>(texture, viewId, ResourceAccess::Write);
+  encoder->colors[index].depth_plane = depth_plane;
+  encoder->colors[index].load_action = WMTLoadActionLoad;
+  encoder->colors[index].store_action = WMTStoreActionStore;
+  encoder->render_target_count = std::max<uint32_t>(encoder->render_target_count, index + 1);
+  encoder->render_target_width = std::min<uint32_t>(encoder->render_target_width, texture->width(viewId));
+  encoder->render_target_height = std::min<uint32_t>(encoder->render_target_height, texture->height(viewId));
+  encoder->render_target_array_length = texture->textureType() == WMTTextureType3D
+                                            ? (texture->depth(viewId) - depth_plane)
+                                            : texture->arrayLength(viewId);
+  encoder->default_raster_sample_count = texture->sampleCount();
+}
+
+template <>
+void
+SimpleCommandContext<ArgumentEncodingContext>::setDepthStencilAttachment(
+    const Rc<Texture> &texture, uint64_t viewId, uint32_t dsv_flag
+) {
+  auto encoder = static_cast<RenderEncoderData *>(ctx.encoder_current);
+  if (dsv_flag & 1) {
+    encoder->depth.attachment = ctx.access<PipelineStage::Pixel>(texture, viewId, ResourceAccess::Write);
+    encoder->depth.load_action = WMTLoadActionLoad;
+    encoder->depth.store_action = WMTStoreActionStore;
+  }
+  if (dsv_flag & 2) {
+    encoder->stencil.attachment = ctx.access<PipelineStage::Pixel>(texture, viewId, ResourceAccess::Write);
+    encoder->stencil.load_action = WMTLoadActionLoad;
+    encoder->stencil.store_action = WMTStoreActionStore;
+  }
+  encoder->dsv_planar_flags = dsv_flag;
+  encoder->render_target_width = std::min<uint32_t>(encoder->render_target_width, texture->width(viewId));
+  encoder->render_target_height = std::min<uint32_t>(encoder->render_target_height, texture->height(viewId));
+  encoder->render_target_array_length = texture->arrayLength(viewId);
+  encoder->default_raster_sample_count = texture->sampleCount();
+}
+
+template <>
+void
+SimpleCommandContext<ArgumentEncodingContext>::setRenderPSO(WMT::RenderPipelineState pso) {
+  auto &cmd = ctx.encodeRenderCommand<wmtcmd_render_setpso>();
+  cmd.type = WMTRenderCommandSetPSO;
+  cmd.pso = pso;
+}
+
+template <>
+void
+SimpleCommandContext<ArgumentEncodingContext>::setViewport(WMTViewport viewport) {
+  auto &cmd = ctx.encodeRenderCommand<wmtcmd_render_setviewport>();
+  cmd.type = WMTRenderCommandSetViewport;
+  cmd.viewport = viewport;
+}
+
+template <>
+void
+SimpleCommandContext<ArgumentEncodingContext>::setDepthStencilState(WMT::DepthStencilState dsso) {
+  auto &cmd = ctx.encodeRenderCommand<wmtcmd_render_setdepthstencilstate>();
+  cmd.type = WMTRenderCommandSetDepthStencilState;
+  cmd.depth_stencil_state = dsso;
+}
+
+template <>
+void
+SimpleCommandContext<ArgumentEncodingContext>::setScissorRect(WMTScissorRect rect) {
+  auto &cmd = ctx.encodeRenderCommand<wmtcmd_render_setscissorrect>();
+  cmd.type = WMTRenderCommandSetScissorRect;
+  cmd.scissor_rect = rect;
+}
+
+template <>
+void
+SimpleCommandContext<ArgumentEncodingContext>::setStencilReference(uint8_t stencil_ref) {
+  auto &cmd = ctx.encodeRenderCommand<wmtcmd_render_setstencilref>();
+  cmd.type = WMTRenderCommandSetStencilRef;
+  cmd.stencil_ref = stencil_ref;
+}
+
+template <>
+void *
+SimpleCommandContext<ArgumentEncodingContext>::setFragmentBytes(uint32_t index, uint32_t length) {
+  auto &setmeta = ctx.encodeRenderCommand<wmtcmd_render_setbytes>();
+  setmeta.type = WMTRenderCommandSetFragmentBytes;
+  void *temp = ctx.allocate_cpu_heap(length, 16);
+  setmeta.bytes.set(temp);
+  setmeta.length = length;
+  setmeta.index = index;
+  return temp;
+}
+
+template <>
+void
+SimpleCommandContext<ArgumentEncodingContext>::draw(
+    WMTPrimitiveType primitive, uint32_t vertex_start, uint32_t vertex_count, int32_t base_instance,
+    uint32_t instance_count
+) {
+  auto &draw = ctx.encodeRenderCommand<wmtcmd_render_draw>();
+  draw.type = WMTRenderCommandDraw;
+  draw.primitive_type = primitive;
+  draw.vertex_start = vertex_start;
+  draw.vertex_count = vertex_count;
+  draw.base_instance = base_instance;
+  draw.instance_count = instance_count;
 }
 
 } // namespace dxmt

@@ -200,31 +200,6 @@ private:
   WMT::Reference<WMT::RenderPipelineState> ts_draw_arguments_marshal;
 };
 
-class ClearRenderTargetContext {
-public:
-  ClearRenderTargetContext(WMT::Device device, InternalCommandLibrary &lib, ArgumentEncodingContext &ctx);
-
-  void begin(Rc<Texture> texture, TextureViewKey view);
-
-  void clear(uint32_t offset_x, uint32_t offset_y, uint32_t width, uint32_t height, const std::array<float, 4>& color);
-
-  void end();
-
-private:
-  ArgumentEncodingContext &ctx_;
-  WMT::Device device_;
-  WMT::Reference<WMT::Function> vs_clear_;
-  WMT::Reference<WMT::Function> fs_clear_float_;
-  WMT::Reference<WMT::Function> fs_clear_uint_;
-  WMT::Reference<WMT::Function> fs_clear_sint_;
-  WMT::Reference<WMT::Function> fs_clear_depth_;
-  WMT::Reference<WMT::DepthStencilState> depth_write_state_;
-  WMT::Reference<WMT::DepthStencilState> depth_readonly_state_;
-  std::unordered_map<WMTPixelFormat, WMT::Reference<WMT::RenderPipelineState>> pso_cache_;
-  Rc<Texture> clearing_texture_;
-  TextureViewKey clearing_texture_view_;
-};
-
 class DepthStencilBlitContext {
 
 public:
