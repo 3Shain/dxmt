@@ -17,6 +17,7 @@
 #include "util_env.hpp"
 #include "util_string.hpp"
 #include "util_win32_compat.h"
+#include "util_hotpatch.h"
 #include "wsi_monitor.hpp"
 #include "wsi_platform_win32.hpp"
 #include "wsi_window.hpp"
@@ -242,6 +243,7 @@ public:
     return factory_->QueryInterface(riid, parent);
   };
 
+  DXMT_HOTPATCHABLE
   HRESULT
   STDMETHODCALLTYPE
   Present(UINT sync_interval, UINT flags) final {
@@ -259,6 +261,7 @@ public:
     }
   };
 
+  DXMT_HOTPATCHABLE
   HRESULT
   STDMETHODCALLTYPE
   SetFullscreenState(BOOL Fullscreen, IDXGIOutput *pTarget) final {
@@ -472,6 +475,7 @@ public:
     return S_OK;
   };
 
+  DXMT_HOTPATCHABLE
   HRESULT
   STDMETHODCALLTYPE
   ResizeBuffers(UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT Format,
@@ -534,6 +538,7 @@ public:
     return S_OK;
   };
 
+  DXMT_HOTPATCHABLE
   HRESULT
   STDMETHODCALLTYPE
   ResizeTarget(const DXGI_MODE_DESC *pDesc) final {
@@ -727,6 +732,7 @@ public:
     return SyncFrameState();
   };
 
+  DXMT_HOTPATCHABLE
   HRESULT
   STDMETHODCALLTYPE
   Present1(UINT SyncInterval, UINT PresentFlags,
@@ -1012,6 +1018,7 @@ public:
     return 0;
   }
 
+  DXMT_HOTPATCHABLE
   HRESULT STDMETHODCALLTYPE ResizeBuffers1(UINT BufferCount, UINT Width, UINT Height,
                          DXGI_FORMAT Format, UINT SwapChainFlags,
                          const UINT *pCreationNodeMask,
