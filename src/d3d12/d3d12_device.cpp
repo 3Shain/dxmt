@@ -351,6 +351,14 @@ public:
       out->SharedResourceCompatibilityTier = D3D12_SHARED_RESOURCE_COMPATIBILITY_TIER_0;
       return S_OK;
     }
+    case D3D12_FEATURE_D3D12_OPTIONS7: {
+      if (DataSize != sizeof(D3D12_FEATURE_DATA_D3D12_OPTIONS7))
+        return E_INVALIDARG;
+      auto *out = reinterpret_cast<D3D12_FEATURE_DATA_D3D12_OPTIONS7 *>(pFeatureData);
+      out->MeshShaderTier = D3D12_MESH_SHADER_TIER_NOT_SUPPORTED;
+      out->SamplerFeedbackTier = D3D12_SAMPLER_FEEDBACK_TIER_NOT_SUPPORTED;
+      return S_OK;
+    }
     case D3D12_FEATURE_SHADER_CACHE: {
       if (DataSize != sizeof(D3D12_FEATURE_DATA_SHADER_CACHE))
         return E_INVALIDARG;
