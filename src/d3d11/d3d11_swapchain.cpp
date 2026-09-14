@@ -11,6 +11,7 @@
 #include "dxmt_statistics.hpp"
 #include "dxmt_presenter.hpp"
 #include "log/log.hpp"
+#include "thread.hpp"
 #include "d3d11_resource.hpp"
 #include "d3d11_device.hpp"
 #include "util_cpu_fence.hpp"
@@ -25,6 +26,7 @@
 #include <atomic>
 #include <cfloat>
 #include <format>
+#include <unordered_map>
 
 /**
 Ref: https://learn.microsoft.com/en-us/windows/win32/api/dxgi1_3/nf-dxgi1_3-idxgiswapchain2-setmaximumframelatency
@@ -91,6 +93,96 @@ GetMonitorFormatBpp(DXGI_FORMAT Format) {
   }
 }
 
+/**
+ * The macdrv metal view is a per-window singleton: WMT::CreateMetalViewFromHWND
+ * (backed by winemac.drv's macdrv_view_create_metal_view) returns the
+ * already-existing WineMetalView for a window on repeated calls, and
+ * WMT::ReleaseMetalView removes that view from the window outright. A second
+ * swapchain can be created on the same HWND while the first still exists.
+ * For example, an EGL client that recreates its window surface: destroying a
+ * surface that is still current only schedules the destruction, so ANGLE
+ * creates the new surface's swapchain before the old surface (and its
+ * swapchain) is released on the next eglMakeCurrent. Both swapchains then
+ * share one view, and destroying the old swapchain detaches the view the new
+ * swapchain is presenting into, leaving a permanently blank (GDI-background)
+ * window while every present still "succeeds". Refcount the view per HWND so
+ * it is only released when the last swapchain using it goes away.
+ *
+ * Locking: WMT:: calls cross into the unix side (AppKit) and must never run
+ * under g_metal_view_mutex. The view is created before the lock is taken (a
+ * racing create for the same window just returns the same singleton), and
+ * releases extract the stored handle under the lock but invoke
+ * WMT::ReleaseMetalView only after dropping it.
+ */
+namespace {
+struct SharedMetalView {
+  WMT::Object view;
+  WMT::MetalLayer layer;
+  uint32_t refcount;
+};
+} // namespace
+
+static dxmt::mutex g_metal_view_mutex;
+static std::unordered_map<intptr_t, SharedMetalView> g_metal_views;
+
+static WMT::Object
+AcquireMetalViewForHWND(HWND hwnd, WMT::Device device, WMT::MetalLayer &layer) {
+  WMT::MetalLayer fresh_layer;
+  WMT::Object fresh_view = WMT::CreateMetalViewFromHWND((intptr_t)hwnd, device, fresh_layer);
+  if (!fresh_view)
+    return fresh_view;
+
+  WMT::Object stale_view = {};
+  {
+    std::lock_guard<dxmt::mutex> lock(g_metal_view_mutex);
+    auto it = g_metal_views.find((intptr_t)hwnd);
+    if (it == g_metal_views.end()) {
+      g_metal_views.emplace((intptr_t)hwnd, SharedMetalView{fresh_view, fresh_layer, 1u});
+    } else if (it->second.view == fresh_view) {
+      /* Another live swapchain already uses this window's view: share it. */
+      ++it->second.refcount;
+      layer = it->second.layer;
+      return it->second.view;
+    } else {
+      /* The HWND value was recycled for a new window: the stored view belongs
+       * to a window that no longer exists. Hand out the fresh view and release
+       * the stale one below, outside the lock. Swapchains still holding the
+       * stale view become no-ops in ReleaseMetalViewForHWND via its identity
+       * check. */
+      stale_view = it->second.view;
+      it->second = SharedMetalView{fresh_view, fresh_layer, 1u};
+    }
+  }
+  if (stale_view)
+    WMT::ReleaseMetalView(stale_view);
+  layer = fresh_layer;
+  return fresh_view;
+}
+
+/**
+ * \param view The view handle this swapchain obtained from
+ * AcquireMetalViewForHWND. Used purely as an identity token to detect that the
+ * map entry was superseded (HWND recycled); the stored handle is what gets
+ * released.
+ */
+static void
+ReleaseMetalViewForHWND(HWND hwnd, WMT::Object view) {
+  WMT::Object last_view = {};
+  {
+    std::lock_guard<dxmt::mutex> lock(g_metal_view_mutex);
+    auto it = g_metal_views.find((intptr_t)hwnd);
+    /* No entry, or the entry was superseded because the HWND was recycled: the
+     * view this swapchain held has already been released; do nothing. */
+    if (it == g_metal_views.end() || it->second.view != view)
+      return;
+    if (--it->second.refcount > 0)
+      return;
+    last_view = it->second.view;
+    g_metal_views.erase(it);
+  }
+  WMT::ReleaseMetalView(last_view);
+}
+
 class ModeSetGuard {
   std::atomic_flag in_progress_;
 public:
@@ -131,7 +223,7 @@ public:
       monitor_(wsi::getWindowMonitor(hWnd)),
       hud(WMT::DeveloperHUDProperties::instance()) {
 
-    native_view_ = WMT::CreateMetalViewFromHWND((intptr_t)hWnd, pDevice->GetMTLDevice(), layer_weak_);
+    native_view_ = AcquireMetalViewForHWND(hWnd, pDevice->GetMTLDevice(), layer_weak_);
 
     if (!native_view_) {
       ERR("Failed to create metal view, it seems like your Wine has no exported symbols needed by DXMT.");
@@ -206,7 +298,7 @@ public:
 
   ~MTLD3D11SwapChain() {
     device_context_->WaitUntilGPUIdle();
-    WMT::ReleaseMetalView(native_view_);
+    ReleaseMetalViewForHWND(hWnd, native_view_);
     native_view_ = {};
     CloseHandle(present_semaphore_);
   };
