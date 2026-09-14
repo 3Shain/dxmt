@@ -21,6 +21,7 @@
 #include "d3d12_device.hpp"
 #include "dxgi_interfaces.h"
 #include "log/log.hpp"
+#include "util_string.hpp"
 
 namespace dxmt {
 
@@ -67,6 +68,13 @@ D3D12CreateDevice(IUnknown *pAdapter, D3D_FEATURE_LEVEL MinimumFeatureLevel, REF
 
 extern "C" HRESULT WINAPI
 D3D12GetInterface(REFCLSID rcslid, REFIID iid, void **debug) {
+  WARN("D3D12GetInterface: Unknown interface query ", dxmt::str::format(iid));
+  return E_NOINTERFACE;
+}
+
+extern "C" HRESULT WINAPI
+D3D12GetDebugInterface(REFIID iid, void **debug) {
+  WARN("D3D12GetDebugInterface: Unknown interface query ", dxmt::str::format(iid));
   return E_NOINTERFACE;
 }
 
