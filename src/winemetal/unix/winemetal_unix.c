@@ -1529,19 +1529,51 @@ _NSString_alloc_init(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static bool
+developer_hud_uses_metric_service(void) {
+  NSOperatingSystemVersion version = [NSProcessInfo processInfo].operatingSystemVersion;
+  return version.majorVersion >= 27;
+}
+
 static NTSTATUS
 _DeveloperHUDProperties_instance(void *obj) {
   struct unixcall_generic_obj_ret *params = obj;
+  Class cls = objc_lookUpClass(
+      developer_hud_uses_metric_service()
+          ? "MTLHUDService"
+          : "_CADeveloperHUDProperties"
+  );
   params->ret =
-      (obj_handle_t)((id(*)(id, SEL))objc_msgSend)(objc_lookUpClass("_CADeveloperHUDProperties"), @selector(instance));
+      (obj_handle_t)((id(*)(id, SEL))objc_msgSend)((id)cls, @selector(instance));
   return STATUS_SUCCESS;
 }
 
 static NTSTATUS
 _DeveloperHUDProperties_addLabel(void *obj) {
   struct unixcall_generic_obj_obj_obj_uint64_ret *params = obj;
-  params->ret = ((bool (*)(id, SEL, id, id)
-  )objc_msgSend)((id)params->handle, @selector(addLabel:after:), (id)params->arg0, (id)params->arg1);
+  if (developer_hud_uses_metric_service()) {
+    params->ret =
+        ((bool (*)(id, SEL, id, id, id, id, uint32_t, uint32_t, uint32_t, uint64_t))objc_msgSend)(
+            (id)params->handle,
+            @selector(insertMetric:after:name:unit:nameColor:valueColor:visualType:options:),
+            (id)params->arg0,
+            (id)params->arg1,
+            @"",
+            @"",
+            UINT32_MAX,
+            UINT32_MAX,
+            1u,
+            0u
+        );
+  } else {
+    params->ret =
+        ((bool (*)(id, SEL, id, id))objc_msgSend)(
+            (id)params->handle,
+            @selector(addLabel:after:),
+            (id)params->arg0,
+            (id)params->arg1
+        );
+  }
   return STATUS_SUCCESS;
 }
 
