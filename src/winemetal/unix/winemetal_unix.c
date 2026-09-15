@@ -1529,34 +1529,79 @@ _NSString_alloc_init(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static bool
+developer_hud_legacy_custom_labels_supported(void) {
+  NSOperatingSystemVersion version = [NSProcessInfo processInfo].operatingSystemVersion;
+  return version.majorVersion < 27;
+}
+
+static bool
+developer_hud_uses_metric_service(id object) {
+  Class service_class = objc_lookUpClass("MTLHUDService");
+  return service_class && object && [object isKindOfClass:service_class];
+}
+
 static NTSTATUS
 _DeveloperHUDProperties_instance(void *obj) {
   struct unixcall_generic_obj_ret *params = obj;
-  params->ret =
-      (obj_handle_t)((id(*)(id, SEL))objc_msgSend)(objc_lookUpClass("_CADeveloperHUDProperties"), @selector(instance));
+  Class cls = Nil;
+  id instance = nil;
+  bool use_metric_service = !developer_hud_legacy_custom_labels_supported();
+
+  if (use_metric_service)
+    cls = objc_lookUpClass("MTLHUDService");
+  else
+    cls = objc_lookUpClass("_CADeveloperHUDProperties");
+
+  if (cls && class_respondsToSelector(object_getClass(cls), @selector(instance)))
+    instance = ((id(*)(id, SEL))objc_msgSend)((id)cls, @selector(instance));
+  params->ret = (obj_handle_t)instance;
   return STATUS_SUCCESS;
 }
 
 static NTSTATUS
 _DeveloperHUDProperties_addLabel(void *obj) {
   struct unixcall_generic_obj_obj_obj_uint64_ret *params = obj;
+  id handle = (id)params->handle;
+  params->ret = false;
+  if (!handle)
+    return STATUS_SUCCESS;
+
+  if (developer_hud_uses_metric_service(handle)) {
+    SEL insert_selector = @selector(insertMetric:after:name:unit:nameColor:valueColor:visualType:options:);
+    if (![handle respondsToSelector:insert_selector])
+      return STATUS_SUCCESS;
+
+    params->ret = ((bool (*)(id, SEL, id, id, id, id, uint32_t, uint32_t, uint32_t, uint64_t))objc_msgSend)(
+        handle, insert_selector, (id)params->arg0, (id)params->arg1, @"", @"", UINT32_MAX, UINT32_MAX, 1u, 0u);
+    return STATUS_SUCCESS;
+  }
+
+  if (![handle respondsToSelector:@selector(addLabel:after:)])
+    return STATUS_SUCCESS;
   params->ret = ((bool (*)(id, SEL, id, id)
-  )objc_msgSend)((id)params->handle, @selector(addLabel:after:), (id)params->arg0, (id)params->arg1);
+  )objc_msgSend)(handle, @selector(addLabel:after:), (id)params->arg0, (id)params->arg1);
   return STATUS_SUCCESS;
 }
 
 static NTSTATUS
 _DeveloperHUDProperties_updateLabel(void *obj) {
   struct unixcall_generic_obj_obj_obj_noret *params = obj;
+  id handle = (id)params->handle;
+  if (!handle || ![handle respondsToSelector:@selector(updateLabel:value:)])
+    return STATUS_SUCCESS;
   ((void (*)(id, SEL, id, id)
-  )objc_msgSend)((id)params->handle, @selector(updateLabel:value:), (id)params->arg0, (id)params->arg1);
+  )objc_msgSend)(handle, @selector(updateLabel:value:), (id)params->arg0, (id)params->arg1);
   return STATUS_SUCCESS;
 }
 
 static NTSTATUS
 _DeveloperHUDProperties_remove(void *obj) {
   struct unixcall_generic_obj_obj_noret *params = obj;
-  ((void (*)(id, SEL, id))objc_msgSend)((id)params->handle, @selector(remove:), (id)params->arg);
+  id handle = (id)params->handle;
+  if (!handle || ![handle respondsToSelector:@selector(remove:)])
+    return STATUS_SUCCESS;
+  ((void (*)(id, SEL, id))objc_msgSend)(handle, @selector(remove:), (id)params->arg);
   return STATUS_SUCCESS;
 }
 
