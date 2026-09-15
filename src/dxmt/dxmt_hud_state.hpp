@@ -28,6 +28,7 @@ private:
   std::vector<WMT::Reference<WMT::String>> line_labels_;
   WMT::Reference<WMT::Object> pool_;
   unsigned current_line_;
+  bool enabled_ = false;
 };
 
 } // namespace dxmt
