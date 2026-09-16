@@ -208,6 +208,7 @@ RECENT REVISION HISTORY:
 // you have issues compiling it, you can disable it entirely by
 // defining STBI_NO_SIMD.
 //
+#define STBI_NO_SIMD
 // ===========================================================================
 //
 // HDR image support   (disable by defining STBI_NO_HDR)
