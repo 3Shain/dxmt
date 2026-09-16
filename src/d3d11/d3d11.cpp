@@ -249,5 +249,7 @@ extern "C" void _massert(const char *_Message, const char *_File,
 
 extern "C" void __cxa_pure_virtual() {
   dxmt::Logger::err(dxmt::str::format("Pure virtual function called"));
+#ifndef NDEBUG
   __builtin_trap();
+#endif
 }
