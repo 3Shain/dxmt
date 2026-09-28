@@ -17,7 +17,7 @@
  */
 
 #pragma once
-#include "d3d12.h"
+#include "dxmt_d3d12.h"
 #include "dxmt_buffer.hpp"
 #include "dxmt_texture.hpp"
 #include <cstdint>
