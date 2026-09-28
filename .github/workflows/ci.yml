@@ -170,6 +170,7 @@ jobs:
             -DLLVM_ENABLE_ASSERTIONS=On \
             -DLLVM_ENABLE_ZSTD=Off \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_FLAGS="-D_LIBCPP_KEEP_TRANSITIVE_INCLUDES_LLVM23" \
             -DLLVM_TARGETS_TO_BUILD="" \
             -DLLVM_BUILD_TOOLS=Off \
             -DBUG_REPORT_URL="https://github.com/3Shain/dxmt" \
@@ -224,6 +225,7 @@ jobs:
             -DLLVM_ENABLE_ASSERTIONS=On \
             -DLLVM_ENABLE_ZSTD=Off \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_FLAGS="-D_LIBCPP_KEEP_TRANSITIVE_INCLUDES_LLVM23" \
             -DLLVM_TARGETS_TO_BUILD="" \
             -DLLVM_BUILD_TOOLS=Off \
             -DCMAKE_SYSROOT="$(pwd)/toolchains/${{ env.LLVM_MINGW_DIR }}" \
@@ -274,6 +276,7 @@ jobs:
             -DLLVM_ENABLE_ASSERTIONS=On \
             -DLLVM_ENABLE_ZSTD=Off \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_FLAGS="-D_LIBCPP_KEEP_TRANSITIVE_INCLUDES_LLVM23" \
             -DLLVM_TARGETS_TO_BUILD="" \
             -DLLVM_BUILD_TOOLS=Off \
             -DBUG_REPORT_URL="https://github.com/3Shain/dxmt" \
