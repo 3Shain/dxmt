@@ -9,10 +9,11 @@
 #include <vector>
 
 #include "DXBCParser/DXBCUtils.h"
-#include "air_operations.hpp"
 #include "air_signature.hpp"
+#include "air_type.hpp"
 #include "dxbc_constants.hpp"
 #include "dxbc_instructions.hpp"
+#include "monad.hpp"
 #include "nt/air_builder.hpp"
 #include "nt/dxbc_binding_map.hpp"
 #include "shader_common.hpp"
@@ -111,7 +112,7 @@ Instruction readInstruction(
   ShaderInfo &shader_info, uint32_t phase
 );
 
-using pvalue = dxmt::air::pvalue;
+using pvalue = llvm::Value *;
 using epvalue = llvm::Expected<pvalue>;
 using dxbc::Swizzle;
 using dxbc::swizzle_identity;
