@@ -350,14 +350,8 @@ llvm::Error convert_dxbc_pixel_shader(
   SM50_SHADER_ROOT_SIGNATURE_DATA *rootsig = nullptr;
   args_get_data<SM50_SHADER_ROOT_SIGNATURE, SM50_SHADER_ROOT_SIGNATURE_DATA>(pArgs, &rootsig);
 
-  IREffect prologue([](auto) { return std::monostate(); });
-  IRValue epilogue([](struct context ctx) -> pvalue {
-    auto retTy = ctx.function->getReturnType();
-    if (retTy->isVoidTy()) {
-      return nullptr;
-    }
-    return llvm::ConstantAggregateZero::get(retTy);
-  });
+  Prologues prologue;
+  Epilogues epilogue;
 
   io_binding_map resource_map;
   air::AirType types(context);
@@ -368,6 +362,7 @@ llvm::Error convert_dxbc_pixel_shader(
     sig_ctx.disable_depth_output = pso_disable_depth_output;
     sig_ctx.pull_mode_reg_mask = shader_info->pull_mode_reg_mask;
     sig_ctx.unorm_output_reg_mask = pso_unorm_output_reg_mask;
+    sig_ctx.pso_sample_mask = pso_sample_mask;
     if (pso_pixel_formats)
       memcpy(sig_ctx.pixel_formats, pso_pixel_formats, sizeof(sig_ctx.pixel_formats));
     for (auto &p : pShaderInternal->signature_handlers) {
@@ -377,16 +372,9 @@ llvm::Error convert_dxbc_pixel_shader(
   if (pso_sample_mask != 0xffffffff) {
     auto assigned_index =
       func_signature.DefineOutput(air::OutputCoverageMask{});
-    epilogue >> [=](pvalue value) -> IRValue {
-      return make_irvalue([=](struct context ctx) {
-        auto &builder = ctx.builder;
-        if (ctx.resource.coverage_mask_reg)
-          return value;
-        return builder.CreateInsertValue(
-          value, builder.getInt32(ctx.pso_sample_mask), {assigned_index}
-        );
-      });
-    };
+    epilogue.Add([=](llvm::Value *value, IOHelper &io) -> llvm::Expected<llvm::Value *> {
+      return io.PopulateDefaultCoverageMask(value, assigned_index, pso_sample_mask);
+    });
   }
 
   auto binding_map = rootsig ? setup_binding_rootsig(
@@ -447,7 +435,9 @@ llvm::Error convert_dxbc_pixel_shader(
       .metal_version = metal_version,
   };
 
-  if (auto err = prologue.build(ctx).takeError()) {
+  IOHelper io(air, function, types, resource_map);
+
+  if (auto err = prologue.Run(io)) {
     return err;
   }
   auto real_entry = convert_basicblocks(pShaderInternal->entry(), ctx, epilogue_bb);
@@ -457,7 +447,7 @@ llvm::Error convert_dxbc_pixel_shader(
   builder.CreateBr(real_entry.get());
 
   builder.SetInsertPoint(epilogue_bb);
-  auto epilogue_result = epilogue.build(ctx);
+  auto epilogue_result = epilogue.Run(function->getReturnType(), io);
   if (auto err = epilogue_result.takeError()) {
     return err;
   }
@@ -494,14 +484,8 @@ llvm::Error convert_dxbc_compute_shader(
   SM50_SHADER_ROOT_SIGNATURE_DATA *rootsig = nullptr;
   args_get_data<SM50_SHADER_ROOT_SIGNATURE, SM50_SHADER_ROOT_SIGNATURE_DATA>(pArgs, &rootsig);
 
-  IREffect prologue([](auto) { return std::monostate(); });
-  IRValue epilogue([](struct context ctx) -> pvalue {
-    auto retTy = ctx.function->getReturnType();
-    if (retTy->isVoidTy()) {
-      return nullptr;
-    }
-    return llvm::ConstantAggregateZero::get(retTy);
-  });
+  Prologues prologue;
+  Epilogues epilogue;
 
   io_binding_map resource_map;
   air::AirType types(context);
@@ -555,7 +539,9 @@ llvm::Error convert_dxbc_compute_shader(
       .metal_version = metal_version,
   };
 
-  if (auto err = prologue.build(ctx).takeError()) {
+  IOHelper io(air, function, types, resource_map);
+
+  if (auto err = prologue.Run(io)) {
     return err;
   }
   auto real_entry = convert_basicblocks(pShaderInternal->entry(), ctx, epilogue_bb);
@@ -566,7 +552,8 @@ llvm::Error convert_dxbc_compute_shader(
 
   builder.SetInsertPoint(epilogue_bb);
 
-  if (auto err = epilogue.build(ctx).takeError()) {
+  auto epilogue_result = epilogue.Run(function->getReturnType(), io);
+  if (auto err = epilogue_result.takeError()) {
     return err;
   }
   builder.CreateRetVoid();
@@ -609,14 +596,8 @@ llvm::Error convert_dxbc_vertex_shader(
   SM50_SHADER_ROOT_SIGNATURE_DATA *rootsig = nullptr;
   args_get_data<SM50_SHADER_ROOT_SIGNATURE, SM50_SHADER_ROOT_SIGNATURE_DATA>(pArgs, &rootsig);
 
-  IREffect prologue([](auto) { return std::monostate(); });
-  IRValue epilogue([](struct context ctx) -> pvalue {
-    auto retTy = ctx.function->getReturnType();
-    if (retTy->isVoidTy()) {
-      return nullptr;
-    }
-    return llvm::ConstantAggregateZero::get(retTy);
-  });
+  Prologues prologue;
+  Epilogues epilogue;
 
   io_binding_map resource_map;
   air::AirType types(context);
@@ -650,44 +631,8 @@ llvm::Error convert_dxbc_vertex_shader(
       .arg_name = "stream_outputs",
       .raster_order_group = {}
     });
-    epilogue << make_irvalue([=](struct context ctx) {
-      auto &builder = ctx.builder;
-      auto base_vertex = ctx.function->getArg(bv);
-      auto vertex_id = ctx.function->getArg(vid);
-      auto so_entries_type = ctx.types._dxmt_stream_output_buffer_entry;
-      auto so_entries = builder.CreateBitCast(
-          ctx.function->getArg(so_table), so_entries_type->getPointerTo((uint32_t)air::AddressSpace::constant)
-      );
-      auto slot0_entry =
-          builder.CreateLoad(so_entries_type, builder.CreateConstInBoundsGEP1_32(so_entries_type, so_entries, 0));
-      auto slot0 = builder.CreateExtractValue(slot0_entry, {0});
-      auto adjusted_vertex_id = builder.CreateSub(vertex_id, base_vertex);
-      auto output_regs = builder.CreateBitOrPointerCast(
-        ctx.resource.output.ptr_int4, llvm::PointerType::get(ctx.types._int, 0)
-      );
-      for (unsigned i = 0; i < vertex_so->num_elements; i++) {
-        auto &element = vertex_so->elements[i];
-        if (element.reg_id == 0xffffffff)
-          continue;
-        auto ptr = ctx.builder.CreateConstGEP1_32(
-          ctx.types._int, output_regs,
-          (unsigned)(element.reg_id * 4 + element.component)
-        );
-        auto target_offset = ctx.builder.CreateAdd(
-          ctx.builder.CreateMul(
-            adjusted_vertex_id,
-            ctx.builder.getInt32(vertex_so->strides[element.output_slot /* expected to be 0 */])
-          ),
-          ctx.builder.getInt32(element.offset)
-        );
-        auto target_ptr = ctx.builder.CreateGEP(
-          ctx.types._int, slot0, {ctx.builder.CreateLShr(target_offset, 2)}
-        );
-        ctx.builder.CreateStore(
-          ctx.builder.CreateLoad(ctx.types._int, ptr), target_ptr, true
-        );
-      }
-      return nullptr;
+    epilogue.Add([=](llvm::Value *value, IOHelper &io) -> llvm::Expected<llvm::Value *> {
+      return io.PopulateOutputStreamOutput(value, vertex_so, bv, vid, so_table);
     });
   }
 
@@ -785,7 +730,9 @@ llvm::Error convert_dxbc_vertex_shader(
       .metal_version = metal_version,
   };
 
-  if (auto err = prologue.build(ctx).takeError()) {
+  IOHelper io(air, function, types, resource_map);
+
+  if (auto err = prologue.Run(io)) {
     return err;
   }
   auto real_entry = convert_basicblocks(pShaderInternal->entry(), ctx, epilogue_bb);
@@ -795,7 +742,7 @@ llvm::Error convert_dxbc_vertex_shader(
   builder.CreateBr(real_entry.get());
 
   builder.SetInsertPoint(epilogue_bb);
-  auto epilogue_result = epilogue.build(ctx);
+  auto epilogue_result = epilogue.Run(function->getReturnType(), io);
   if (auto err = epilogue_result.takeError()) {
     return err;
   }
