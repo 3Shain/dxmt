@@ -1,11 +1,10 @@
-#include "air_operations.hpp"
 #include "air_signature.hpp"
 #include "air_type.hpp"
 #include "airconv_error.hpp"
 #include "airconv_public.h"
 #include "dxbc_converter.hpp"
-#include "ftl.hpp"
 #include "nt/air_builder.hpp"
+#include "nt/air_vertex_puller.hpp"
 #include "nt/dxbc_converter_base.hpp"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
@@ -432,9 +431,8 @@ IREffect pull_vertex_input(
       builder.CreateMul(stride, index),
       builder.getInt32(element_info.aligned_byte_offset)
     );
-    auto vec4 = co_yield air::pull_vec4_from_addr(
-      (air::MTLAttributeFormat)element_info.format, base_addr, byte_offset
-    );
+    air::VertexPuller puller(ctx.air, ctx.module);
+    auto vec4 = puller.PullVec4((air::MTLVertexFormat)element_info.format, base_addr, byte_offset);
     if (vec4->getType() == types._float4) {
       co_yield store_at_vec4_array_masked(
         ctx.resource.input.ptr_float4, builder.getInt32(element_info.reg), vec4,
@@ -626,10 +624,3 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
 }
 
 } // namespace dxmt::dxbc
-
-template <>
-struct environment_cast<::dxmt::dxbc::context, ::dxmt::air::AIRBuilderContext> {
-  ::dxmt::air::AIRBuilderContext cast(const ::dxmt::dxbc::context &src) {
-    return {src.llvm, src.module, src.builder, src.types, src.air};
-  };
-};
