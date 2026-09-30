@@ -381,6 +381,18 @@ public:
   }
 };
 
+class SM50ErrorInternal {
+public:
+  llvm::SmallVector<char, 0> buf;
+};
+
+#define SM50_RETURN_ERROR(errorObj, ppError, errorCode) \
+  do { \
+    if (ppError) \
+      *(ppError) = (sm50_error_t)(errorObj).release(); \
+    return errorCode; \
+  } while (0)
+
 void handle_signature(
   microsoft::CSignatureParser &inputParser,
   microsoft::CSignatureParser5 &outputParser,
