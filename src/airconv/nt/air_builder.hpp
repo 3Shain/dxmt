@@ -256,6 +256,16 @@ public:
 
   /* Compute Shader */
 
+  Value *CreateGetGroupID(uint32_t Component);
+
+  Value *CreateGetGlobalID(uint32_t Component);
+
+  Value *CreateGetLocalID(uint32_t Component);
+
+  Value *CreateGetLocalLinearID();
+
+  Value *CreateGetBuiltinID(llvm::StringRef Name, uint32_t Component);
+
   CallInst *CreateBarrier(MemFlags Flags, bool SimdGroup = false);
 
   CallInst *CreateAtomicFence(MemFlags Flags, ThreadScope Scope, bool Relaxed = false);

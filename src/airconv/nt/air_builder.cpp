@@ -1251,6 +1251,54 @@ AIRBuilder::CreateDotProduct(Value *LHS, Value *RHS) {
 }
 
 Value *
+AIRBuilder::CreateGetBuiltinID(llvm::StringRef Name, uint32_t Component) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  std::string FnName = (Name + ".i32").str();
+  auto Fn = getModule()->getOrInsertFunction(
+      FnName, FunctionType::get(getIntTy(), {getIntTy()}, false), Attrs
+  );
+
+  return builder.CreateCall(Fn, {getInt(Component)});
+}
+
+Value *
+AIRBuilder::CreateGetGroupID(uint32_t Component) {
+  return CreateGetBuiltinID("air.get_group_id", Component);
+}
+
+Value *
+AIRBuilder::CreateGetGlobalID(uint32_t Component) {
+  return CreateGetBuiltinID("air.get_global_id", Component);
+}
+
+Value *
+AIRBuilder::CreateGetLocalID(uint32_t Component) {
+  return CreateGetBuiltinID("air.get_local_id", Component);
+}
+
+Value *
+AIRBuilder::CreateGetLocalLinearID() {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  auto Fn = getModule()->getOrInsertFunction(
+      "air.get_local_linear_id.i32", FunctionType::get(getIntTy(), {}, false), Attrs
+  );
+
+  return builder.CreateCall(Fn, {});
+}
+
+Value *
 AIRBuilder::CreateCountZero(Value *Val, bool TrailingZero) {
   auto &Context = getContext();
   auto Attrs = AttributeList::get(
