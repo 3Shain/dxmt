@@ -829,6 +829,14 @@ public:
   uint32_t tess_num_output_control_point_element;
   uint32_t tess_threads_per_patch;
 
+private:
+  // Declared ahead of the command helpers below, which build their pipelines through this context
+  // in their constructors (ClearUAV reaches device_ through getComputePipeline): members start in
+  // declaration order, so declared after them it was still uninitialised memory there, and a game
+  // could die at start in newComputePipelineStateWithDescriptor on a garbage device.
+  WMT::Device device_;
+
+public:
   InternalCommandLibrary &lib;
   EmulatedCommandContext emulated_cmd;
   ClearRTV<ArgumentEncodingContext> clear_rt_cmd;
@@ -918,7 +926,6 @@ private:
 
   uint64_t intrapass_barrier_control_bits_ = 0;
 
-  WMT::Device device_;
   CommandQueue& queue_;
 };
 
