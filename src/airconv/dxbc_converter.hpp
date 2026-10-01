@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -9,12 +10,13 @@
 #include <vector>
 
 #include "DXBCParser/DXBCUtils.h"
-#include "air_operations.hpp"
 #include "air_signature.hpp"
+#include "air_type.hpp"
 #include "dxbc_constants.hpp"
 #include "dxbc_instructions.hpp"
 #include "nt/air_builder.hpp"
 #include "nt/dxbc_binding_map.hpp"
+#include "nt/dxbc_io_helper.hpp"
 #include "shader_common.hpp"
 
 #include "airconv_public.h"
@@ -111,15 +113,12 @@ Instruction readInstruction(
   ShaderInfo &shader_info, uint32_t phase
 );
 
-using pvalue = dxmt::air::pvalue;
+using pvalue = llvm::Value *;
 using epvalue = llvm::Expected<pvalue>;
 using dxbc::Swizzle;
 using dxbc::swizzle_identity;
 
 struct context;
-using IRValue = ReaderIO<context, pvalue>;
-using IREffect = ReaderIO<context, std::monostate>;
-using IndexedIRValue = std::function<IRValue(pvalue)>;
 
 struct register_file {
   llvm::Value *ptr_int4 = nullptr;
@@ -137,28 +136,8 @@ struct phase_temp {
   std::unordered_map<uint32_t, indexable_register_file> indexable_temp_map{};
 };
 
-struct sampler_descriptor {
-  IndexedIRValue handle;
-  IndexedIRValue handle_cube;
-  IndexedIRValue bias;
-};
-
-struct texture_descriptor {
-  air::MSLTexture texture_info;
-  IndexedIRValue resource_id;
-  IndexedIRValue metadata;
-  bool global_coherent;
-};
-
-struct buffer_descriptor {
-  uint32_t structure_stride;
-  IndexedIRValue resource_id;
-  IndexedIRValue metadata;
-  bool global_coherent;
-};
-
 struct interpolant_descriptor {
-  IndexedIRValue interpolant;
+  uint32_t arg_index;
   bool perspective;
 };
 
@@ -216,8 +195,8 @@ struct io_binding_map {
 
   // geometry shader ops
   llvm::Value *mesh = nullptr;
-  std::function<IREffect()> call_emit;
-  std::function<IREffect()> call_cut;
+  std::function<void()> call_emit;
+  std::function<void()> call_cut;
 };
 
 struct context {
@@ -233,60 +212,6 @@ struct context {
   microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type;
   SM50_SHADER_METAL_VERSION metal_version;
 };
-
-template <typename S> IRValue make_irvalue(S &&fs) {
-  return IRValue(std::forward<S>(fs));
-}
-
-template <typename S> IRValue make_irvalue_bind(S &&fs) {
-  return IRValue([fs = std::forward<S>(fs)](auto ctx) {
-    return fs(ctx).build(ctx);
-  });
-}
-
-template <typename S> IREffect make_effect(S &&fs) {
-  return IREffect(std::forward<S>(fs));
-}
-
-template <typename S> IREffect make_effect_bind(S &&fs) {
-  return IREffect([fs = std::forward<S>(fs)](auto ctx) mutable {
-    return fs(ctx).build(ctx);
-  });
-}
-
-IREffect store_at_vec4_array_masked(
-  llvm::Value *array, pvalue index, pvalue maybe_vec4, uint32_t mask
-);
-
-IREffect init_input_reg(
-  uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask,
-  bool fix_w_component = false
-);
-
-IREffect init_input_reg_with_interpolation(
-  uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask,
-  air::Interpolation interpolation, uint32_t sampleidx_at
-);
-
-std::function<IRValue(pvalue)>
-pop_output_reg(uint32_t from_reg, uint32_t mask, uint32_t to_element);
-
-std::function<IRValue(pvalue)>
-pop_output_reg_fix_unorm(uint32_t from_reg, uint32_t mask, uint32_t to_element);
-
-std::function<IRValue(pvalue)>
-pop_output_reg_sanitize_pos(uint32_t from_reg, uint32_t mask, uint32_t to_element);
-
-IREffect pull_vertex_input(
-  air::FunctionSignatureBuilder &func_signature, uint32_t to_reg, uint32_t mask,
-  SM50_IA_INPUT_ELEMENT element_info, uint32_t slot_mask
-);
-
-IREffect pop_mesh_output_render_target_array_index(uint32_t from_reg, uint32_t mask, pvalue primitive_id);
-IREffect pop_mesh_output_viewport_array_index(uint32_t from_reg, uint32_t mask, pvalue primitive_id);
-IREffect pop_mesh_output_position(uint32_t from_reg, uint32_t mask, pvalue vertex_id);
-IREffect
-pop_mesh_output_vertex_data(uint32_t from_reg, uint32_t mask, uint32_t idx, pvalue vertex_id, air::MSLScalerOrVectorType desired_type);
 
 llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
   BasicBlock *entry, context &ctx, llvm::BasicBlock *return_bb
@@ -321,8 +246,8 @@ struct PatchConstantScalarInfo {
 };
 
 struct SignatureContext {
-  IREffect &prologue;
-  IRValue &epilogue;
+  Prologues &prologue;
+  Epilogues &epilogue;
   air::FunctionSignatureBuilder &func_signature;
   io_binding_map &resource;
   SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout;
@@ -331,11 +256,12 @@ struct SignatureContext {
   bool skip_vertex_output;
   uint32_t pull_mode_reg_mask;
   uint32_t unorm_output_reg_mask;
+  uint32_t pso_sample_mask;
   // it is considered optional (as a hint)
   air::MTLPixelFormat pixel_formats[8];
 
   SignatureContext(
-      IREffect &prologue, IRValue &epilogue, air::FunctionSignatureBuilder &func_signature, io_binding_map &resource
+      Prologues &prologue, Epilogues &epilogue, air::FunctionSignatureBuilder &func_signature, io_binding_map &resource
   ) :
       prologue(prologue),
       epilogue(epilogue),
@@ -346,7 +272,8 @@ struct SignatureContext {
       disable_depth_output(false),
       skip_vertex_output(false),
       pull_mode_reg_mask(0),
-      unorm_output_reg_mask(0) {
+      unorm_output_reg_mask(0),
+      pso_sample_mask(0xffffffff) {
     memset(pixel_formats, 0, sizeof(pixel_formats));
   };
 };
@@ -442,7 +369,7 @@ public:
   std::vector<ScalarInfo> clip_distance_scalars;
   std::vector<ScalarInfo> cull_distance_scalars;
   microsoft::D3D10_SB_PRIMITIVE gs_input_primitive = {};
-  std::vector<std::function<IREffect(MeshOutputContext &)>> mesh_output_handlers;
+  std::vector<std::function<void(MeshOutputContext &, IOHelper &)>> mesh_output_handlers;
   uint32_t num_mesh_vertex_data = 0;
   microsoft::D3D10_SB_PRIMITIVE_TOPOLOGY gs_output_topology = {};
   uint32_t gs_max_vertex_output = 0;

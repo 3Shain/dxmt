@@ -1,4 +1,3 @@
-#include "air_operations.hpp"
 #include "air_signature.hpp"
 #include "airconv_error.hpp"
 #include "dxbc_converter.hpp"
@@ -121,8 +120,8 @@ convert_dxbc_geometry_shader(
   SM50_SHADER_ROOT_SIGNATURE_DATA *rootsig = nullptr;
   args_get_data<SM50_SHADER_ROOT_SIGNATURE, SM50_SHADER_ROOT_SIGNATURE_DATA>(pArgs, &rootsig);
 
-  IREffect prologue([](auto) { return std::monostate(); });
-  IRValue epilogue([](struct context ctx) -> pvalue { return nullptr; });
+  Prologues prologue;
+  Epilogues epilogue;
 
   io_binding_map resource_map;
   air::AirType types(context);
@@ -216,8 +215,10 @@ convert_dxbc_geometry_shader(
     }
   };
 
+  IOHelper io(air, function, types, resource_map);
+
   if (topology == air::MeshOutputTopology::Triangle) {
-    resource_map.call_emit = [&]() -> IREffect {
+    resource_map.call_emit = [&]() {
       auto current_write_vertex = builder.CreateLoad(types._int, next_write_vertex);
       auto current_vertex_offset = builder.CreateLoad(types._int, vertex_offset);
       auto current_vertex_with_offset = builder.CreateAdd(current_vertex_offset, current_write_vertex);
@@ -231,7 +232,7 @@ convert_dxbc_geometry_shader(
 
       MeshOutputContext gs_out_ctx{current_vertex_with_offset, current_primitive_idx};
       for (auto &h : gs_output_handlers) {
-        co_yield h(gs_out_ctx);
+        h(gs_out_ctx, io);
       }
       emit_clip_distances(current_vertex_with_offset);
 
@@ -249,10 +250,8 @@ convert_dxbc_geometry_shader(
       );
 
       builder.CreateStore(builder.CreateAdd(one_const, current_write_vertex), next_write_vertex);
-
-      co_return {};
     };
-    resource_map.call_cut = [&]() -> IREffect {
+    resource_map.call_cut = [&]() {
       auto current_write_vertex = builder.CreateLoad(types._int, next_write_vertex);
       builder.CreateStore(zero_const, next_write_vertex);
 
@@ -267,10 +266,9 @@ convert_dxbc_geometry_shader(
       builder.CreateStore(
           builder.CreateAdd(builder.CreateLoad(types._int, primitive_count), add_primitive_count), primitive_count
       );
-      co_return {};
     };
   } else if (topology == air::MeshOutputTopology::Line) {
-    resource_map.call_emit = [&]() -> IREffect {
+    resource_map.call_emit = [&]() {
       auto current_write_vertex = builder.CreateLoad(types._int, next_write_vertex);
       builder.CreateStore(builder.CreateAdd(one_const, current_write_vertex), next_write_vertex);
 
@@ -282,7 +280,7 @@ convert_dxbc_geometry_shader(
 
       MeshOutputContext gs_out_ctx{current_vertex_with_offset, current_primitive_idx};
       for (auto &h : gs_output_handlers) {
-        co_yield h(gs_out_ctx);
+        h(gs_out_ctx, io);
       }
       emit_clip_distances(current_vertex_with_offset);
 
@@ -294,10 +292,8 @@ convert_dxbc_geometry_shader(
           builder.CreateAdd(double_primitive_idx, one_const),
           builder.CreateAdd(current_vertex_with_offset, one_const)
       );
-
-      co_return {};
     };
-    resource_map.call_cut = [&]() -> IREffect {
+    resource_map.call_cut = [&]() {
       auto current_write_vertex = builder.CreateLoad(types._int, next_write_vertex);
       builder.CreateStore(zero_const, next_write_vertex);
 
@@ -312,25 +308,22 @@ convert_dxbc_geometry_shader(
       builder.CreateStore(
           builder.CreateAdd(builder.CreateLoad(types._int, primitive_count), add_primitive_count), primitive_count
       );
-      co_return {};
     };
   } else {
-    resource_map.call_emit = [&]() -> IREffect {
+    resource_map.call_emit = [&]() {
       // only one accumulator to maintain, simple one ~
       auto current_write_vertex = builder.CreateLoad(types._int, next_write_vertex);
       builder.CreateStore(builder.CreateAdd(one_const, current_write_vertex), next_write_vertex);
 
       MeshOutputContext gs_out_ctx{current_write_vertex, current_write_vertex};
       for (auto &h : gs_output_handlers) {
-        co_yield h(gs_out_ctx);
+        h(gs_out_ctx, io);
       }
       emit_clip_distances(current_write_vertex);
       air.CreateSetMeshIndex(current_write_vertex, current_write_vertex);
-      co_return {};
     };
-    resource_map.call_cut = []() -> IREffect {
+    resource_map.call_cut = []() {
       // there is nothing to cut!
-      co_return {};
     };
   }
 
@@ -492,7 +485,7 @@ convert_dxbc_geometry_shader(
       .metal_version = metal_version,
   };
 
-  if (auto err = prologue.build(ctx).takeError()) {
+  if (auto err = prologue.Run(io)) {
     return err;
   }
 
@@ -503,12 +496,11 @@ convert_dxbc_geometry_shader(
   builder.CreateBr(real_entry.get());
   builder.SetInsertPoint(epilogue_bb);
 
-  if (auto err = epilogue.build(ctx).takeError()) {
+  auto epilogue_result = epilogue.Run(function->getReturnType(), io);
+  if (auto err = epilogue_result.takeError()) {
     return err;
   }
-  if (auto err = resource_map.call_cut().build(ctx).takeError()) {
-    return err;
-  }
+  resource_map.call_cut();
   air.CreateSetMeshPrimitiveCount(builder.CreateLoad(types._int, primitive_count));
 
   builder.CreateRetVoid();
@@ -548,14 +540,8 @@ convert_dxbc_vertex_for_geometry_shader(
   bool is_triadj_strip = is_strip && pGeometryStage->gs_input_primitive == D3D10_SB_PRIMITIVE_TRIANGLE_ADJ;
   bool is_indexed_draw = ia_layout && ia_layout->index_buffer_format > 0;
 
-  IREffect prologue([](auto) { return std::monostate(); });
-  IRValue epilogue([](struct context ctx) -> pvalue {
-    auto retTy = ctx.function->getReturnType();
-    if (retTy->isVoidTy()) {
-      return nullptr;
-    }
-    return llvm::UndefValue::get(retTy);
-  });
+  Prologues prologue;
+  Epilogues epilogue;
 
   io_binding_map resource_map;
   air::AirType types(context);
@@ -774,7 +760,9 @@ convert_dxbc_vertex_for_geometry_shader(
   resource_map.base_instance_id = builder.CreateExtractValue(draw_arguments, is_indexed_draw ? 4 : 3);
   resource_map.instance_id_with_base = builder.CreateAdd(resource_map.instance_id, resource_map.base_instance_id);
 
-  if (auto err = prologue.build(ctx).takeError()) {
+  IOHelper io(air, function, types, resource_map);
+
+  if (auto err = prologue.Run(io)) {
     return err;
   }
 
@@ -785,7 +773,7 @@ convert_dxbc_vertex_for_geometry_shader(
   builder.CreateBr(real_entry.get());
 
   builder.SetInsertPoint(epilogue_bb);
-  auto epilogue_result = epilogue.build(ctx);
+  auto epilogue_result = epilogue.Run(function->getReturnType(), io);
   if (auto err = epilogue_result.takeError()) {
     return err;
   }
@@ -883,10 +871,3 @@ convert_dxbc_vertex_for_geometry_shader(
 };
 
 } // namespace dxmt::dxbc
-
-template <> struct environment_cast<::dxmt::dxbc::context, ::dxmt::air::AIRBuilderContext> {
-  ::dxmt::air::AIRBuilderContext
-  cast(const ::dxmt::dxbc::context &src) {
-    return {src.llvm, src.module, src.builder, src.types, src.air};
-  };
-};
