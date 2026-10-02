@@ -1383,10 +1383,10 @@ public:
       break;
     }
     case ShaderVisibleDescriptorType::UAVTexture: {
-      allocator_->clear_uav_.begin(color, Descriptor.SRVTexture.texture, Descriptor.SRVTexture.view);
+      allocator_->clear_uav_.begin(color, Descriptor.UAVTexture.texture, Descriptor.UAVTexture.view);
       full_rect = {
-          0, 0, (LONG)Descriptor.SRVTexture.texture->width(Descriptor.SRVTexture.view),
-          (LONG)Descriptor.SRVTexture.texture->height(Descriptor.SRVTexture.view)
+          0, 0, (LONG)Descriptor.UAVTexture.texture->width(Descriptor.UAVTexture.view),
+          (LONG)Descriptor.UAVTexture.texture->height(Descriptor.UAVTexture.view)
       };
       break;
     }

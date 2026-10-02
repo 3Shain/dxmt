@@ -286,6 +286,7 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
   auto proc = [=](const char *func_name, SM50_SHADER_COMMON_DATA *common) -> sm50_bitcode_t  {
     SM50_SHADER_GS_PASS_THROUGH_DATA gs_passthrough;
     SM50_SHADER_PSO_TESSELLATOR_DATA pso_tess;
+    gs_passthrough.type = SM50_SHADER_GS_PASS_THROUGH;
     gs_passthrough.DataEncoded = variant.gs_passthrough;
     gs_passthrough.RasterizationDisabled = variant.rasterization_disabled;
     gs_passthrough.next = &pso_tess;

@@ -103,7 +103,7 @@ resolve_cache_dir(NSString *path, bool path_is_file) {
   if ((self = [super init])) {
     NSString *dbPath = resolve_cache_dir(path, true);
     if (!dbPath) {
-      NSLog(@"[CacheReader] Failed to resolve cache path");
+      NSLog(@"[CacheWriter] Failed to resolve cache path");
       return nil;
     }
 
