@@ -139,7 +139,7 @@ NVSDK_NGX_D3D11_EvaluateFeature(
     if (NVNGX_FAILED(parameters->Get(NVNGX_Parameter_MV_Scale_Y, &desc.MotionVectorScaleY)))
       desc.MotionVectorScaleY = 1.0;
     if (NVNGX_FAILED(parameters->Get(NVNGX_Parameter_DLSS_Pre_Exposure, &desc.PreExposure)))
-      desc.PreExposure = 0;
+      desc.PreExposure = 1.0;
 
     pCtxExt->TemporalUpscale(&desc);
 
