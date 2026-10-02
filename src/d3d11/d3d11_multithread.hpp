@@ -8,7 +8,6 @@ class d3d11_device_mutex {
 public:
   void lock();
   void unlock() noexcept;
-  bool try_lock() { return true; }
 
   bool set_protected(bool Protected);
   bool get_protected();
