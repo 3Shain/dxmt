@@ -498,7 +498,7 @@ MTLD3D10Device::IAGetIndexBuffer(ID3D10Buffer **pIndexBuffer, DXGI_FORMAT *Forma
     if (d3d11_buffer)
       d3d11_buffer->QueryInterface(IID_PPV_ARGS(pIndexBuffer));
     else
-      pIndexBuffer = nullptr;
+      *pIndexBuffer = nullptr;
   }
 }
 
