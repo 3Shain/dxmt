@@ -377,8 +377,9 @@ public:
       desc.RenderTarget[i].RenderTargetWriteMask =
           pBlendStateDesc->RenderTarget[i].RenderTargetWriteMask;
     }
-    auto hr = CreateBlendState1(&desc, &pBlendState1);
-    *ppBlendState = pBlendState1;
+    auto hr = CreateBlendState1(&desc, ppBlendState ? &pBlendState1: nullptr);
+    if (ppBlendState)
+      *ppBlendState = pBlendState1;
     return hr;
   }
 
@@ -406,8 +407,9 @@ public:
     desc.AntialiasedLineEnable = pRasterizerDesc->AntialiasedLineEnable;
     desc.ForcedSampleCount = 0;
     desc.ConservativeRaster = D3D11_CONSERVATIVE_RASTERIZATION_MODE_OFF;
-    auto hr = CreateRasterizerState2(&desc, &pRasterizerState);
-    *ppRasterizerState = pRasterizerState;
+    auto hr = CreateRasterizerState2(&desc, ppRasterizerState ? &pRasterizerState: nullptr);
+    if (ppRasterizerState)
+      *ppRasterizerState = pRasterizerState;
     return hr;
   }
 
@@ -747,8 +749,9 @@ public:
     desc.AntialiasedLineEnable = pRasterizerDesc->AntialiasedLineEnable;
     desc.ForcedSampleCount = pRasterizerDesc->ForcedSampleCount;
     desc.ConservativeRaster = D3D11_CONSERVATIVE_RASTERIZATION_MODE_OFF;
-    auto hr = CreateRasterizerState2(&desc, &pRasterizerState);
-    *ppRasterizerState = pRasterizerState;
+    auto hr = CreateRasterizerState2(&desc, ppRasterizerState ? &pRasterizerState: nullptr);
+    if (ppRasterizerState)
+      *ppRasterizerState = pRasterizerState;
     return hr;
   }
 
