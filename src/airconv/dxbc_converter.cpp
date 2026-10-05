@@ -1295,14 +1295,11 @@ AIRCONV_API int SM50Initialize(
       pRefl->PostTessellator = {.MaxPotentialTessFactor = max_potential_tess_factor};
     }
     if (sm50_shader->shader_type == microsoft::D3D10_SB_GEOMETRY_SHADER) {
-      if (binding_cbuffer_mask || binding_sampler_mask || binding_uav_mask ||
-          binding_srv_hi_mask || binding_srv_lo_mask ||
-          !CheckGSBBIsPassThrough(sm50_shader->entry())) {
+      if (binding_cbuffer_mask || binding_sampler_mask || binding_uav_mask || binding_srv_hi_mask ||
+          binding_srv_lo_mask ||
+          !(CheckGSBBIsPassThrough(sm50_shader->entry()) &&
+            CheckGSSignatureIsPassThrough(inputParser, outputParser, pRefl->GeometryShader.Data))) {
         pRefl->GeometryShader.GSPassThrough = ~0u;
-      } else {
-        CheckGSSignatureIsPassThrough(
-          inputParser, outputParser, pRefl->GeometryShader.Data
-        );
       }
       pRefl->GeometryShader.Primitive = sm50_shader->gs_input_primitive;
     }

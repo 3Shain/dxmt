@@ -2098,6 +2098,7 @@ Instruction readInstruction(
   default: {
     llvm::outs() << "unhandled dxbc instruction " << Inst.OpCode() << "\n";
     assert(0 && "unhandled dxbc instruction");
+    return InstNop {};
   }
   }
 };

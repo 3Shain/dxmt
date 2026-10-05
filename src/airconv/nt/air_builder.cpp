@@ -1483,7 +1483,7 @@ AIRBuilder::CreateInterpolateAtOffset(Value *Interpoant, Value *Offset, bool Per
 
   auto Fn = getModule()->getOrInsertFunction(
       Perspective ? "air.interpolate_offset_perspective.v4f32" : "air.interpolate_offset_no_perspective.v4f32",
-      FunctionType::get(getFloatTy(4), {Interpoant->getType(), getIntTy(2)}, false), Attrs
+      FunctionType::get(getFloatTy(4), {Interpoant->getType(), getFloatTy(2)}, false), Attrs
   );
 
   return builder.CreateCall(Fn, {Interpoant, Offset});
@@ -1780,6 +1780,7 @@ AIRBuilder::CreateIntBinOp(IntBinOp Op, Value *LHS, Value *RHS, bool Signed) {
   static char const *FnNames[] = {
       "max",
       "min",
+      "mul_hi",
   };
 
   if (uint32_t(Op) >= std::size(FnNames)) {
