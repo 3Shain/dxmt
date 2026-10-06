@@ -99,6 +99,23 @@ inline BOOL DuplicateHandle(HANDLE   hSourceProcessHandle,
   return FALSE;
 }
 
+#define QUERYESCSUPPORT 8
+
+inline HDC GetDC(HWND hWnd) {
+  dxmt::Logger::warn("GetDC not implemented.");
+  return nullptr;
+}
+
+inline int ReleaseDC(HWND hWnd, HDC hDC) {
+  dxmt::Logger::warn("ReleaseDC not implemented.");
+  return 0;
+}
+
+inline int ExtEscape(HDC hdc, int nEscape, int cbInput, LPCSTR lpszInData, int cbOutput, LPSTR lpszOutData) {
+  dxmt::Logger::warn("ExtEscape not implemented.");
+  return 0;
+}
+
 
 #define ARRAYSIZE(a) (sizeof(a)/sizeof(*(a)))
 
