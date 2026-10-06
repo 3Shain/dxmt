@@ -172,7 +172,7 @@ InitializeAndNormalizeViewDescriptor(
       Descriptor.type = WMTTextureType3D;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture3D.MostDetailedMip;
-      Descriptor.miplevelCount =ViewDesc.Texture3D.MipLevels;
+      Descriptor.miplevelCount = ViewDesc.Texture3D.MipLevels;
       Descriptor.firstArraySlice = 0;
       Descriptor.arraySize = 1;
       return S_OK;
@@ -186,8 +186,7 @@ InitializeAndNormalizeViewDescriptor(
       Descriptor.type = WMTTextureTypeCube;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.TextureCube.MostDetailedMip;
-      Descriptor.miplevelCount = ~ViewDesc.TextureCube.MipLevels ? ViewDesc.TextureCube.MipLevels
-                                                               : MiplevelCount - ViewDesc.TextureCube.MostDetailedMip;
+      Descriptor.miplevelCount = ViewDesc.TextureCube.MipLevels;
       Descriptor.firstArraySlice = 0;
       Descriptor.arraySize = 6;
       return S_OK;
