@@ -8,6 +8,7 @@
 #include "com/com_pointer.hpp"
 #include "com/com_guid.hpp"
 #include "d3d11_view.hpp"
+#include "d3d11_surface.hpp"
 #include "dxgi_resource.hpp"
 #include "log/log.hpp"
 #include "../d3d10/d3d10_buffer.hpp"
@@ -129,6 +130,7 @@ struct D3D11ResourceCommon : ID3D11Resource {
   virtual HRESULT GetSharedHandle(HANDLE *pSharedHandle) = 0;
   virtual HRESULT
   CreateSharedHandle(const SECURITY_ATTRIBUTES *Attributes, DWORD Access, const WCHAR *pName, HANDLE *pNTHandle) = 0;
+  virtual HRESULT CreateSubresourceSurface(UINT Index, IDXGISurface2 **ppSurface) = 0;
 
   virtual Rc<StagingResource> staging(UINT Subresource) = 0;
   virtual Rc<DynamicBuffer> dynamicBuffer(UINT *pBufferLength, UINT *pBindFlags) = 0;
@@ -193,8 +195,8 @@ public:
       desc(desc),
       dxgi_resource(this),
       keyed_mutex(this, device->GetImmediateContextPrivate()),
-      d3d10(reinterpret_cast<tag::COM *>(this), device->GetImmediateContextPrivate()) {
-    // D3D11ResourceCommonß::bind_flags_
+      d3d10(reinterpret_cast<tag::COM *>(this), device->GetImmediateContextPrivate()),
+      dxgi_surface(this) {
     this->bind_flags_ = desc.BindFlags;
   }
 
@@ -243,7 +245,17 @@ public:
       *ppvObject = ref(&dxgi_resource);
       return S_OK;
     }
-  
+
+    if ((riid == __uuidof(IDXGISurface) || riid == __uuidof(IDXGISurface1) || riid == __uuidof(IDXGISurface2))) {
+      if constexpr (tag::dimension == D3D11_RESOURCE_DIMENSION_TEXTURE1D ||
+                    tag::dimension == D3D11_RESOURCE_DIMENSION_TEXTURE2D) {
+        if (this->desc.ArraySize * this->desc.MipLevels == 1) {
+          *ppvObject = ref(&dxgi_surface);
+          return S_OK;
+        }
+      }
+    }
+
     if (riid == __uuidof(IDXGIKeyedMutex)) {
       if (!(this->desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX))
         return E_NOINTERFACE;
@@ -316,12 +328,16 @@ public:
       override {
     return E_INVALIDARG;
   }
+  virtual HRESULT CreateSubresourceSurface(UINT Index, IDXGISurface2 **ppSurface) override {
+    return DXGI_ERROR_INVALID_CALL;
+  }
 
 protected:
   tag::DESC1 desc;
   MTLDXGIResource<TResourceBase<tag, Base...>> dxgi_resource;
   MTLDXGIKeyedMutex<TResourceBase<tag, Base...>, IMTLD3D11DeviceContext> keyed_mutex;
   tag::D3D10_IMPL d3d10;
+  D3D11DXGISurface dxgi_surface;
 };
 
 template <typename RESOURCE_IMPL_ = ID3D11Resource,

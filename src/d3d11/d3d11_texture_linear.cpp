@@ -85,6 +85,14 @@ TDynamicLinearTexture(
   HRESULT
   STDMETHODCALLTYPE
   CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc, ID3D11ShaderResourceView1 **ppView) override;
+
+  HRESULT CreateSubresourceSurface(UINT Index, IDXGISurface2 **ppSurface) override {
+    if (Index)
+      return E_INVALIDARG;
+    auto surface = Com(new D3D11DXGISurface(this, Index));
+    *ppSurface = surface.ref();
+    return S_OK;
+  }
 };
 
 template<>

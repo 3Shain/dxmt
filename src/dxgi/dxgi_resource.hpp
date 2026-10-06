@@ -81,8 +81,7 @@ public:
   HRESULT
   STDMETHODCALLTYPE
   CreateSubresourceSurface(UINT index, IDXGISurface2 **surface) final {
-    ERR_ONCE("DXGIResource::CreateSubresourceSurface: stub");
-    return E_NOTIMPL;
+    return resource_->CreateSubresourceSurface(index, surface);
   }
 
   HRESULT
