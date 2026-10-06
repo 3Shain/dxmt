@@ -567,6 +567,7 @@ public:
     fullscreen_desc_.Scaling = newDisplayMode.Scaling;
 
     if (fullscreen_desc_.Windowed) {
+      lock = {};
       wsi::resizeWindow(hWnd, &window_state_, newDisplayMode.Width,
                         newDisplayMode.Height);
     } else {
