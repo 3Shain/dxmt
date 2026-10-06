@@ -1,4 +1,5 @@
 #include "config/config.hpp"
+#include "d3d11_context_state.hpp"
 #include "d3d11_fence.hpp"
 #include "d3d11_private.h"
 #include "d3d11_query.hpp"
@@ -623,6 +624,32 @@ public:
     return 0;
   }
 
+  void
+  STDMETHODCALLTYPE
+  SwapDeviceContextState(ID3DDeviceContextState *pState, ID3DDeviceContextState **ppPreviousState) override {
+    InitReturnPtr(ppPreviousState);
+
+    if (!pState)
+      return;
+
+    std::lock_guard<d3d11_device_mutex> lock(mutex);
+
+    ResetEncodingContextState();
+
+    if (!state_object_)
+      state_object_ = new MTLD3D11DeviceContextState(device);
+    
+    state_object_->state = std::move(state_);
+
+    if (ppPreviousState)
+      *ppPreviousState = state_object_.ref();
+
+    state_object_ = static_cast<MTLD3D11DeviceContextState *>(pState);
+    state_ = std::move(state_object_->state);
+    
+    RestoreEncodingContextState();
+  }
+
   HRESULT
   AcquireSync(ID3D11Resource *pResource, UINT64 Key, DWORD dwMilliseconds) override {
     std::lock_guard<d3d11_device_mutex> lock(mutex);
@@ -665,6 +692,7 @@ private:
   std::atomic<uint32_t> refcount = 0;
   D3D11Multithread d3dmt_;
   bool ignore_map_flag_no_wait_;
+  Com<MTLD3D11DeviceContextState, false> state_object_;
 };
 
 std::unique_ptr<MTLD3D11DeviceContextBase>

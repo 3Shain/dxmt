@@ -37,6 +37,14 @@ public:
   dynamicTexture(UINT , UINT *, UINT *) final {
     return {};
   };
+
+  HRESULT CreateSubresourceSurface(UINT Index, IDXGISurface2 **ppSurface) override {
+    if (Index != 0)
+      return E_INVALIDARG;
+    auto surface = Com(new D3D11DXGISurface(this, Index));
+    *ppSurface = surface.ref();
+    return S_OK;
+  }
 };
 
 HRESULT
@@ -91,6 +99,18 @@ public:
   dynamicTexture(UINT , UINT *, UINT *) final {
     return {};
   };
+
+  HRESULT CreateSubresourceSurface(UINT Index, IDXGISurface2 **ppSurface) override {
+    if constexpr (std::is_same_v<typename tag_texture::DESC1, D3D11_TEXTURE3D_DESC1>) {
+      if (this->desc.Depth > 1)
+        return E_INVALIDARG;
+    }
+    if (Index > subresources.size())
+      return E_INVALIDARG;
+    auto surface = Com(new D3D11DXGISurface(this, Index));
+    *ppSurface = surface.ref();
+    return S_OK;
+  }
 };
 
 #pragma endregion

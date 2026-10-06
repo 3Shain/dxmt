@@ -456,6 +456,11 @@ public:
     return context_flag;
   }
 
+  void STDMETHODCALLTYPE
+  SwapDeviceContextState(ID3DDeviceContextState *pState, ID3DDeviceContextState **ppPreviousState) override {
+    // MSDN: SwapDeviceContextState is not supported on a deferred context.
+  }
+
   HRESULT
   AcquireSync(ID3D11Resource *pResource, UINT64 Key, DWORD dwMilliseconds) override {
     return DXGI_ERROR_INVALID_CALL;
