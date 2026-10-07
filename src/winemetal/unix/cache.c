@@ -235,12 +235,12 @@ _WMTSetMetalShaderCachePath(void *obj) {
   params->ret_success = [MTLGetShaderCachePath() isEqualToString:resolved_path];
   [path release];
   return 0;
-};
+}
 
 #else
 
 int
-WMTSetMetalShaderCachePath(void *obj) {
+_WMTSetMetalShaderCachePath(void *obj) {
   struct unixcall_setmetalcachepath *params = obj;
   params->ret_success = 0;
   return 0;

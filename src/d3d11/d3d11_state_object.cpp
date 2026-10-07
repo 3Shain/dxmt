@@ -346,7 +346,6 @@ public:
     if (!desc_.IndependentBlendEnable && desc_.RenderTarget[0].LogicOpEnable) {
 #ifdef DXMT_NO_PRIVATE_API
       ERR("OutputMerger LogicOp is not supported");
-      continue;
 #else
       info->logic_operation_enabled = true;
       info->logic_operation = kLogicOpMap[desc_.RenderTarget[0].LogicOp];
