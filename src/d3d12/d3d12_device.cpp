@@ -197,7 +197,7 @@ public:
       }
 
       if (out->Format == DXGI_FORMAT_UNKNOWN) {
-        out->NumQualityLevels = out->SampleCount == 0 ? 1 : 0;
+        out->NumQualityLevels = out->SampleCount == 1 ? 1 : 0;
         return S_OK;
       }
 
