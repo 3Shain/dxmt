@@ -241,9 +241,6 @@ MTLD3D12PipelineState::InitializeShader(
   if (FAILED(hr = Parser.ReadDXBC(Bytecode.pShaderBytecode, Bytecode.BytecodeLength)))
     return hr;
 
-  if (Parser.FindNextMatchingBlob(microsoft::DXBC_DXIL) != DXBC_BLOB_NOT_FOUND)
-    return E_NOTIMPL;
-
   SM50Error error;
   if (SM50Initialize(Bytecode.pShaderBytecode, Bytecode.BytecodeLength, ppShader, pRefl, &error)) {
     ERR("Failed to initialize shader: ", SM50GetErrorMessageString(error));
@@ -534,7 +531,7 @@ public:
       if (SM50Compile(
               shader_vs, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&rootsig, "vs_main", &vs_bitcode, &sm50_err
           )) {
-        ERR("Failed to compile vs shader");
+        ERR("Failed to compile vs shader: ", SM50GetErrorMessageString(sm50_err));
         return E_FAIL;
       }
 
@@ -591,7 +588,7 @@ public:
       if (SM50Compile(
               shader_ps, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&rootsig, ps_name.c_str(), &ps_bitcode, &sm50_err
           )) {
-        ERR("Failed to compile ps shader");
+        ERR("Failed to compile ps shader: ", SM50GetErrorMessageString(sm50_err));
         return E_FAIL;
       }
       SM50_COMPILED_BITCODE ps_bitcode_compiled;
