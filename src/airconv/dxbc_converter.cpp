@@ -540,7 +540,9 @@ llvm::Error convert_dxbc_compute_shader(
   if (auto err = prologue.Run(io)) {
     return err;
   }
-  auto real_entry = convert_basicblocks(pShaderInternal->entry(), ctx, epilogue_bb);
+  llvm::Expected<llvm::BasicBlock *> real_entry =
+      pShaderInternal->dxil ? dxil::convert_basicblocks(pShaderInternal->dxil_entry, ctx, epilogue_bb)
+                            : convert_basicblocks(pShaderInternal->entry(), ctx, epilogue_bb);
   if (auto err = real_entry.takeError()) {
     return err;
   }
