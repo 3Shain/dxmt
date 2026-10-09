@@ -60,6 +60,12 @@ private:
   static llvm::air::Texture MakeTexture(const dxmt::dxbc::TextureDescirptor &Descriptor);
   llvm::Value *BitcastIfNeeded(llvm::Value *Value, llvm::Type *Type);
   llvm::Value *BuildResRet(llvm::CallInst &Call, llvm::Value *VecOrScalar, llvm::Value *Residency);
+  llvm::Value *MakeVec(llvm::ArrayRef<llvm::Value *> Components);
+  llvm::Value *AddOffsetIfNeeded(llvm::Value *Coord, int32_t Offset);
+  llvm::Expected<std::tuple<llvm::Value *, llvm::Value *, llvm::Value *>> BuildRwAddress(
+      llvm::air::Texture::ResourceKind LogicalKind, llvm::Value *C0, llvm::Value *C1, llvm::Value *C2,
+      llvm::Value *MipOrSampleIndex, int32_t Off0, int32_t Off1, int32_t Off2
+  );
 
   llvm::Error TranslateTerminator(llvm::Instruction *Inst, llvm::BasicBlock *ReturnBB);
   llvm::Expected<llvm::Value *> TranslateInstruction(llvm::Instruction *Inst);
@@ -71,6 +77,7 @@ private:
   llvm::Expected<llvm::Value *> EmitThreadId(llvm::CallInst &Call, ThreadBuiltin Kind);
   llvm::Expected<llvm::Value *> EmitBufferStore(llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitBufferLoad(llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitTextureStore(llvm::CallInst &Call);
 };
 
 } // namespace dxmt::dxil
