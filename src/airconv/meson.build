@@ -11,6 +11,7 @@ airconv_src = files([
  'dxbc_converter_cfg.cpp',
  'dxbc_instructions.cpp',
  'dxbc_signature.cpp',
+ 'dxil_converter.cpp',
  'metallib_writer.cpp',
  'nt/air_builder.cpp',
  'nt/air_vertex_puller.cpp',
