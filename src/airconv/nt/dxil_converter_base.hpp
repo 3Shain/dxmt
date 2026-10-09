@@ -7,6 +7,7 @@
 
 #include "../dxil_metadata.hpp"
 #include "air_builder.hpp"
+#include "dxbc_binding_map.hpp"
 
 namespace dxmt::dxbc {
 class IOHelper;
@@ -53,6 +54,11 @@ private:
   llvm::Expected<llvm::Constant *> MapConstant(llvm::Constant *Constant);
   llvm::Expected<llvm::Value *> Get(llvm::Value *Value);
   llvm::Expected<HandleInfo> ResolveHandleOperand(llvm::Value *Operand);
+  llvm::Optional<dxmt::dxbc::TextureDescirptor> GetTextureDescriptor(const HandleInfo &Handle);
+  llvm::Optional<dxmt::dxbc::BufferDescriptor> GetBufferDescriptor(const HandleInfo &Handle);
+  bool SupportsMemoryCoherency() const;
+  static llvm::air::Texture MakeTexture(const dxmt::dxbc::TextureDescirptor &Descriptor);
+  llvm::Value *BitcastIfNeeded(llvm::Value *Value, llvm::Type *Type);
 
   llvm::Error TranslateTerminator(llvm::Instruction *Inst, llvm::BasicBlock *ReturnBB);
   llvm::Expected<llvm::Value *> TranslateInstruction(llvm::Instruction *Inst);
@@ -62,6 +68,7 @@ private:
   llvm::Expected<llvm::Value *> EmitCreateHandle(llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitCbufferLoadLegacy(llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitThreadId(llvm::CallInst &Call, ThreadBuiltin Kind);
+  llvm::Expected<llvm::Value *> EmitBufferStore(llvm::CallInst &Call);
 };
 
 } // namespace dxmt::dxil
