@@ -568,6 +568,14 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitCreateHandle(Call);
   if (op == "cbufferLoadLegacy")
     return EmitCbufferLoadLegacy(Call);
+  if (op == "threadId")
+    return EmitThreadId(Call, ThreadBuiltin::kGlobalId);
+  if (op == "groupId")
+    return EmitThreadId(Call, ThreadBuiltin::kGroupId);
+  if (op == "threadIdInGroup")
+    return EmitThreadId(Call, ThreadBuiltin::kLocalId);
+  if (op == "flattenedThreadIdInGroup")
+    return EmitThreadId(Call, ThreadBuiltin::kLocalLinearId);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -609,6 +617,23 @@ Converter::EmitCbufferLoadLegacy(CallInst &Call) {
   for (unsigned i = 0; i < PackedType->getNumElements(); i++)
     Result = ir.CreateInsertValue(Result, ir.CreateExtractElement(PackedLoad, (uint64_t)i), i);
   return Result;
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitThreadId(CallInst &Call, ThreadBuiltin Kind) {
+  if (Kind == ThreadBuiltin::kLocalLinearId)
+    return air.CreateGetLocalLinearID();
+  auto component = asU32(Call.getArgOperand(1));
+  if (!component || *component > 2)
+    return unsupported("dxil: invalid thread id component");
+  switch (Kind) {
+  case ThreadBuiltin::kGlobalId:
+    return air.CreateGetGlobalID(*component);
+  case ThreadBuiltin::kGroupId:
+    return air.CreateGetGroupID(*component);
+  default:
+    return air.CreateGetLocalID(*component);
+  }
 }
 
 } // namespace dxmt::dxil
