@@ -7,6 +7,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include "airconv_error.hpp"
+#include "nt/dxil_converter_base.hpp"
 
 #include <memory>
 #include <utility>
@@ -91,7 +92,11 @@ initialize(
 
 llvm::Expected<llvm::BasicBlock *>
 convert_basicblocks(llvm::Function *entry, dxmt::dxbc::context &ctx, llvm::BasicBlock *return_bb) {
-  return llvm::make_error<UnsupportedFeature>("unimplemented dxil shader conversion");
+  auto saved_block = ctx.builder.GetInsertBlock();
+  Converter converter(entry, ctx);
+  auto result = converter.Run(return_bb);
+  ctx.builder.SetInsertPoint(saved_block);
+  return result;
 }
 
 } // namespace dxmt::dxil
