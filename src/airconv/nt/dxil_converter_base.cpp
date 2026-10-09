@@ -27,6 +27,13 @@ unsupported(llvm::StringRef what) {
   return llvm::make_error<dxmt::UnsupportedFeature>(what);
 }
 
+std::optional<uint32_t>
+asU32(Value *value) {
+  if (auto *ci = dyn_cast<ConstantInt>(value))
+    return (uint32_t)ci->getZExtValue();
+  return std::nullopt;
+}
+
 Converter::Converter(llvm::Function *entry, dxmt::dxbc::context &ctx) :
     ctx(ctx),
     ir(ctx.builder),
@@ -549,7 +556,23 @@ Converter::EmitDxilOp(CallInst &Call) {
   if (dot != StringRef::npos)
     op = op.take_front(dot);
 
+  if (op == "createHandle")
+    return EmitCreateHandle(Call);
+
   return unsupported("dxil: unsupported operation dx.op." + op.str());
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitCreateHandle(CallInst &Call) {
+  auto Class = asU32(Call.getArgOperand(1));
+  auto Range = asU32(Call.getArgOperand(2));
+  if (!Class || !Range)
+    return unsupported("dxil: non-constant createHandle arguments");
+  auto Index = Get(Call.getArgOperand(3));
+  if (!Index)
+    return Index.takeError();
+  handles_[&Call] = HandleInfo{(ResourceClass)*Class, *Range, *Index};
+  return (llvm::Value *)nullptr;
 }
 
 } // namespace dxmt::dxil
