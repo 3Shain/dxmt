@@ -579,6 +579,24 @@ Converter::BitcastIfNeeded(Value *Value, Type *Type) {
   return ir.CreateBitCast(Value, Type);
 }
 
+Value *
+Converter::BuildResRet(CallInst &Call, Value *VecOrScalar, Value *Residency) {
+  auto *TyStruct = cast<StructType>(MapType(Call.getType()));
+  Type *Element = TyStruct->getElementType(0);
+  Value *Result = PoisonValue::get(TyStruct);
+  if (auto *Vector = dyn_cast<FixedVectorType>(VecOrScalar->getType())) {
+    for (unsigned i = 0; i < 4 && i < Vector->getNumElements(); i++)
+      Result = ir.CreateInsertValue(Result, ir.CreateExtractElement(VecOrScalar, (uint64_t)i), i);
+  } else {
+    Result = ir.CreateInsertValue(Result, VecOrScalar, 0);
+    for (unsigned i = 1; i < 4; i++)
+      Result = ir.CreateInsertValue(Result, Constant::getNullValue(Element), i);
+  }
+  Value *Status = Residency ? ir.CreateZExt(Residency, ir.getInt32Ty()) : ir.getInt32(0);
+  Result = ir.CreateInsertValue(Result, Status, 4);
+  return Result;
+}
+
 llvm::Expected<llvm::Value *>
 Converter::TranslateCall(llvm::CallInst &Call) {
   auto *Callee = Call.getCalledFunction();
@@ -611,6 +629,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitThreadId(Call, ThreadBuiltin::kLocalLinearId);
   if (op == "bufferStore")
     return EmitBufferStore(Call);
+  if (op == "bufferLoad")
+    return EmitBufferLoad(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -733,6 +753,55 @@ Converter::EmitBufferStore(CallInst &Call) {
       ir.CreateStore(Word, Ptr);
   }
   return (llvm::Value *)nullptr;
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitBufferLoad(CallInst &Call) {
+  auto Handle = ResolveHandleOperand(Call.getArgOperand(1));
+  if (!Handle)
+    return Handle.takeError();
+
+  auto Index = Get(Call.getArgOperand(2));
+  if (!Index)
+    return Index.takeError();
+
+  auto Texture = GetTextureDescriptor(*Handle);
+  if (Texture) {
+    bool Coherent = Texture->GlobalCoherent && SupportsMemoryCoherency();
+    auto [Value, Residency] = air.CreateRead(
+        MakeTexture(*Texture), Texture->ResourceHandle, *Index, nullptr, nullptr, air.getInt(0), Coherent
+    );
+    return BuildResRet(Call, Value, Residency);
+  }
+
+  auto Buffer = GetBufferDescriptor(*Handle);
+  if (!Buffer)
+    return unsupported("dxil: no buffer descriptor for resource");
+
+  Value *ByteOffset = *Index;
+  if (Buffer->StructureStride != 0) {
+    auto ElementOffset = Get(Call.getArgOperand(3));
+    if (!ElementOffset)
+      return ElementOffset.takeError();
+    ByteOffset = ir.CreateMul(ByteOffset, ir.getInt32(Buffer->StructureStride));
+    ByteOffset = ir.CreateAdd(ByteOffset, *ElementOffset);
+  }
+  auto Base = ir.CreateLShr(ByteOffset, ir.getInt32(2));
+  bool Coherent = Buffer->GlobalCoherent && SupportsMemoryCoherency();
+
+  Value *Words = Constant::getNullValue(FixedVectorType::get(ir.getInt32Ty(), 4));
+  for (unsigned i = 0; i < 4; i++) {
+    auto *Ptr = ir.CreateGEP(ir.getInt32Ty(), Buffer->Pointer, {ir.CreateAdd(Base, ir.getInt32(i))});
+    Value *Word = Coherent ? (Value *)air.CreateDeviceCoherentLoad(ir.getInt32Ty(), Ptr)
+                           : (Value *)ir.CreateLoad(ir.getInt32Ty(), Ptr);
+    Words = ir.CreateInsertElement(Words, Word, (uint64_t)i);
+  }
+
+  auto *TyStruct = cast<StructType>(MapType(Call.getType()));
+  Type *TyElement = TyStruct->getElementType(0);
+  if (TyElement->isFloatingPointTy())
+    Words = ir.CreateBitCast(Words, FixedVectorType::get(TyElement, 4));
+  return BuildResRet(Call, Words, nullptr);
 }
 
 } // namespace dxmt::dxil
