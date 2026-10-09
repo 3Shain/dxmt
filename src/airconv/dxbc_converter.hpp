@@ -348,6 +348,9 @@ public:
   dxmt::air::FunctionSignatureBuilder func_signature;
   std::vector<Signature> output_signature;
   std::vector<std::unique_ptr<BasicBlock>> bbs;
+  std::unique_ptr<llvm::LLVMContext> dxil_context;
+  std::unique_ptr<llvm::Module> dxil;
+  llvm::Function *dxil_entry = nullptr;
   std::vector<std::function<void(SignatureContext &)>> signature_handlers;
   microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type;
   /* for domain shader, it refers to patch constant input count */
