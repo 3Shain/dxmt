@@ -538,6 +538,14 @@ Converter::TranslateInstruction(llvm::Instruction *Inst) {
   }
 }
 
+llvm::Expected<HandleInfo>
+Converter::ResolveHandleOperand(llvm::Value *Operand) {
+  auto Found = handles_.find(Operand);
+  if (Found == handles_.end())
+    return unsupported("dxil: unresolvable resource handle");
+  return Found->second;
+}
+
 llvm::Expected<llvm::Value *>
 Converter::TranslateCall(llvm::CallInst &Call) {
   auto *Callee = Call.getCalledFunction();
@@ -558,6 +566,8 @@ Converter::EmitDxilOp(CallInst &Call) {
 
   if (op == "createHandle")
     return EmitCreateHandle(Call);
+  if (op == "cbufferLoadLegacy")
+    return EmitCbufferLoadLegacy(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -573,6 +583,32 @@ Converter::EmitCreateHandle(CallInst &Call) {
     return Index.takeError();
   handles_[&Call] = HandleInfo{(ResourceClass)*Class, *Range, *Index};
   return (llvm::Value *)nullptr;
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitCbufferLoadLegacy(CallInst &Call) {
+  auto Handle = ResolveHandleOperand(Call.getArgOperand(1));
+  if (!Handle)
+    return Handle.takeError();
+  auto Descriptor = ctx.binding.GetConstantBuffer(air, Handle->range_id, Handle->index);
+  if (!Descriptor)
+    return unsupported("dxil: no constant buffer descriptor for resource");
+  auto Index = Get(Call.getArgOperand(2));
+  if (!Index)
+    return Index.takeError();
+
+  auto *TyResult = MapType(Call.getType());
+  auto *TyElement = TyResult->getStructElementType(0);
+  auto *PackedType = FixedVectorType::get(TyElement, TyResult->getStructNumElements());
+  auto *PackedPtr = ir.CreateBitCast(
+      ir.CreateGEP(air.getIntTy(4), Descriptor->Pointer, {*Index}),
+      PackedType->getPointerTo(Descriptor->Pointer->getType()->getPointerAddressSpace())
+  );
+  auto *PackedLoad = ir.CreateLoad(PackedType, PackedPtr);
+  llvm::Value *Result = PoisonValue::get(TyResult);
+  for (unsigned i = 0; i < PackedType->getNumElements(); i++)
+    Result = ir.CreateInsertValue(Result, ir.CreateExtractElement(PackedLoad, (uint64_t)i), i);
+  return Result;
 }
 
 } // namespace dxmt::dxil
