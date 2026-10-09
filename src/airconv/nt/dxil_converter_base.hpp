@@ -21,6 +21,13 @@ struct HandleInfo {
   llvm::Value *index = nullptr;
 };
 
+enum class ThreadBuiltin : uint32_t {
+  kGlobalId = 0,
+  kGroupId = 1,
+  kLocalId = 2,
+  kLocalLinearId = 3,
+};
+
 llvm::Error unsupported(llvm::StringRef what);
 
 class Converter {
@@ -54,6 +61,7 @@ private:
   llvm::Expected<llvm::Value *> EmitDxilOp(llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitCreateHandle(llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitCbufferLoadLegacy(llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitThreadId(llvm::CallInst &Call, ThreadBuiltin Kind);
 };
 
 } // namespace dxmt::dxil
