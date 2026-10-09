@@ -59,6 +59,7 @@ private:
   bool SupportsMemoryCoherency() const;
   static llvm::air::Texture MakeTexture(const dxmt::dxbc::TextureDescirptor &Descriptor);
   llvm::Value *BitcastIfNeeded(llvm::Value *Value, llvm::Type *Type);
+  llvm::Value *BuildResRet(llvm::CallInst &Call, llvm::Value *VecOrScalar, llvm::Value *Residency);
 
   llvm::Error TranslateTerminator(llvm::Instruction *Inst, llvm::BasicBlock *ReturnBB);
   llvm::Expected<llvm::Value *> TranslateInstruction(llvm::Instruction *Inst);
@@ -69,6 +70,7 @@ private:
   llvm::Expected<llvm::Value *> EmitCbufferLoadLegacy(llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitThreadId(llvm::CallInst &Call, ThreadBuiltin Kind);
   llvm::Expected<llvm::Value *> EmitBufferStore(llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitBufferLoad(llvm::CallInst &Call);
 };
 
 } // namespace dxmt::dxil
