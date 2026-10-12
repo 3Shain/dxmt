@@ -63,6 +63,8 @@ public:
     sample_int,
     sample_uint,
     sample_half,
+    sample_short,
+    sample_ushort,
   };
 
   enum MemoryAccess {
@@ -610,8 +612,10 @@ protected:
   getTexelSign(const Texture &Texture) {
     switch (Texture.sample_type) {
     case Texture::sample_int:
+    case Texture::sample_short:
       return Signedness::Signed;
     case Texture::sample_uint:
+    case Texture::sample_ushort:
       return Signedness::Unsigned;
     default:
       return Signedness::DontCare;

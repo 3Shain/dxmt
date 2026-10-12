@@ -620,6 +620,22 @@ Converter::AddOffsetIfNeeded(Value *Coord, int32_t Offset) {
   return ir.CreateAdd(Coord, ir.getInt32(Offset));
 }
 
+Type *
+Converter::GetTextureSampleType(Texture::SampleType SampleType) {
+  switch (SampleType) {
+  case Texture::sample_float:
+    return ir.getFloatTy();
+  case Texture::sample_int:
+  case Texture::sample_uint:
+    return ir.getInt32Ty();
+  case Texture::sample_half:
+    return ir.getHalfTy();
+  case Texture::sample_short:
+  case Texture::sample_ushort:
+    return ir.getInt16Ty();
+  }
+}
+
 llvm::Expected<std::tuple<Value *, Value *, Value *>>
 Converter::BuildRwAddress(
     Texture::ResourceKind LogicalKind, Value *C0, Value *C1, Value *C2, Value *MipOrSampleIndex, int32_t Off0,
@@ -785,7 +801,7 @@ Converter::EmitBufferStore(CallInst &Call) {
 
   auto Texture = GetTextureDescriptor(*Handle);
   if (Texture) {
-    auto TyElement = Texture->SampleType == Texture::sample_float ? (Type *)ir.getFloatTy() : (Type *)ir.getInt32Ty();
+    auto *TyElement = GetTextureSampleType(Texture->SampleType);
     auto *VecType = FixedVectorType::get(TyElement, 4);
     Value *Value = PoisonValue::get(VecType);
     for (unsigned i = 0; i < 4; i++) {
@@ -912,7 +928,7 @@ Converter::EmitTextureStore(CallInst &Call) {
 
   auto [Position, Slice, Unused] = *Address;
   auto Texture = MakeTexture(*Descriptor);
-  auto TyElement = Texture.sample_type == Texture::sample_float ? (Type *)ir.getFloatTy() : (Type *)ir.getInt32Ty();
+  auto *TyElement = GetTextureSampleType(Texture.sample_type);
   auto *TyVec = FixedVectorType::get(TyElement, 4);
   Value *Value = PoisonValue::get(TyVec);
   for (unsigned i = 0; i < 4; i++) {

@@ -127,6 +127,14 @@ struct MSLUint {
   };
 };
 
+struct MSLShort {
+  std::string get_name() const { return "short"; };
+
+  llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
+    return llvm::Type::getInt16Ty(context);
+  };
+};
+
 struct MSLUshort {
   std::string get_name() const { return "ushort"; };
 
@@ -165,10 +173,13 @@ constexpr auto msl_int = MSLInt{};
 constexpr auto msl_uint = MSLUint{};
 constexpr auto msl_float = MSLFloat{};
 constexpr auto msl_ulong = MSLUlong{};
+constexpr auto msl_half = MSLHalf{};
+constexpr auto msl_short = MSLShort{};
+constexpr auto msl_ushort = MSLUshort{};
 
 using MSLScalerType = std::variant<
   MSLFloat, MSLInt, MSLUint, MSLBool, MSLHalf, MSLUshort,
-  MSLUlong>; // incomplete list
+  MSLUlong, MSLShort>; // incomplete list
 
 constexpr auto msl_sampler = MSLSampler{};
 
@@ -687,6 +698,12 @@ to_air_scaler_type(dxmt::shader::common::ScalerDataType type) {
     return msl_uint;
   case shader::common::ScalerDataType::Int:
     return msl_int;
+  case shader::common::ScalerDataType::Half:
+    return msl_half;
+  case shader::common::ScalerDataType::Short:
+    return msl_short;
+  case shader::common::ScalerDataType::UShort:
+    return msl_ushort;
   case shader::common::ScalerDataType::Double:
     assert(0 && "");
     break;
