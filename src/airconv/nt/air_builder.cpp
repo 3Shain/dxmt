@@ -294,6 +294,10 @@ AIRBuilder::getTexelType(const Texture &Texture) {
     return getIntTy(4);
   if (Texture.sample_type == Texture::sample_uint)
     return getIntTy(4);
+  if (Texture.sample_type == Texture::sample_short || Texture.sample_type == Texture::sample_ushort)
+    return FixedVectorType::get(Type::getInt16Ty(getContext()), 4);
+  if (Texture.sample_type == Texture::sample_half)
+    return getHalfTy(4);
   llvm_unreachable("unhandled sample type");
 }
 

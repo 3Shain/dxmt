@@ -231,6 +231,8 @@ public:
     auto SampleType = std::visit(
         patterns{
             [](air::MSLInt) { return Texture::sample_int; }, [](air::MSLUint) { return Texture::sample_uint; },
+            [](air::MSLShort) { return Texture::sample_short; }, [](air::MSLUshort) { return Texture::sample_ushort; },
+            [](air::MSLHalf) { return Texture::sample_half; },
             [](auto) { return Texture::sample_float; }
         },
         air::to_air_scaler_type(SRV.scaler_type)
@@ -261,6 +263,8 @@ public:
     auto SampleType = std::visit(
         patterns{
             [](air::MSLInt) { return Texture::sample_int; }, [](air::MSLUint) { return Texture::sample_uint; },
+            [](air::MSLShort) { return Texture::sample_short; }, [](air::MSLUshort) { return Texture::sample_ushort; },
+            [](air::MSLHalf) { return Texture::sample_half; },
             [](auto) { return Texture::sample_float; }
         },
         air::to_air_scaler_type(UAV.scaler_type)

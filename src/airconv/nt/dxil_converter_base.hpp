@@ -66,6 +66,7 @@ private:
       llvm::air::Texture::ResourceKind LogicalKind, llvm::Value *C0, llvm::Value *C1, llvm::Value *C2,
       llvm::Value *MipOrSampleIndex, int32_t Off0, int32_t Off1, int32_t Off2
   );
+  llvm::Type *GetTextureSampleType(llvm::air::Texture::SampleType SampleType);
 
   llvm::Error TranslateTerminator(llvm::Instruction *Inst, llvm::BasicBlock *ReturnBB);
   llvm::Expected<llvm::Value *> TranslateInstruction(llvm::Instruction *Inst);

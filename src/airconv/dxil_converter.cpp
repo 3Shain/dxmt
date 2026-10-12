@@ -28,6 +28,14 @@ to_shader_scaler(ComponentType type) {
   case ComponentType::SNormF32:
   case ComponentType::UNormF32:
     return ScalerDataType::Float;
+  case ComponentType::I16:
+    return ScalerDataType::Short;
+  case ComponentType::U16:
+    return ScalerDataType::UShort;
+  case ComponentType::F16:
+  case ComponentType::SNormF16:
+  case ComponentType::UNormF16:
+    return ScalerDataType::Half;
   default:
     return std::nullopt;
   }
