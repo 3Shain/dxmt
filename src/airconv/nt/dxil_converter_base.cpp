@@ -728,6 +728,10 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitBufferUpdateCounter(Call);
   if (op == "getDimensions")
     return EmitGetDimensions(Call);
+  if (op == "rawBufferStore")
+    return EmitRawBufferStore(Call);
+  if (op == "rawBufferLoad")
+    return EmitRawBufferLoad(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -1097,6 +1101,108 @@ Converter::EmitGetDimensions(CallInst &Call) {
   Ret = ir.CreateInsertValue(Ret, C3, {2u});
   Ret = ir.CreateInsertValue(Ret, C4, {3u});
   return Ret;
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitRawBufferStore(CallInst &Call) {
+  auto Handle = ResolveHandleOperand(Call.getArgOperand(1));
+  if (!Handle)
+    return Handle.takeError();
+
+  auto Index = Get(Call.getArgOperand(2));
+  if (!Index)
+    return Index.takeError();
+  auto Mask = asU32(Call.getArgOperand(8));
+  if (!Mask)
+    return unsupported("dxil: non-constant rawBufferStore mask");
+
+  auto Component0 = Get(Call.getArgOperand(4));
+  if (!Component0)
+    return Component0.takeError();
+
+  auto Buffer = GetBufferDescriptor(*Handle);
+  if (!Buffer)
+    return unsupported("dxil: no buffer descriptor for resource");
+
+  Value *ByteOffset = *Index;
+  if (Buffer->StructureStride != 0) {
+    auto ElementOffset = Get(Call.getArgOperand(3));
+    if (!ElementOffset)
+      return ElementOffset.takeError();
+    ByteOffset = ir.CreateMul(ByteOffset, ir.getInt32(Buffer->StructureStride));
+    ByteOffset = ir.CreateAdd(ByteOffset, *ElementOffset);
+  }
+  bool Coherent = Buffer->GlobalCoherent && SupportsMemoryCoherency();
+  auto BufferAddrSpace = Buffer->Pointer->getType()->getPointerAddressSpace();
+  auto *TyElement = (*Component0)->getType();
+  auto Base = ir.CreatePointerCast(
+      ir.CreateGEP(
+          ir.getInt8Ty(), ir.CreatePointerCast(Buffer->Pointer, ir.getInt8PtrTy(BufferAddrSpace)), {ByteOffset}
+      ),
+      TyElement->getPointerTo(BufferAddrSpace)
+  );
+
+  for (unsigned i = 0; i < 4; i++) {
+    if (!(*Mask & (1u << i)))
+      continue;
+    auto Component = Get(Call.getArgOperand(4 + i));
+    if (!Component)
+      return Component.takeError();
+    auto *Ptr = ir.CreateConstGEP1_32(TyElement, Base, i);
+    if (Coherent)
+      air.CreateDeviceCoherentStore(*Component, Ptr);
+    else
+      ir.CreateStore(*Component, Ptr);
+  }
+  return (llvm::Value *)nullptr;
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitRawBufferLoad(CallInst &Call) {
+  auto Handle = ResolveHandleOperand(Call.getArgOperand(1));
+  if (!Handle)
+    return Handle.takeError();
+
+  auto Index = Get(Call.getArgOperand(2));
+  if (!Index)
+    return Index.takeError();
+
+  auto Buffer = GetBufferDescriptor(*Handle);
+  if (!Buffer)
+    return unsupported("dxil: no buffer descriptor for resource");
+  auto Mask = asU32(Call.getArgOperand(4));
+  if (!Mask)
+    return unsupported("dxil: non-constant rawBufferLoad mask");
+
+  Value *ByteOffset = *Index;
+  if (Buffer->StructureStride != 0) {
+    auto ElementOffset = Get(Call.getArgOperand(3));
+    if (!ElementOffset)
+      return ElementOffset.takeError();
+    ByteOffset = ir.CreateMul(ByteOffset, ir.getInt32(Buffer->StructureStride));
+    ByteOffset = ir.CreateAdd(ByteOffset, *ElementOffset);
+  }
+  bool Coherent = Buffer->GlobalCoherent && SupportsMemoryCoherency();
+  auto *TyStruct = cast<StructType>(MapType(Call.getType()));
+  Type *TyElement = TyStruct->getElementType(0);
+  auto BufferAddrSpace = Buffer->Pointer->getType()->getPointerAddressSpace();
+  auto Base = ir.CreatePointerCast(
+      ir.CreateGEP(
+          ir.getInt8Ty(), ir.CreatePointerCast(Buffer->Pointer, ir.getInt8PtrTy(BufferAddrSpace)), {ByteOffset}
+      ),
+      TyElement->getPointerTo(BufferAddrSpace)
+  );
+
+  Value *Vector = Constant::getNullValue(FixedVectorType::get(TyElement, 4));
+  for (unsigned i = 0; i < 4; i++) {
+    if (!(*Mask & (1u << i)))
+      continue;
+    auto *Ptr = ir.CreateConstGEP1_32(TyElement, Base, i);
+    Value *Component =
+        Coherent ? (Value *)air.CreateDeviceCoherentLoad(TyElement, Ptr) : (Value *)ir.CreateLoad(TyElement, Ptr);
+    Vector = ir.CreateInsertElement(Vector, Component, (uint64_t)i);
+  }
+  return BuildResRet(Call, Vector, nullptr);
 }
 
 } // namespace dxmt::dxil
