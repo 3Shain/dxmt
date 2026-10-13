@@ -201,8 +201,11 @@ Converter::MapConstant(llvm::Constant *Constant) {
     Mapped = llvm::PoisonValue::get(MapType(Constant->getType()));
   } else if (llvm::isa<llvm::ConstantAggregateZero>(Constant)) {
     Mapped = llvm::ConstantAggregateZero::get(MapType(Constant->getType()));
-  } else if (llvm::isa<llvm::GlobalVariable>(Constant)) {
-    return unsupported("dxil: unhandled GlobalVariable");
+  } else if (auto *Global = llvm::dyn_cast<llvm::GlobalVariable>(Constant)) {
+    auto MappedGlobal = MapGlobal(Global);
+    if (!MappedGlobal)
+      return MappedGlobal.takeError();
+    Mapped = *MappedGlobal;
   } else if (auto *Sequence = llvm::dyn_cast<llvm::ConstantDataSequential>(Constant)) {
     llvm::SmallVector<llvm::Constant *, 16> Elements;
     for (unsigned i = 0; i < Sequence->getNumElements(); i++) {
@@ -252,6 +255,38 @@ Converter::MapConstant(llvm::Constant *Constant) {
   }
 
   constant_map_[Constant] = Mapped;
+  return Mapped;
+}
+
+llvm::Expected<llvm::GlobalVariable *>
+Converter::MapGlobal(llvm::GlobalVariable *Global) {
+  auto Found = global_map_.find(Global);
+  if (Found != global_map_.end())
+    return Found->second;
+
+  auto *Type = MapType(Global->getValueType());
+  llvm::GlobalVariable *Mapped = nullptr;
+  if (Global->getAddressSpace() == 3) {
+    if (Global->hasInitializer() && !isa<llvm::UndefValue>(Global->getInitializer()))
+      return unsupported("dxil: unsupported tgsm initializer");
+    Mapped = new llvm::GlobalVariable(
+        *air.getModule(), Type, false, llvm::GlobalValue::InternalLinkage, llvm::UndefValue::get(Type),
+        Global->getName(), nullptr, Global->getThreadLocalMode(), 3
+    );
+  } else if (Global->hasLocalLinkage() && Global->isConstant() && Global->hasInitializer()) {
+    auto initializer = MapConstant(Global->getInitializer());
+    if (!initializer)
+      return initializer.takeError();
+    Mapped = new llvm::GlobalVariable(
+        *air.getModule(), Type, true, Global->getLinkage(), *initializer, Global->getName(), nullptr,
+        Global->getThreadLocalMode(), 2
+    );
+  } else {
+    return unsupported("dxil: unsupported Global variable " + Global->getName().str());
+  }
+  Mapped->setAlignment(Global->getAlign());
+  Mapped->setUnnamedAddr(Global->getUnnamedAddr());
+  global_map_[Global] = Mapped;
   return Mapped;
 }
 
