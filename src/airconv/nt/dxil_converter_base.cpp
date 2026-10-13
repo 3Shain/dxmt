@@ -726,6 +726,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitTextureLoad(Call);
   if (op == "bufferUpdateCounter")
     return EmitBufferUpdateCounter(Call);
+  if (op == "getDimensions")
+    return EmitGetDimensions(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -1002,6 +1004,99 @@ Converter::EmitBufferUpdateCounter(CallInst &Call) {
     return OldValue;
   }
   return unsupported("dxil: non-constant buffer counter increment");
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitGetDimensions(CallInst &Call) {
+  auto Handle = ResolveHandleOperand(Call.getArgOperand(1));
+  if (!Handle)
+    return Handle.takeError();
+
+  auto Level = Get(Call.getArgOperand(2));
+  if (!Level)
+    return Level.takeError();
+
+  Value *C1 = llvm::UndefValue::get(ir.getInt32Ty());
+  Value *C2 = llvm::UndefValue::get(ir.getInt32Ty());
+  Value *C3 = llvm::UndefValue::get(ir.getInt32Ty());
+  Value *C4 = llvm::UndefValue::get(ir.getInt32Ty());
+
+  if (auto Descriptor = GetTextureDescriptor(*Handle)) {
+    auto Texture = MakeTexture(*Descriptor);
+    switch (Descriptor->ResourceKindLogical) {
+    case Texture::texture_buffer:
+      C1 = ir.CreateTrunc(ir.CreateLShr(Descriptor->Metadata, 32uLL), air.getIntTy());
+      break;
+    case Texture::texture1d:
+      C1 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::width, *Level);
+      C4 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::num_mip_levels, nullptr);
+      break;
+    case Texture::texture1d_array:
+      C1 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::width, *Level);
+      C2 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::array_length, nullptr);
+      C4 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::num_mip_levels, nullptr);
+      break;
+    case Texture::texture2d:
+    case Texture::depth2d:
+      C1 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::width, *Level);
+      C2 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::height, *Level);
+      C4 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::num_mip_levels, nullptr);
+      break;
+    case Texture::texture2d_array:
+    case Texture::depth2d_array:
+      C1 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::width, *Level);
+      C2 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::height, *Level);
+      C3 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::array_length, nullptr);
+      C4 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::num_mip_levels, nullptr);
+      break;
+    case Texture::texture3d:
+      C1 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::width, *Level);
+      C2 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::height, *Level);
+      C3 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::depth, *Level);
+      C4 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::num_mip_levels, nullptr);
+      break;
+    case Texture::texturecube:
+    case Texture::depthcube:
+      C1 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::width, *Level);
+      C2 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::height, *Level);
+      C4 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::num_mip_levels, nullptr);
+      break;
+    case Texture::texturecube_array:
+    case Texture::depthcube_array:
+      C1 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::width, *Level);
+      C2 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::height, *Level);
+      C3 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::array_length, nullptr);
+      C4 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::num_mip_levels, nullptr);
+      break;
+    case Texture::texture2d_ms:
+    case Texture::depth_2d_ms:
+      C1 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::width, nullptr);
+      C2 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::height, nullptr);
+      C4 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::num_samples, nullptr);
+      break;
+    case Texture::texture2d_ms_array:
+    case Texture::depth_2d_ms_array:
+      C1 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::width, nullptr);
+      C2 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::height, nullptr);
+      C3 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::array_length, nullptr);
+      C4 = air.CreateTextureQuery(Texture, Descriptor->ResourceHandle, Texture::num_samples, nullptr);
+      break;
+    }
+  } else if (auto Buffer = GetBufferDescriptor(*Handle)) {
+    C1 = ir.CreateTrunc(Buffer->Metadata, air.getIntTy());
+    if (Buffer->StructureStride) {
+      C1 = ir.CreateUDiv(C1, ir.getInt32(Buffer->StructureStride));
+    }
+  } else
+    return unsupported("dxil: no buffer descriptor for resource");
+
+  auto *TyStruct = cast<StructType>(MapType(Call.getType()));
+  Value *Ret = llvm::PoisonValue::get(TyStruct);
+  Ret = ir.CreateInsertValue(Ret, C1, {0u});
+  Ret = ir.CreateInsertValue(Ret, C2, {1u});
+  Ret = ir.CreateInsertValue(Ret, C3, {2u});
+  Ret = ir.CreateInsertValue(Ret, C4, {3u});
+  return Ret;
 }
 
 } // namespace dxmt::dxil
