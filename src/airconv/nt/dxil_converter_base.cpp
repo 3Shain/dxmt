@@ -736,6 +736,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitLegacyF16ToF32(Call);
   if (op == "legacyF32ToF16")
     return EmitLegacyF32ToF16(Call);
+  if (op == "unaryBits")
+    return EmitUnaryBits(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -1225,6 +1227,44 @@ Converter::EmitLegacyF32ToF16(CallInst &Call) {
     return Float.takeError();
 
   return ir.CreateZExt(ir.CreateBitCast(air.CreateConvertToHalf(*Float), ir.getInt16Ty()), ir.getInt32Ty());
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitUnaryBits(CallInst &Call) {
+  auto Bits = Get(Call.getArgOperand(1));
+  if (!Bits)
+    return Bits.takeError();
+
+  auto Op = asU32(Call.getArgOperand(0));
+  if (!Op)
+    return unsupported("dxil: non-constant unaryBits op");
+
+  auto NormalizeOverflow = [this](llvm::Value *Value) {
+    llvm::Value *Max = llvm::ConstantInt::getAllOnesValue(Value->getType());
+    auto BitWidth = Max->getType()->getIntegerBitWidth();
+    return ir.CreateSExtOrTrunc(
+        ir.CreateSelect(ir.CreateIsNull(ir.CreateAnd(Value, ~(BitWidth - 1))), Value, Max), ir.getInt32Ty()
+    );
+  };
+
+  switch (*Op) {
+  case 31: // countbits
+    return ir.CreateSExtOrTrunc(air.CreateIntUnOp(AIRBuilder::popcount, *Bits), ir.getInt32Ty());
+  case 32: // firstbitlow
+    return NormalizeOverflow(air.CreateCountZero(*Bits, true));
+  case 33: // firstbithigh
+    return NormalizeOverflow(air.CreateCountZero(*Bits, false));
+  case 34: // firstbithigh_shi
+    return NormalizeOverflow(ir.CreateSelect(
+        ir.CreateIsNotNeg(*Bits), air.CreateCountZero(*Bits, false),
+        ir.CreateAdd(
+            air.CreateCountZero(ir.CreateShl(ir.CreateNot(*Bits), 1ull), false),
+            llvm::ConstantInt::get((*Bits)->getType(), 1)
+        )
+    ));
+  default:
+    return unsupported("dxil: unsupported unaryBits op " + std::to_string(*Op));
+  }
 }
 
 } // namespace dxmt::dxil
