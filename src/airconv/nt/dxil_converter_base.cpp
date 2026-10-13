@@ -732,6 +732,10 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitRawBufferStore(Call);
   if (op == "rawBufferLoad")
     return EmitRawBufferLoad(Call);
+  if (op == "legacyF16ToF32")
+    return EmitLegacyF16ToF32(Call);
+  if (op == "legacyF32ToF16")
+    return EmitLegacyF32ToF16(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -1203,6 +1207,24 @@ Converter::EmitRawBufferLoad(CallInst &Call) {
     Vector = ir.CreateInsertElement(Vector, Component, (uint64_t)i);
   }
   return BuildResRet(Call, Vector, nullptr);
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitLegacyF16ToF32(CallInst &Call) {
+  auto HalfInI32 = Get(Call.getArgOperand(1));
+  if (!HalfInI32)
+    return HalfInI32.takeError();
+
+  return air.CreateConvertToFloat(ir.CreateBitCast(ir.CreateTrunc(*HalfInI32, ir.getInt16Ty()), ir.getHalfTy()));
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitLegacyF32ToF16(CallInst &Call) {
+  auto Float = Get(Call.getArgOperand(1));
+  if (!Float)
+    return Float.takeError();
+
+  return ir.CreateZExt(ir.CreateBitCast(air.CreateConvertToHalf(*Float), ir.getInt16Ty()), ir.getInt32Ty());
 }
 
 } // namespace dxmt::dxil
