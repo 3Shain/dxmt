@@ -605,6 +605,11 @@ Converter::SupportsMemoryCoherency() const {
   return ctx.metal_version >= SM50_SHADER_METAL_320;
 }
 
+bool
+Converter::SupportsNonExecutionBarrier() const {
+  return ctx.metal_version >= SM50_SHADER_METAL_320;
+}
+
 llvm::air::Texture
 Converter::MakeTexture(const dxmt::dxbc::TextureDescirptor &Descriptor) {
   return llvm::air::Texture{
@@ -773,6 +778,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitLegacyF32ToF16(Call);
   if (op == "unaryBits")
     return EmitUnaryBits(Call);
+  if (op == "barrier")
+    return EmitBarrier(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -1300,6 +1307,27 @@ Converter::EmitUnaryBits(CallInst &Call) {
   default:
     return unsupported("dxil: unsupported unaryBits op " + std::to_string(*Op));
   }
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitBarrier(CallInst &Call) {
+  auto Mode = asU32(Call.getArgOperand(1));
+  if (!Mode)
+    return unsupported("dxil: non-constant barrier mode");
+  uint32_t Flags = 0;
+  if (*Mode & (2 | 4))
+    Flags |= (uint32_t)MemFlags::Device | (uint32_t)MemFlags::Texture;
+  if (*Mode & 8)
+    Flags |= (uint32_t)MemFlags::Threadgroup;
+  // UAVFenceGlobal = 2
+  // UAVFenceThreadGroup = 4
+  // TGSMFence = 8
+  if ((*Mode & (2 | 4 | 8)) && SupportsNonExecutionBarrier())
+    air.CreateAtomicFence((MemFlags)Flags, (*Mode & 2) ? ThreadScope::Device : ThreadScope::Threadgroup);
+  // SyncThreadGroup = 1
+  if ((*Mode & 1) || !(SupportsNonExecutionBarrier()))
+    air.CreateBarrier((MemFlags)Flags);
+  return (llvm::Value *)nullptr;
 }
 
 } // namespace dxmt::dxil
