@@ -213,6 +213,9 @@ constexpr auto msl_float3 = MSLVector{3, msl_float};
 constexpr auto msl_int4 = MSLVector{4, msl_int};
 constexpr auto msl_uint4 = MSLVector{4, msl_uint};
 constexpr auto msl_float4 = MSLVector{4, msl_float};
+constexpr auto msl_short4 = MSLVector{4, msl_short};
+constexpr auto msl_ushort4 = MSLVector{4, msl_ushort};
+constexpr auto msl_half4 = MSLVector{4, msl_half};
 
 struct MSLTexture {
   MSLScalerType component_type;

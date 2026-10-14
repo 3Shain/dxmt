@@ -49,10 +49,16 @@ IOHelper::ExtendToVec4(llvm::Value *value) {
 llvm::Value *
 IOHelper::ToDesiredTypeFromIntVec4(llvm::Value *vec4, llvm::Type *desired, uint32_t mask) {
   llvm::Type *scalar = desired->getScalarType();
-  assert((scalar == types._int || scalar == types._float) && "unhandled desired element type");
-
-  // reinterpret the integer register as float when a float type is requested
-  llvm::Value *value = scalar == types._float ? ir.CreateBitCast(vec4, types._float4) : vec4;
+  llvm::Value *value = vec4;
+  if (scalar->isFloatTy()) {
+    value = ir.CreateBitCast(value, types._float4);
+  } else if (scalar->isHalfTy()) {
+    value = ir.CreateBitCast(ir.CreateTrunc(value, types._short4), types._half4);
+  } else if (scalar->isIntegerTy(16)) {
+    value = ir.CreateTrunc(value, types._short4);
+  } else if (!scalar->isIntegerTy(32)) {
+    assert(0 && "unhandled desired element type");
+  }
 
   if (auto *vector = llvm::dyn_cast<llvm::FixedVectorType>(desired)) {
     unsigned num_elements = vector->getNumElements();
@@ -118,14 +124,38 @@ IOHelper::StoreAtVec4ArrayMasked(llvm::Value *array, llvm::Value *index, llvm::V
 llvm::Error
 IOHelper::InitializeInput(uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask, bool fix_w_component) {
   llvm::Value *arg = function->getArg(with_fnarg_at);
+
+  auto ToInt32 = [this](llvm::Value *Value) -> llvm::Expected<llvm::Value *> {
+    if (Value->getType()->getScalarType() == types._int)
+      return Value;
+    if (auto Vector = dyn_cast<llvm::FixedVectorType>(Value->getType())) {
+      if (Vector->getScalarSizeInBits() == 32) {
+        return ir.CreateBitCast(Value, air.getIntTy(Vector->getNumElements()));
+      } else if (Vector->getScalarSizeInBits() == 16) {
+        return ir.CreateZExt(
+            ir.CreateBitCast(Value, llvm::FixedVectorType::get(ir.getInt16Ty(), Vector->getNumElements())),
+            air.getIntTy(Vector->getNumElements())
+        );
+      }
+    } else if (Value->getType()->getScalarType() == Value->getType()) {
+      if (Value->getType()->getScalarSizeInBits() == 32) {
+        return ir.CreateBitCast(Value, air.getIntTy());
+      } else if (Value->getType()->getScalarSizeInBits() == 16) {
+        return ir.CreateZExt(ir.CreateBitCast(Value, ir.getInt16Ty()), air.getIntTy());
+      }
+    }
+    return llvm::make_error<UnsupportedFeature>("unhandled input type");
+  };
+
   if (arg->getType()->getScalarType()->isIntegerTy()) {
     if (arg->getType()->getScalarType() == types._bool) {
       // front_facing
       return StoreAtVec4ArrayMasked(io.input.ptr_int4, air.getInt(to_reg), ir.CreateSExt(arg, types._int), mask);
-    } else if (arg->getType()->getScalarType() != types._int) {
-      return llvm::make_error<UnsupportedFeature>("TODO: handle non 32 bit integer");
     } else {
-      return StoreAtVec4ArrayMasked(io.input.ptr_int4, air.getInt(to_reg), arg, mask);
+      auto Int32Value = ToInt32(arg);
+      if (auto err = Int32Value.takeError())
+        return err;
+      return StoreAtVec4ArrayMasked(io.input.ptr_int4, air.getInt(to_reg), *Int32Value, mask);
     }
   } else if (arg->getType()->getScalarType()->isFloatTy()) {
     if (fix_w_component && isa<llvm::FixedVectorType>(arg->getType()) &&
@@ -135,6 +165,11 @@ IOHelper::InitializeInput(uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask
       arg = ir.CreateInsertElement(arg, rcp_w, 3);
     }
     return StoreAtVec4ArrayMasked(io.input.ptr_float4, air.getInt(to_reg), arg, mask);
+  } else if (arg->getType()->getScalarType()->isHalfTy()) {
+      auto Int32Value = ToInt32(arg);
+      if (auto err = Int32Value.takeError())
+        return err;
+    return StoreAtVec4ArrayMasked(io.input.ptr_int4, air.getInt(to_reg), *Int32Value, mask);
   } else {
     return llvm::make_error<UnsupportedFeature>("TODO: unhandled input type? might be interpolant...");
   }
