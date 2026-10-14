@@ -117,13 +117,14 @@ initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
     return llvm::make_error<UnsupportedFeature>("dxil: only a single entry point is supported");
   const EntryPoint &entry = info.entry_points.front();
 
+  shader->dxil_entry = entry;
+
   const char *stage = info.shader_model.stage.c_str();
   if (info.shader_model.stage == "cs") {
     shader->shader_type = microsoft::D3D11_SB_COMPUTE_SHADER;
   } else {
     return llvm::make_error<UnsupportedFeature>("dxil: unsupported shader stage " + std::string(stage));
   }
-  shader->dxil_entry = const_cast<llvm::Function *>(entry.function);
 
   auto &func_signature = shader->func_signature;
   if (shader->shader_type == microsoft::D3D11_SB_COMPUTE_SHADER) {
@@ -324,7 +325,7 @@ initialize(
 }
 
 llvm::Expected<llvm::BasicBlock *>
-convert_basicblocks(llvm::Function *entry, dxmt::dxbc::context &ctx, llvm::BasicBlock *return_bb) {
+convert_basicblocks(const EntryPoint & entry, dxmt::dxbc::context &ctx, llvm::BasicBlock *return_bb) {
   auto saved_block = ctx.builder.GetInsertBlock();
   Converter converter(entry, ctx);
   auto result = converter.Run(return_bb);

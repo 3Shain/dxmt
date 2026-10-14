@@ -41,7 +41,7 @@ tryGetI32(Value *value) {
   return (int32_t)0;
 }
 
-Converter::Converter(llvm::Function *entry, dxmt::dxbc::context &ctx) :
+Converter::Converter(EntryPoint const &entry, dxmt::dxbc::context &ctx) :
     ctx(ctx),
     ir(ctx.builder),
     air(ctx.air),
@@ -49,11 +49,11 @@ Converter::Converter(llvm::Function *entry, dxmt::dxbc::context &ctx) :
 
 llvm::Expected<llvm::BasicBlock *>
 Converter::Run(llvm::BasicBlock *ReturnBB) {
-  if (!entry)
+  if (!entry.function)
     return unsupported("dxil: entry point is missing");
 
   {
-    for (auto &BB : *entry) {
+    for (auto &BB : *entry.function) {
       auto *NewBB = llvm::BasicBlock::Create(air.getContext(), "", ctx.function);
       block_map_[&BB] = NewBB;
       ir.SetInsertPoint(NewBB);
@@ -65,7 +65,8 @@ Converter::Run(llvm::BasicBlock *ReturnBB) {
       }
     }
 
-    for (auto &BB : *entry) {
+    // FIXME: remove const_cast
+    for (auto &BB : *const_cast<llvm::Function *>(entry.function)) {
       ir.SetInsertPoint(block_map_[&BB]);
       for (auto &Inst : BB) {
         if (isa<PHINode>(&Inst))
@@ -84,7 +85,7 @@ Converter::Run(llvm::BasicBlock *ReturnBB) {
     }
   }
 
-  return block_map_[&entry->getEntryBlock()];
+  return block_map_[&entry.function->getEntryBlock()];
 }
 
 llvm::Type *
