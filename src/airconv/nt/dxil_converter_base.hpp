@@ -33,14 +33,14 @@ llvm::Error unsupported(llvm::StringRef what);
 
 class Converter {
 public:
-  Converter(llvm::Function *entry, dxmt::dxbc::context &ctx);
+  Converter(const EntryPoint & entry, dxmt::dxbc::context &ctx);
   llvm::Expected<llvm::BasicBlock *> Run(llvm::BasicBlock *ReturnBB);
 
 private:
   dxmt::dxbc::context &ctx;
   llvm::IRBuilder<> &ir;
   llvm::air::AIRBuilder &air;
-  llvm::Function *entry = nullptr;
+  const EntryPoint & entry;
 
   llvm::DenseMap<const llvm::Value *, llvm::Value *> value_map_;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::BasicBlock *> block_map_;
