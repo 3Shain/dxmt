@@ -781,6 +781,10 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitUnaryBits(Call);
   if (op == "barrier")
     return EmitBarrier(Call);
+  if (op == "loadInput")
+    return EmitLoadInput(Call);
+  if (op == "storeOutput")
+    return EmitStoreOutput(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -1329,6 +1333,133 @@ Converter::EmitBarrier(CallInst &Call) {
   if ((*Mode & 1) || !(SupportsNonExecutionBarrier()))
     air.CreateBarrier((MemFlags)Flags);
   return (llvm::Value *)nullptr;
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitLoadInput(const CallInst &Call) {
+  auto Element = asU32(Call.getArgOperand(1));
+  auto Row = asU32(Call.getArgOperand(2));
+  auto Component = asU32(Call.getArgOperand(3));
+  if (!Element || !Row || !Component)
+    return unsupported("dxil: non-constant loadInput index");
+  if (*Element >= entry.inputs.size())
+    return unsupported("dxil: loadInput element index out of range");
+  const auto &signature = entry.inputs[*Element];
+  if (signature.start_row < 0 || signature.start_col < 0)
+    return unsupported("dxil: input signature element is not mapped");
+  if (!ctx.resource.input.ptr_int4 || !ctx.resource.input.ptr_float4)
+    return unsupported("dxil: input register file is not available");
+  switch (signature.semantic_kind) {
+  case SemanticKind::Position:
+  case SemanticKind::VertexID:
+  case SemanticKind::InstanceID:
+  case SemanticKind::Arbitrary:
+    break;
+  default:
+    return unsupported("dxil: unsupported loadInput semantic " + std::to_string((uint32_t)signature.semantic_kind));
+  }
+
+  auto *Type = Call.getType();
+  uint32_t Reg = (uint32_t)signature.start_row + *Row;
+  uint32_t Lane = (uint32_t)signature.start_col + *Component;
+  if (Lane > 3)
+    return unsupported("dxil: loadInput component out of range");
+
+  if (Type->isIntegerTy()) {
+    auto *Ptr = ir.CreateGEP(
+        ctx.resource.input.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.input.ptr_int4,
+        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+    );
+    auto *Value = ir.CreateLoad(ir.getInt32Ty(), Ptr);
+    if (Type->getIntegerBitWidth() < 32)
+      return ir.CreateTrunc(Value, Type);
+    if (Type->getIntegerBitWidth() == 32)
+      return Value;
+    return unsupported("dxil: unsupported loadInput integer width");
+  }
+  if (Type->isFloatTy()) {
+    auto *Ptr = ir.CreateGEP(
+        ctx.resource.input.ptr_float4->getType()->getNonOpaquePointerElementType(), ctx.resource.input.ptr_float4,
+        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+    );
+    return ir.CreateLoad(ir.getFloatTy(), Ptr);
+  }
+  if (Type->isHalfTy()) {
+    auto *Ptr = ir.CreateGEP(
+        ctx.resource.input.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.input.ptr_int4,
+        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+    );
+    auto *Value = ir.CreateLoad(ir.getInt32Ty(), Ptr);
+    return ir.CreateBitCast(ir.CreateTrunc(Value, ir.getInt16Ty()), ir.getHalfTy());
+  }
+  return unsupported("dxil: unsupported loadInput type");
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitStoreOutput(const CallInst &Call) {
+  auto Element = asU32(Call.getArgOperand(1));
+  auto Row = asU32(Call.getArgOperand(2));
+  auto Component = asU32(Call.getArgOperand(3));
+  if (!Element || !Row || !Component)
+    return unsupported("dxil: non-constant storeOutput index");
+  if (*Element >= entry.outputs.size())
+    return unsupported("dxil: storeOutput element index out of range");
+  auto Value = Get(Call.getArgOperand(4));
+  if (!Value)
+    return Value.takeError();
+  if (!*Value)
+    return unsupported("dxil: missing storeOutput value");
+  const auto &signature = entry.outputs[*Element];
+  auto *Stored = *Value;
+
+  switch (signature.semantic_kind) {
+  case SemanticKind::Position:
+  case SemanticKind::Target:
+  case SemanticKind::Arbitrary:
+    break;
+  default:
+    return unsupported("dxil: unsupported storeOutput semantic " + std::to_string((uint32_t)signature.semantic_kind));
+  }
+
+  if (signature.start_row < 0 || signature.start_col < 0)
+    return unsupported("dxil: output signature element is not mapped");
+  if (!ctx.resource.output.ptr_int4 || !ctx.resource.output.ptr_float4)
+    return unsupported("dxil: output register file is not available");
+  uint32_t Reg = (uint32_t)signature.start_row + *Row;
+  uint32_t Lane = (uint32_t)signature.start_col + *Component;
+  if (Lane > 3)
+    return unsupported("dxil: storeOutput component out of range");
+
+  if (Stored->getType()->isFloatTy()) {
+    auto *Ptr = ir.CreateGEP(
+        ctx.resource.output.ptr_float4->getType()->getNonOpaquePointerElementType(), ctx.resource.output.ptr_float4,
+        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+    );
+    ir.CreateStore(Stored, Ptr);
+    return (llvm::Value *)nullptr;
+  }
+  if (Stored->getType()->isHalfTy()) {
+    Stored = ir.CreateZExt(ir.CreateBitCast(Stored, ir.getInt16Ty()), ir.getInt32Ty());
+    auto *Ptr = ir.CreateGEP(
+        ctx.resource.output.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.output.ptr_int4,
+        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+    );
+    ir.CreateStore(Stored, Ptr);
+    return (llvm::Value *)nullptr;
+  }
+  if (Stored->getType()->isIntegerTy()) {
+    if (Stored->getType()->getIntegerBitWidth() < 32)
+      Stored = ir.CreateZExt(Stored, ir.getInt32Ty());
+    else if (Stored->getType()->getIntegerBitWidth() > 32)
+      return unsupported("dxil: unsupported storeOutput integer width");
+    auto *Ptr = ir.CreateGEP(
+        ctx.resource.output.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.output.ptr_int4,
+        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+    );
+    ir.CreateStore(Stored, Ptr);
+    return (llvm::Value *)nullptr;
+  }
+  return unsupported("dxil: unsupported storeOutput type");
 }
 
 } // namespace dxmt::dxil
