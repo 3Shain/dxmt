@@ -601,6 +601,14 @@ Converter::GetBufferDescriptor(const HandleInfo &Handle) {
                                                      : ctx.binding.GetUAVBuffer(air, Handle.range_id, Handle.index);
 }
 
+llvm::Expected<dxmt::dxbc::SamplerDescriptor>
+Converter::GetSamplerDescriptor(const HandleInfo &Handle) {
+  auto descriptor = ctx.binding.GetSampler(air, Handle.range_id, Handle.index);
+  if (!descriptor)
+    return unsupported("dxil: no sampler descriptor for resource");
+  return *descriptor;
+}
+
 bool
 Converter::SupportsMemoryCoherency() const {
   return ctx.metal_version >= SM50_SHADER_METAL_320;
@@ -628,7 +636,7 @@ Converter::BitcastIfNeeded(Value *Value, Type *Type) {
 }
 
 Value *
-Converter::BuildResRet(CallInst &Call, Value *VecOrScalar, Value *Residency) {
+Converter::BuildResRet(const CallInst &Call, Value *VecOrScalar, Value *Residency) {
   auto *TyStruct = cast<StructType>(MapType(Call.getType()));
   Type *Element = TyStruct->getElementType(0);
   Value *Result = PoisonValue::get(TyStruct);
@@ -785,6 +793,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitLoadInput(Call);
   if (op == "storeOutput")
     return EmitStoreOutput(Call);
+  if (op == "sample")
+    return EmitSample(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -1460,6 +1470,89 @@ Converter::EmitStoreOutput(const CallInst &Call) {
     return (llvm::Value *)nullptr;
   }
   return unsupported("dxil: unsupported storeOutput type");
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitSample(const CallInst &Call) {
+  auto TextureHandle = ResolveHandleOperand(Call.getArgOperand(1));
+  if (!TextureHandle)
+    return TextureHandle.takeError();
+  auto TextureDescriptor = GetTextureDescriptor(*TextureHandle);
+  if (!TextureDescriptor)
+    return unsupported("dxil: no texture descriptor for resource");
+  auto SamplerHandle = ResolveHandleOperand(Call.getArgOperand(2));
+  if (!SamplerHandle)
+    return SamplerHandle.takeError();
+  auto SamplerDescriptor = GetSamplerDescriptor(*SamplerHandle);
+  if (!SamplerDescriptor)
+    return SamplerDescriptor.takeError();
+  auto Texture = MakeTexture(*TextureDescriptor);
+  auto Sampler = SamplerDescriptor->SamplerHandle;
+
+  auto C0 = Get(Call.getArgOperand(3));
+  if (!C0)
+    return C0.takeError();
+  auto C1 = Get(Call.getArgOperand(4));
+  if (!C1)
+    return C1.takeError();
+  auto C2 = Get(Call.getArgOperand(5));
+  if (!C2)
+    return C2.takeError();
+  auto C3 = Get(Call.getArgOperand(6));
+  if (!C3)
+    return C3.takeError();
+
+  const int32_t Offset[3] = {
+      tryGetI32(Call.getArgOperand(7)), tryGetI32(Call.getArgOperand(8)), tryGetI32(Call.getArgOperand(9))
+  };
+
+  Value *Coord = nullptr;
+  Value *Array = nullptr;
+
+  auto ConvertArrayIndexFromFloat = [this](Value *Value) {
+    return air.CreateConvertToSigned(air.CreateFPUnOp(AIRBuilder::rint, Value));
+  };
+
+  switch (TextureDescriptor->ResourceKindLogical) {
+  case Texture::texture1d:
+    Coord = MakeVec({*C0, air.getFloat(0)});
+    break;
+  case Texture::texture1d_array:
+    Coord = MakeVec({*C0, air.getFloat(0)});
+    Array = ConvertArrayIndexFromFloat(*C1);
+    break;
+  case Texture::texture2d:
+  case Texture::depth2d:
+    Coord = MakeVec({*C0, *C1});
+    break;
+  case Texture::texture2d_array:
+  case Texture::depth2d_array:
+    Coord = MakeVec({*C0, *C1});
+    Array = ConvertArrayIndexFromFloat(*C2);
+    break;
+  case Texture::texture3d:
+    Coord = MakeVec({*C0, *C1, *C2});
+    break;
+  case Texture::texturecube:
+  case Texture::depthcube:
+    Coord = MakeVec({*C0, *C1, *C2});
+    break;
+  case Texture::texturecube_array:
+  case Texture::depthcube_array:
+    Coord = MakeVec({*C0, *C1, *C2});
+    Array = ConvertArrayIndexFromFloat(*C3);
+    break;
+  default:
+    return unsupported(
+        "dxil: unsupported texture kind for sampling: " +
+        std::to_string(static_cast<uint32_t>(TextureDescriptor->ResourceKindLogical))
+    );
+  }
+
+  auto [Value, Residency] = air.CreateSample(Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, Offset);
+  if (!Value)
+    return unsupported("dxil: sampling operation failed");
+  return BuildResRet(Call, Value, Residency);
 }
 
 } // namespace dxmt::dxil
