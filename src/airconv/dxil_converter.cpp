@@ -121,6 +121,12 @@ to_signature_msl_type(ComponentType type) {
     return air::msl_uint4;
   case ComponentType::F32:
     return air::msl_float4;
+  case ComponentType::F16:
+    return air::msl_half4;
+  case ComponentType::I16:
+    return air::msl_short4;
+  case ComponentType::U16:
+    return air::msl_ushort4;
   default:
     return std::nullopt;
   }
