@@ -793,8 +793,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitLoadInput(Call);
   if (op == "storeOutput")
     return EmitStoreOutput(Call);
-  if (op == "sample")
-    return EmitSample(Call);
+  if (op == "sample" || op == "sampleLevel" || op == "sampleBias" || op == "sampleCmp" || op == "sampleCmpLevelZero")
+    return EmitSample(Call, op);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -1488,7 +1488,7 @@ Converter::EmitStoreOutput(const CallInst &Call) {
 }
 
 llvm::Expected<llvm::Value *>
-Converter::EmitSample(const CallInst &Call) {
+Converter::EmitSample(const CallInst &Call, StringRef Op) {
   auto TextureHandle = ResolveHandleOperand(Call.getArgOperand(1));
   if (!TextureHandle)
     return TextureHandle.takeError();
@@ -1564,9 +1564,48 @@ Converter::EmitSample(const CallInst &Call) {
     );
   }
 
-  auto [Value, Residency] = air.CreateSample(Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, Offset);
+  llvm::Value *Value = nullptr, *Residency = nullptr;
+  if (Op == "sampleLevel") {
+    auto Level = Get(Call.getArgOperand(10));
+    if (!Level)
+      return Level.takeError();
+    std::tie(Value, Residency) = air.CreateSample(
+        Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, Offset, sample_level{*Level}
+    );
+  } else if (Op == "sampleBias") {
+    auto Bias = Get(Call.getArgOperand(10));
+    if (!Bias)
+      return Bias.takeError();
+    std::tie(Value, Residency) =
+        air.CreateSample(Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, Offset, sample_bias{*Bias});
+  } else if (Op == "sampleCmpLevelZero") {
+    auto Reference = Get(Call.getArgOperand(10));
+    if (!Reference)
+      return Reference.takeError();
+    std::tie(Value, Residency) = air.CreateSampleCmp(
+        Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, *Reference, Offset,
+        sample_level{air.getFloat(0)}
+    );
+  } else if (Op == "sampleCmp") {
+    auto Reference = Get(Call.getArgOperand(10));
+    if (!Reference)
+      return Reference.takeError();
+    auto Clamp = Get(Call.getArgOperand(11));
+    if (!Clamp)
+      return Clamp.takeError();
+    std::tie(Value, Residency) = air.CreateSampleCmp(
+        Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, *Reference, Offset,
+        sample_bias{air.getFloat(0)}, sample_min_lod_clamp{*Clamp}
+    );
+  } else {
+    std::tie(Value, Residency) =
+        air.CreateSample(Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, Offset);
+  }
   if (!Value)
     return unsupported("dxil: sampling operation failed");
+  // Metal depth texture must use float type, resolve potential type mismatch here
+  if (Call.getType()->getStructElementType(0)->isHalfTy())
+    Value = air.CreateConvertToHalf(Value);
   return BuildResRet(Call, Value, Residency);
 }
 
