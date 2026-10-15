@@ -332,7 +332,7 @@ public:
       out->TotalLaneCount = 0;
       // If CheckFeatureSupport succeeds this value will always be true.
       out->ExpandedComputeResourceStates = TRUE;
-      out->Int64ShaderOps = FALSE;
+      out->Int64ShaderOps = TRUE;
       return S_OK;
     }
     case D3D12_FEATURE_D3D12_OPTIONS12: {
