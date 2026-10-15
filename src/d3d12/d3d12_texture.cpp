@@ -110,8 +110,12 @@ PopulateWMTTextureInfo(WMT::Device Device, WMTTextureInfo &InfoOut, const D3D12_
     Usage |= WMTTextureUsageRenderTarget;
   if (Desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)
     Usage |= WMTTextureUsageRenderTarget;
-  if (Desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS)
+  if (Desc.Flags & D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS) {
     Usage |= WMTTextureUsageShaderRead | WMTTextureUsageShaderWrite;
+    if (Format.PixelFormat == WMTPixelFormatR32Uint || Format.PixelFormat == WMTPixelFormatR32Sint ||
+        (Format.PixelFormat == WMTPixelFormatRG32Uint && Device.supportsFamily(WMTGPUFamilyApple8)))
+      Usage |= WMTTextureUsageShaderAtomic;
+  }
   if (!(Desc.Flags & D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE))
     Usage |= WMTTextureUsageShaderRead;
   InfoOut.usage = Usage;
