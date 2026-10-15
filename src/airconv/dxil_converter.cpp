@@ -87,6 +87,8 @@ constexpr uint32_t kOpSampleLevel = 62;
 constexpr uint32_t kOpSampleGrad = 63;
 constexpr uint32_t kOpSampleCmp = 64;
 constexpr uint32_t kOpSampleCmpLevelZero = 65;
+constexpr uint32_t kOpTextureGather = 73;
+constexpr uint32_t kOpTextureGatherCmp = 74;
 
 // defined in `nt/dxil_converter_base.hpp`
 std::optional<uint32_t> asU32(llvm::Value *value);
@@ -578,11 +580,13 @@ initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
       case kOpSampleBias:
       case kOpSampleLevel:
       case kOpSampleGrad:
+      case kOpTextureGather:
         if (auto err = record_usage(false, false, true, false))
           return err;
         break;
       case kOpSampleCmp:
       case kOpSampleCmpLevelZero:
+      case kOpTextureGatherCmp:
         if (auto err = record_usage(false, false, true, true))
           return err;
         break;
