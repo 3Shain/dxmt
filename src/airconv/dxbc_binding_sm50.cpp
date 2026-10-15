@@ -59,13 +59,7 @@ public:
     // assert(Iter->second.resource_type != shader::common::ResourceType::NonApplicable);
     auto ResourceKindLogical = air::to_air_resource_type(Iter->second.resource_type, Iter->second.compared);
     auto ResourceKind = air::lowering_texture_1d_to_2d(ResourceKindLogical);
-    auto SampleType = std::visit(
-        patterns{
-            [](air::MSLInt) { return Texture::sample_int; }, [](air::MSLUint) { return Texture::sample_uint; },
-            [](auto) { return Texture::sample_float; }
-        },
-        air::to_air_scaler_type(Iter->second.scaler_type)
-    );
+    auto SampleType = air::to_air_sample_type(Iter->second.scaler_type, Iter->second.compared);
     auto MemoryAccess =
         Iter->second.sampled ? Texture::MemoryAccess::access_sample : Texture::MemoryAccess::access_read;
 
@@ -87,13 +81,7 @@ public:
     // assert(Iter->second.resource_type != shader::common::ResourceType::NonApplicable);
     auto ResourceKindLogical = air::to_air_resource_type(Iter->second.resource_type);
     auto ResourceKind = air::lowering_texture_1d_to_2d(ResourceKindLogical);
-    auto SampleType = std::visit(
-        patterns{
-            [](air::MSLInt) { return Texture::sample_int; }, [](air::MSLUint) { return Texture::sample_uint; },
-            [](auto) { return Texture::sample_float; }
-        },
-        air::to_air_scaler_type(Iter->second.scaler_type)
-    );
+    auto SampleType = air::to_air_sample_type(Iter->second.scaler_type);
     auto MemoryAccess = Iter->second.written ? (Iter->second.read ? Texture::MemoryAccess::acesss_readwrite
                                                                   : Texture::MemoryAccess::access_write)
                                              : Texture::MemoryAccess::access_read;

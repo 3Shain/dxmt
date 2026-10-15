@@ -72,6 +72,7 @@ enum class AddressSpace : uint32_t {
 enum class Sign { inapplicable, with_sign, no_sign };
 
 using TextureKind = llvm::air::Texture::ResourceKind;
+using SampleType = llvm::air::Texture::SampleType;
 
 inline TextureKind lowering_texture_1d_to_2d(TextureKind kind) {
   switch (kind) {
@@ -691,6 +692,26 @@ inline TextureKind to_air_resource_type(
   };
   assert(0 && "unreachable");
 };
+
+inline SampleType
+to_air_sample_type(dxmt::shader::common::ScalerDataType type, bool use_depth = false) {
+  using namespace dxmt::shader::common;
+  switch (type) {
+  case ScalerDataType::Uint:
+    return SampleType::sample_uint;
+  case ScalerDataType::Int:
+    return SampleType::sample_int;
+  case ScalerDataType::Half:
+    // depth texture must use `float` type
+    return use_depth ? SampleType::sample_float : SampleType::sample_half;
+  case ScalerDataType::Short:
+    return SampleType::sample_short;
+  case ScalerDataType::UShort:
+    return SampleType::sample_ushort;
+  default:
+    return SampleType::sample_float;
+  }
+}
 
 inline MSLScalerType
 to_air_scaler_type(dxmt::shader::common::ScalerDataType type) {
