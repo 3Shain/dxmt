@@ -228,15 +228,7 @@ public:
       return {}; // root descriptor can only be a buffer
     auto ResourceKindLogical = air::to_air_resource_type(SRV.resource_type, SRV.compared);
     auto ResourceKind = air::lowering_texture_1d_to_2d(ResourceKindLogical);
-    auto SampleType = std::visit(
-        patterns{
-            [](air::MSLInt) { return Texture::sample_int; }, [](air::MSLUint) { return Texture::sample_uint; },
-            [](air::MSLShort) { return Texture::sample_short; }, [](air::MSLUshort) { return Texture::sample_ushort; },
-            [](air::MSLHalf) { return Texture::sample_half; },
-            [](auto) { return Texture::sample_float; }
-        },
-        air::to_air_scaler_type(SRV.scaler_type)
-    );
+    auto SampleType = air::to_air_sample_type(SRV.scaler_type, SRV.compared);
     auto MemoryAccess = SRV.sampled ? Texture::MemoryAccess::access_sample : Texture::MemoryAccess::access_read;
 
     auto [Handle, Metadata] =
@@ -260,15 +252,7 @@ public:
       return {}; // root descriptor can only be a buffer
     auto ResourceKindLogical = air::to_air_resource_type(UAV.resource_type);
     auto ResourceKind = air::lowering_texture_1d_to_2d(ResourceKindLogical);
-    auto SampleType = std::visit(
-        patterns{
-            [](air::MSLInt) { return Texture::sample_int; }, [](air::MSLUint) { return Texture::sample_uint; },
-            [](air::MSLShort) { return Texture::sample_short; }, [](air::MSLUshort) { return Texture::sample_ushort; },
-            [](air::MSLHalf) { return Texture::sample_half; },
-            [](auto) { return Texture::sample_float; }
-        },
-        air::to_air_scaler_type(UAV.scaler_type)
-    );
+    auto SampleType = air::to_air_sample_type(UAV.scaler_type);
     auto MemoryAccess = UAV.written
                             ? (UAV.read ? Texture::MemoryAccess::acesss_readwrite : Texture::MemoryAccess::access_write)
                             : Texture::MemoryAccess::access_read;
