@@ -94,6 +94,7 @@ private:
   llvm::Expected<llvm::Value *> EmitLoadInput(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitStoreOutput(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitSample(const llvm::CallInst &Call, llvm::StringRef Op);
+  llvm::Expected<llvm::Value *> EmitGather(const llvm::CallInst &Call, llvm::StringRef Op);
 };
 
 } // namespace dxmt::dxil
