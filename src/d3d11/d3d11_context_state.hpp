@@ -211,6 +211,11 @@ public:
 
     return E_NOINTERFACE;
   }
+
+  // Saved pipeline state for SwapDeviceContextState. A newly created token
+  // carries default (empty) state, giving the caller a clean context to render
+  // into; swapping back restores the previously saved state.
+  D3D11ContextState saved_state = {};
 };
 
 } // namespace dxmt
