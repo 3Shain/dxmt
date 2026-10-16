@@ -82,7 +82,7 @@ if build_airconv_for_windows
 
 llvm_include_path = include_directories('../../toolchains/llvm/include') # FIXME: in favor of path relative to project
 
-airconv_lib = static_library('airconv', airconv_src,
+airconv_lib = static_library('airconv', airconv_src, dxmt_header_files,
   include_directories : [ dxmt_include_path, llvm_include_path ],
   cpp_args            : [ airconv_args, '-DWIN_EXPORT' ],
   dependencies        : [ dxbc_parser_dep ],
@@ -97,7 +97,7 @@ airconv_dep = declare_dependency(
 
 lib_d3dcompiler = cpp.find_library('d3dcompiler_47')
 
-executable('airconv', airconv_src + airconv_cli_src,
+executable('airconv', airconv_src + airconv_cli_src, dxmt_header_files,
   include_directories : [ dxmt_include_path, llvm_include_path ],
   cpp_args            : [ airconv_args, '-DWIN_EXPORT' ],
   dependencies        : [ dxbc_parser_dep, lib_d3dcompiler ],
