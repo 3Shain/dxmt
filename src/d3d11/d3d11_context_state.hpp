@@ -211,6 +211,8 @@ public:
 
     return E_NOINTERFACE;
   }
+
+  D3D11ContextState state = {};
 };
 
 } // namespace dxmt
