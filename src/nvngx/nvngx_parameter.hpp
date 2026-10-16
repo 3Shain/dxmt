@@ -21,6 +21,34 @@ castable(From val, To *out) {
 
 template <>
 inline bool
+castable(void *val, ID3D11Resource **out) {
+  *out = static_cast<ID3D11Resource *>(val);
+  return true;
+}
+
+template <>
+inline bool
+castable(ID3D11Resource *val, void **out) {
+  *out = static_cast<void *>(val);
+  return true;
+}
+
+template <>
+inline bool
+castable(void *val, ID3D12Resource **out) {
+  *out = static_cast<ID3D12Resource *>(val);
+  return true;
+}
+
+template <>
+inline bool
+castable(ID3D12Resource *val, void **out) {
+  *out = static_cast<void *>(val);
+  return true;
+}
+
+template <>
+inline bool
 castable(int val, unsigned int *out) {
   *out = (unsigned int)val;
   return true;
