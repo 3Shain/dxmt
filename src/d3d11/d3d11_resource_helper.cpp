@@ -1,3 +1,4 @@
+#include "config/config.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_private.h"
 #include "dxmt_format.hpp"
@@ -433,9 +434,23 @@ CreateMTLTextureDescriptorInternal(
     } else {
       if (SampleCount > 1) {
         if (!pDevice->GetMTLDevice().supportsTextureSampleCount(SampleCount)) {
-          ERR("CreateMTLTextureDescriptorInternal: sample count ", SampleCount,
-              " is not supported.");
-          return E_INVALIDARG;
+          // Some games create a fixed multisample target without checking
+          // CheckMultisampleQualityLevels and dereference the result even when
+          // creation fails. Opt-in: fall back to the highest supported count.
+          UINT fallback = 0;
+          if (Config::getInstance().getOption<bool>("d3d11.clampUnsupportedSampleCount", false)) {
+            for (UINT count = SampleCount - 1; count > 1 && !fallback; count--)
+              if (pDevice->GetMTLDevice().supportsTextureSampleCount(count))
+                fallback = count;
+          }
+          if (!fallback) {
+            ERR("CreateMTLTextureDescriptorInternal: sample count ", SampleCount,
+                " is not supported.");
+            return E_INVALIDARG;
+          }
+          WARN("CreateMTLTextureDescriptorInternal: sample count ", SampleCount,
+               " is not supported, using ", fallback);
+          SampleCount = fallback;
         }
         if (ArraySize > 1) {
           pDescOut->type = WMTTextureType2DMultisampleArray;

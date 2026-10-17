@@ -64,6 +64,10 @@ namespace dxmt {
     { R"(\\helldivers2\.exe$)", {{
       { "d3d11.maxFeatureLevel",   "12_1" },
     }} },
+    /** Steep: creates an 8x MSAA target without checking support */
+    { R"(\\steep\.exe$)", {{
+      { "d3d11.clampUnsupportedSampleCount",   "True" },
+    }} },
   }};
 
   const Config* findProfile(const ProfileList& profiles, const std::string& appName) {
