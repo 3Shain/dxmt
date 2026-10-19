@@ -1249,7 +1249,8 @@ AIRBuilder::CreateDotProduct(Value *LHS, Value *RHS) {
   std::string FnName = "air.dot";
   FnName += getTypeOverloadSuffix(LHS->getType());
 
-  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(getFloatTy(), Tys, false), Attrs);
+  auto Fn =
+      getModule()->getOrInsertFunction(FnName, FunctionType::get(LHS->getType()->getScalarType(), Tys, false), Attrs);
 
   return builder.CreateCall(Fn, Ops);
 }

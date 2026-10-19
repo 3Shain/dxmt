@@ -98,6 +98,7 @@ private:
   llvm::Expected<llvm::Value *> EmitUnary(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitBinary(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitTertiary(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitDotProduct(const llvm::CallInst &Call, unsigned Dimension);
 };
 
 } // namespace dxmt::dxil
