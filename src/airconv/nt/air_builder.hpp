@@ -343,6 +343,13 @@ public:
     cos,
     sin,
     fabs,
+    tan,
+    acos,
+    asin,
+    atan,
+    hcos,
+    hsin,
+    htan,
   };
 
   Value *CreateFPUnOp(FPUnOp Op, Value *Operand, bool FastVariant = true);
