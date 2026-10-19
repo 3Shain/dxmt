@@ -800,6 +800,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitGather(Call, op);
   if (op == "unary")
     return EmitUnary(Call);
+  if (op == "binary")
+    return EmitBinary(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -1800,6 +1802,41 @@ Converter::EmitUnary(const CallInst &Call) {
   if (!(*Operand)->getType()->isFloatingPointTy())
     return unsupported("dxil: float unary operation on a non-float operand");
   return air.CreateFPUnOp(FPUnOp, *Operand);
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitBinary(const CallInst &Call) {
+  auto Op = asU32(Call.getArgOperand(0));
+  if (!Op)
+    return unsupported("dxil: non-constant binary op");
+  if (Call.arg_size() != 3)
+    return unsupported("dxil: unexpected binary signature");
+  auto LHS = Get(Call.getArgOperand(1));
+  if (!LHS)
+    return LHS.takeError();
+  auto RHS = Get(Call.getArgOperand(2));
+  if (!RHS)
+    return RHS.takeError();
+
+  switch (auto OpId = *Op) {
+  case kOpFMax:
+  case kOpFMin:
+    if (!(*LHS)->getType()->isFloatingPointTy())
+      return unsupported("dxil: fp binary operation on a non-float operand");
+    return air.CreateFPBinOp(OpId == kOpFMax ? AIRBuilder::fmax : AIRBuilder::fmin, *LHS, *RHS);
+  case kOpIMax:
+  case kOpIMin:
+  case kOpUMax:
+  case kOpUMin: {
+    if (!(*LHS)->getType()->isIntegerTy())
+      return unsupported("dxil: integer binary operation on a non-integer operand");
+    bool IsMax = OpId == kOpIMax || OpId == kOpUMax;
+    bool IsSigned = OpId == kOpIMax || OpId == kOpIMin;
+    return air.CreateIntBinOp(IsMax ? AIRBuilder::max : AIRBuilder::min, *LHS, *RHS, IsSigned);
+  }
+  default:
+    return unsupported("dxil: unsupported binary operation: " + std::to_string(OpId));
+  }
 }
 
 } // namespace dxmt::dxil
