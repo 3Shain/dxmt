@@ -2,6 +2,7 @@
 
 #include "../airconv_error.hpp"
 #include "../dxbc_converter.hpp"
+#include "dxil_constants.hpp"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -1307,13 +1308,13 @@ Converter::EmitUnaryBits(CallInst &Call) {
   };
 
   switch (*Op) {
-  case 31: // countbits
+  case kOpCountbits:
     return ir.CreateSExtOrTrunc(air.CreateIntUnOp(AIRBuilder::popcount, *Bits), ir.getInt32Ty());
-  case 32: // firstbitlow
+  case kOpFirstbitLo:
     return NormalizeOverflow(air.CreateCountZero(*Bits, true));
-  case 33: // firstbithigh
+  case kOpFirstbitHi:
     return NormalizeOverflow(air.CreateCountZero(*Bits, false));
-  case 34: // firstbithigh_shi
+  case kOpFirstbitSHi:
     return NormalizeOverflow(ir.CreateSelect(
         ir.CreateIsNotNeg(*Bits), air.CreateCountZero(*Bits, false),
         ir.CreateAdd(
