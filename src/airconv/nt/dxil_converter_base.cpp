@@ -577,6 +577,19 @@ Converter::TranslateInstruction(llvm::Instruction *Inst) {
   }
   case llvm::Instruction::Call:
     return TranslateCall(*llvm::cast<llvm::CallInst>(Inst));
+  case llvm::Instruction::AtomicRMW: {
+    auto *OldAtomic = llvm::cast<llvm::AtomicRMWInst>(Inst);
+    auto Ptr = operand(0);
+    if (!Ptr)
+      return Ptr.takeError();
+    auto Value = operand(1);
+    if (!Value)
+      return Value.takeError();
+    return ir.CreateAtomicRMW(
+        OldAtomic->getOperation(), *Ptr, *Value, OldAtomic->getAlign(), OldAtomic->getOrdering(),
+        OldAtomic->getSyncScopeID()
+    );
+  }
   default:
     return unsupported(std::string("dxil: unsupported instruction: ") + Inst->getOpcodeName());
   }
