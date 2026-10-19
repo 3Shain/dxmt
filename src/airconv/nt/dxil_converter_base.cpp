@@ -827,6 +827,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitIsSpecialFloat(Call);
   if (op == "atomicBinOp")
     return EmitAtomicRMW(Call);
+  if (op == "atomicCompareExchange")
+    return EmitAtomicCmpXchg(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -2025,6 +2027,69 @@ Converter::EmitAtomicRMW(const CallInst &Call) {
   auto *TyVector = FixedVectorType::get(GetTextureSampleType(Texture->SampleType), 4);
   auto *Value = ir.CreateInsertElement(PoisonValue::get(TyVector), *NewValue, 0ull);
   auto Result = air.CreateAtomicRMW(MakeTexture(*Texture), Texture->ResourceHandle, BinOp, Position, Value, Slice);
+  if (!Result)
+    return unsupported("dxil: atomic operation failed");
+  return ir.CreateExtractElement(Result, 0ull);
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitAtomicCmpXchg(const CallInst &Call) {
+  auto Handle = ResolveHandleOperand(Call.getArgOperand(1));
+  if (!Handle)
+    return Handle.takeError();
+
+  auto Compare = Get(Call.getArgOperand(5));
+  if (!Compare)
+    return Compare.takeError();
+  auto NewValue = Get(Call.getArgOperand(6));
+  if (!NewValue)
+    return NewValue.takeError();
+
+  auto Buffer = GetBufferDescriptor(*Handle);
+  if (Buffer) {
+    auto Offset0 = Get(Call.getArgOperand(2));
+    if (!Offset0)
+      return Offset0.takeError();
+    Value *ByteOffset = *Offset0;
+    if (Buffer->StructureStride != 0) {
+      auto ElementOffset = Get(Call.getArgOperand(3));
+      if (!ElementOffset)
+        return ElementOffset.takeError();
+      ByteOffset = ir.CreateMul(ByteOffset, ir.getInt32(Buffer->StructureStride));
+      ByteOffset = ir.CreateAdd(ByteOffset, *ElementOffset);
+    }
+    auto Index = ir.CreateLShr(ByteOffset, ir.getInt32(2));
+    auto *Ptr = ir.CreateGEP(ir.getInt32Ty(), Buffer->Pointer, {Index});
+    auto Result = ir.CreateAtomicCmpXchg(
+        Ptr, *Compare, *NewValue, MaybeAlign(), AtomicOrdering::Monotonic, AtomicOrdering::Monotonic
+    );
+    return ir.CreateExtractValue(Result, 0);
+  }
+
+  auto Texture = GetTextureDescriptor(*Handle);
+  if (!Texture)
+    return unsupported("dxil: no descriptor for atomic operation");
+
+  auto X = Get(Call.getArgOperand(2));
+  if (!X)
+    return X.takeError();
+  auto Y = Get(Call.getArgOperand(3));
+  if (!Y)
+    return Y.takeError();
+  auto Z = Get(Call.getArgOperand(4));
+  if (!Z)
+    return Z.takeError();
+
+  auto Address = BuildRwAddress(Texture->ResourceKindLogical, *X, *Y, *Z, ir.getInt32(0), 0, 0, 0);
+  if (!Address)
+    return Address.takeError();
+  auto [Position, Slice, Unused] = *Address;
+  auto *TyElement = GetTextureSampleType(Texture->SampleType);
+  auto *TyVector = FixedVectorType::get(TyElement, 4);
+  auto *Cmp = ir.CreateInsertElement(PoisonValue::get(TyVector), *Compare, 0ull);
+  auto *Value = ir.CreateInsertElement(PoisonValue::get(TyVector), *NewValue, 0ull);
+  auto [Result, Flag_DISCARDED] =
+      air.CreateAtomicCmpXchg(MakeTexture(*Texture), Texture->ResourceHandle, Position, Cmp, Value, Slice);
   if (!Result)
     return unsupported("dxil: atomic operation failed");
   return ir.CreateExtractElement(Result, 0ull);
