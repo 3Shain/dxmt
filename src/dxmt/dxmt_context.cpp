@@ -700,7 +700,9 @@ ArgumentEncodingContext::startBlitPass() {
 
 void
 ArgumentEncodingContext::endPass() {
-  assert(encoder_current);
+  if (!encoder_current)
+    return;
+
   encoder_last->next = encoder_current;
   encoder_last = encoder_current;
 
