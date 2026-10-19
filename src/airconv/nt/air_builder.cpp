@@ -1771,6 +1771,50 @@ AIRBuilder::CreateIsNaN(Value *Operand) {
 }
 
 Value *
+AIRBuilder::CreateIsFinite(Value *Operand) {
+  auto OperandType = Operand->getType();
+  llvm::Value *BitsInf = getInt(0x7f800000u);
+  llvm::Type *TyCast = getIntTy();
+  if (auto TyVec = dyn_cast<llvm::FixedVectorType>(OperandType)) {
+    BitsInf = builder.CreateVectorSplat(TyVec->getNumElements(), BitsInf);
+    TyCast = getIntTy(TyVec->getNumElements());
+  }
+  return builder.CreateICmpNE(builder.CreateAnd(builder.CreateBitCast(Operand, TyCast), BitsInf), BitsInf);
+}
+
+Value *
+AIRBuilder::CreateIsInfinite(Value *Operand) {
+  auto OperandType = Operand->getType();
+  llvm::Value *BitsL31 = getInt(0x7fffffffu);
+  llvm::Value *BitsInf = getInt(0x7f800000u);
+  llvm::Type *TyCast = getIntTy();
+  if (auto TyVec = dyn_cast<llvm::FixedVectorType>(OperandType)) {
+    BitsL31 = builder.CreateVectorSplat(TyVec->getNumElements(), BitsL31);
+    BitsInf = builder.CreateVectorSplat(TyVec->getNumElements(), BitsInf);
+    TyCast = getIntTy(TyVec->getNumElements());
+  }
+  return builder.CreateICmpEQ(builder.CreateAnd(builder.CreateBitCast(Operand, TyCast), BitsL31), BitsInf);
+}
+
+Value *
+AIRBuilder::CreateIsNormal(Value *Operand) {
+  auto OperandType = Operand->getType();
+  llvm::Value *BitsL31 = getInt(0x7fffffffu);
+  llvm::Value *C1 = getInt(0x7f000000u);
+  llvm::Value *C2 = getInt(0xff800000u);
+  llvm::Type *TyCast = getIntTy();
+  if (auto TyVec = dyn_cast<llvm::FixedVectorType>(OperandType)) {
+    BitsL31 = builder.CreateVectorSplat(TyVec->getNumElements(), BitsL31);
+    C1 = builder.CreateVectorSplat(TyVec->getNumElements(), C1);
+    C2 = builder.CreateVectorSplat(TyVec->getNumElements(), C2);
+    TyCast = getIntTy(TyVec->getNumElements());
+  }
+  return builder.CreateICmpULT(
+      builder.CreateNSWAdd(builder.CreateAnd(builder.CreateBitCast(Operand, TyCast), BitsL31), C2), C1
+  );
+}
+
+Value *
 AIRBuilder::CreateFPBinOp(FPBinOp Op, Value *LHS, Value *RHS, bool FastVariant) {
   static char const *FnNames[] = {
       "fmax",
