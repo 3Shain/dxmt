@@ -350,4 +350,14 @@ constexpr uint32_t kOpDebugBreak = 343;
 constexpr uint32_t kOpIsDebuggingEnabled = 344;
 constexpr uint32_t kOpInvalid = 0xFFFFFFFF;
 
+constexpr uint32_t kAtomicOpAdd = 0;
+constexpr uint32_t kAtomicOpAnd = 1;
+constexpr uint32_t kAtomicOpOr = 2;
+constexpr uint32_t kAtomicOpXor = 3;
+constexpr uint32_t kAtomicOpIMin = 4;
+constexpr uint32_t kAtomicOpIMax = 5;
+constexpr uint32_t kAtomicOpUMin = 6;
+constexpr uint32_t kAtomicOpUMax = 7;
+constexpr uint32_t kAtomicOpExchange = 8;
+
 } // namespace dxmt::dxil
