@@ -798,6 +798,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitSample(Call, op);
   if (op == "textureGather" || op == "textureGatherCmp")
     return EmitGather(Call, op);
+  if (op == "unary")
+    return EmitUnary(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -1706,6 +1708,98 @@ Converter::EmitGather(const CallInst &Call, StringRef Op) {
   if (Call.getType()->getStructElementType(0)->isHalfTy())
     Value = air.CreateConvertToHalf(Value);
   return BuildResRet(Call, Value, Residency);
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitUnary(const CallInst &Call) {
+  auto Op = asU32(Call.getArgOperand(0));
+  if (!Op)
+    return unsupported("dxil: non-constant unary op");
+  if (Call.arg_size() != 2)
+    return unsupported("dxil: unexpected unary signature");
+  auto Operand = Get(Call.getArgOperand(1));
+  if (!Operand)
+    return Operand.takeError();
+
+  AIRBuilder::FPUnOp FPUnOp;
+  switch (auto OpId = *Op) {
+  case kOpBfrev:
+    if (!(*Operand)->getType()->isIntegerTy())
+      return unsupported("dxil: bfrev on a non-integer operand");
+    return air.CreateIntUnOp(AIRBuilder::reverse_bits, *Operand);
+  case kOpDerivCoarseX:
+  case kOpDerivCoarseY:
+  case kOpDerivFineX:
+  case kOpDerivFineY:
+    if (!(*Operand)->getType()->isFloatingPointTy())
+      return unsupported("dxil: derivative on a non-float operand");
+    return air.CreateDerivative(*Operand, OpId == kOpDerivCoarseY || OpId == kOpDerivFineY);
+  case kOpFAbs:
+    FPUnOp = AIRBuilder::fabs;
+    break;
+  case kOpSaturate:
+    FPUnOp = AIRBuilder::saturate;
+    break;
+  case kOpCos:
+    FPUnOp = AIRBuilder::cos;
+    break;
+  case kOpSin:
+    FPUnOp = AIRBuilder::sin;
+    break;
+  case kOpTan:
+    FPUnOp = AIRBuilder::sin;
+    break;
+  case kOpAcos:
+    FPUnOp = AIRBuilder::acos;
+    break;
+  case kOpAsin:
+    FPUnOp = AIRBuilder::asin;
+    break;
+  case kOpAtan:
+    FPUnOp = AIRBuilder::atan;
+    break;
+  case kOpHcos:
+    FPUnOp = AIRBuilder::hcos;
+    break;
+  case kOpHsin:
+    FPUnOp = AIRBuilder::hsin;
+    break;
+  case kOpHtan:
+    FPUnOp = AIRBuilder::htan;
+    break;
+  case kOpExp:
+    FPUnOp = AIRBuilder::exp2;
+    break;
+  case kOpFrc:
+    FPUnOp = AIRBuilder::fract;
+    break;
+  case kOpLog:
+    FPUnOp = AIRBuilder::log2;
+    break;
+  case kOpSqrt:
+    FPUnOp = AIRBuilder::sqrt;
+    break;
+  case kOpRsqrt:
+    FPUnOp = AIRBuilder::rsqrt;
+    break;
+  case kOpRound_ne:
+    FPUnOp = AIRBuilder::rint;
+    break;
+  case kOpRound_ni:
+    FPUnOp = AIRBuilder::floor;
+    break;
+  case kOpRound_pi:
+    FPUnOp = AIRBuilder::ceil;
+    break;
+  case kOpRound_z:
+    FPUnOp = AIRBuilder::trunc;
+    break;
+  default:
+    return unsupported("dxil: unsupported unary operation: " + std::to_string(OpId));
+  }
+  if (!(*Operand)->getType()->isFloatingPointTy())
+    return unsupported("dxil: float unary operation on a non-float operand");
+  return air.CreateFPUnOp(FPUnOp, *Operand);
 }
 
 } // namespace dxmt::dxil
