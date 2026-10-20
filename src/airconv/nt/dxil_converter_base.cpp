@@ -807,7 +807,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitLoadInput(Call);
   if (op == "storeOutput")
     return EmitStoreOutput(Call);
-  if (op == "sample" || op == "sampleLevel" || op == "sampleBias" || op == "sampleCmp" || op == "sampleCmpLevelZero")
+  if (op == "sample" || op == "sampleLevel" || op == "sampleBias" || op == "sampleCmp" || op == "sampleCmpLevelZero" ||
+      op == "sampleGrad")
     return EmitSample(Call, op);
   if (op == "textureGather" || op == "textureGatherCmp")
     return EmitGather(Call, op);
@@ -1631,6 +1632,55 @@ Converter::EmitSample(const CallInst &Call, StringRef Op) {
         Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, *Reference, Offset,
         sample_bias{air.getFloat(0)}, sample_min_lod_clamp{*Clamp}
     );
+  } else if (Op == "sampleGrad") {
+    auto DDX0 = Get(Call.getArgOperand(10));
+    if (!DDX0)
+      return DDX0.takeError();
+    auto DDX1 = Get(Call.getArgOperand(11));
+    if (!DDX1)
+      return DDX1.takeError();
+    auto DDX2 = Get(Call.getArgOperand(12));
+    if (!DDX2)
+      return DDX2.takeError();
+    auto DDY0 = Get(Call.getArgOperand(13));
+    if (!DDY0)
+      return DDY0.takeError();
+    auto DDY1 = Get(Call.getArgOperand(14));
+    if (!DDY1)
+      return DDY1.takeError();
+    auto DDY2 = Get(Call.getArgOperand(15));
+    if (!DDY2)
+      return DDY2.takeError();
+    switch (TextureDescriptor->ResourceKindLogical) {
+    case Texture::texture1d:
+    case Texture::texture1d_array:
+      std::tie(Value, Residency) = air.CreateSampleGrad(
+          Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, MakeVec({*DDX0, *DDX0}),
+          MakeVec({*DDY0, *DDY0}), Offset
+      );
+      break;
+    case Texture::texture2d:
+    case Texture::texture2d_array:
+    case Texture::depth2d:
+    case Texture::depth2d_array:
+      std::tie(Value, Residency) = air.CreateSampleGrad(
+          Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, MakeVec({*DDX0, *DDX1}),
+          MakeVec({*DDY0, *DDY1}), Offset
+      );
+      break;
+    case Texture::texture3d:
+    case Texture::texturecube:
+    case Texture::texturecube_array:
+    case Texture::depthcube:
+    case Texture::depthcube_array:
+      std::tie(Value, Residency) = air.CreateSampleGrad(
+          Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, MakeVec({*DDX0, *DDX1, *DDX2}),
+          MakeVec({*DDY0, *DDY1, *DDY2}), Offset
+      );
+      break;
+    default:
+      break;
+    }
   } else {
     std::tie(Value, Residency) =
         air.CreateSample(Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, Offset);
