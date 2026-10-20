@@ -1471,6 +1471,16 @@ Converter::EmitStoreOutput(const CallInst &Call) {
   case SemanticKind::Target:
   case SemanticKind::Arbitrary:
     break;
+  case SemanticKind::Depth:
+  case SemanticKind::DepthLessEqual:
+  case SemanticKind::DepthGreaterEqual: {
+    if (!ctx.resource.depth_output_reg)
+      return unsupported("dxil: depth output is not available");
+    if (!Stored->getType()->isFloatTy())
+      return unsupported("dxil: unsupported depth output type");
+    ir.CreateStore(Stored, ir.CreateConstInBoundsGEP1_32(ir.getFloatTy(), ctx.resource.depth_output_reg, 0));
+    return (llvm::Value *)nullptr;
+  }
   default:
     return unsupported("dxil: unsupported storeOutput semantic " + std::to_string((uint32_t)signature.semantic_kind));
   }
