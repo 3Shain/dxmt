@@ -241,6 +241,8 @@ public:
 
   Value *CreateTextureQuery(const Texture &Texture, Value *Handle, Texture::Query Query, Value *Level);
 
+  Value *CreateCalculateLOD(const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, bool Clamped);
+
   /**
   \returns (float clamped_lod, float unclamped_lod)
   */

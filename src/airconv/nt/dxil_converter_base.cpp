@@ -832,6 +832,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitAtomicCmpXchg(Call);
   if (op == "discard")
     return EmitDiscard(Call);
+  if (op == "calculateLOD")
+    return EmitCalculateLOD(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -2173,6 +2175,66 @@ Converter::EmitDiscard(const CallInst &Call) {
   ir.CreateBr(ContinueBB);
   ir.SetInsertPoint(ContinueBB);
   return (llvm::Value *)nullptr;
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitCalculateLOD(const CallInst &Call) {
+  auto TextureHandle = ResolveHandleOperand(Call.getArgOperand(1));
+  if (!TextureHandle)
+    return TextureHandle.takeError();
+  auto TextureDescriptor = GetTextureDescriptor(*TextureHandle);
+  if (!TextureDescriptor)
+    return unsupported("dxil: no texture descriptor for resource");
+  auto SamplerHandle = ResolveHandleOperand(Call.getArgOperand(2));
+  if (!SamplerHandle)
+    return SamplerHandle.takeError();
+  auto SamplerDescriptor = GetSamplerDescriptor(*SamplerHandle);
+  if (!SamplerDescriptor)
+    return SamplerDescriptor.takeError();
+  auto Texture = MakeTexture(*TextureDescriptor);
+  auto Sampler = SamplerDescriptor->SamplerHandle;
+
+  auto C0 = Get(Call.getArgOperand(3));
+  if (!C0)
+    return C0.takeError();
+  auto C1 = Get(Call.getArgOperand(4));
+  if (!C1)
+    return C1.takeError();
+  auto C2 = Get(Call.getArgOperand(5));
+  if (!C2)
+    return C2.takeError();
+
+  auto Clamped = asU32(Call.getArgOperand(6));
+  if (!Clamped)
+    return unsupported("dxil: non-constant calculateLOD arguments");
+
+  Value *Coord = nullptr;
+  switch (TextureDescriptor->ResourceKindLogical) {
+  case Texture::texture1d:
+  case Texture::texture1d_array:
+    Coord = MakeVec({*C0, air.getFloat(0)});
+    break;
+  case Texture::texture2d:
+  case Texture::depth2d:
+  case Texture::texture2d_array:
+  case Texture::depth2d_array:
+    Coord = MakeVec({*C0, *C1});
+    break;
+  case Texture::texture3d:
+  case Texture::texturecube:
+  case Texture::depthcube:
+  case Texture::texturecube_array:
+  case Texture::depthcube_array:
+    Coord = MakeVec({*C0, *C1, *C2});
+    break;
+  default:
+    return unsupported(
+        "dxil: unsupported texture kind for calculateLOD: " +
+        std::to_string(static_cast<uint32_t>(TextureDescriptor->ResourceKindLogical))
+    );
+  }
+
+  return air.CreateCalculateLOD(Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, *Clamped);
 }
 
 } // namespace dxmt::dxil
