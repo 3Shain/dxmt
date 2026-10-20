@@ -153,6 +153,10 @@ enum class EntryPropertyTag : uint32_t {
   EntryRootSig = 12,
 };
 
+constexpr uint64_t kShaderFlagDisableShaderOptimization = 1 << 0;
+constexpr uint64_t kShaderFlagDisableMathRefactoring = 1 << 1;
+constexpr uint64_t kShaderFlagForceEarlyDepthStencilTest = 1 << 3;
+
 struct NumThreads {
   uint32_t x = 0;
   uint32_t y = 0;
