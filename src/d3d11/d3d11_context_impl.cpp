@@ -5236,6 +5236,7 @@ public:
   }
 
   void STDMETHODCALLTYPE TemporalUpscale(const MTL_TEMPORAL_UPSCALE_D3D11_DESC *pDesc) final {
+    std::lock_guard<typename ContextInternalState::device_mutex_t> lock(ctx_->mutex);
     Rc<Texture> input, output, depth, motion_vector, exposure;
     if (!(input = static_cast<D3D11ResourceCommon *>(pDesc->Color)->texture()))
       return;
@@ -5375,12 +5376,14 @@ public:
   }
 
   void STDMETHODCALLTYPE BeginUAVOverlap() final {
+    std::lock_guard<typename ContextInternalState::device_mutex_t> lock(ctx_->mutex);
     ctx_->EmitOP([](ArgumentEncodingContext &enc) {
       enc.setIntrapassBarrierControl(kIntrapassControlBitIgnoreUAVWaW);
     });
   }
 
   void STDMETHODCALLTYPE EndUAVOverlap() final {
+    std::lock_guard<typename ContextInternalState::device_mutex_t> lock(ctx_->mutex);
     ctx_->EmitOP([](ArgumentEncodingContext &enc) {
       enc.setIntrapassBarrierControl(0);
     });
