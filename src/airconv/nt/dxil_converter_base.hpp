@@ -70,6 +70,7 @@ private:
       llvm::Value *MipOrSampleIndex, int32_t Off0, int32_t Off1, int32_t Off2
   );
   llvm::Type *GetTextureSampleType(llvm::air::Texture::SampleType SampleType);
+  llvm::Value *GetSamplePos(llvm::Value *SampleCount, llvm::Value *Index);
 
   llvm::Error TranslateTerminator(llvm::Instruction *Inst, llvm::BasicBlock *ReturnBB);
   llvm::Expected<llvm::Value *> TranslateInstruction(llvm::Instruction *Inst);
@@ -104,6 +105,7 @@ private:
   llvm::Expected<llvm::Value *> EmitAtomicCmpXchg(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitDiscard(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitCalculateLOD(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitGetTextureSamplePos(const llvm::CallInst &Call);
 };
 
 } // namespace dxmt::dxil

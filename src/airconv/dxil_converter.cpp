@@ -626,6 +626,9 @@ initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
         if (auto err = record_usage(false, false, true, true))
           return err;
         break;
+      case kOpTexture2DMSGetSamplePosition:
+        shader_info.use_samplepos = true;
+        break;
       default:
         break;
       }
