@@ -98,6 +98,32 @@ template <> struct MetadataValue<Ignore> {
   }
 };
 
+template <> struct MetadataValue<std::vector<uint32_t>> {
+  static llvm::Expected<std::vector<uint32_t>>
+  get(const llvm::Metadata *md) {
+    std::vector<uint32_t> out;
+    if (const auto *m = llvm::dyn_cast_or_null<llvm::ConstantAsMetadata>(md)) {
+      if (const auto *seq = llvm::dyn_cast<llvm::ConstantDataSequential>(m->getValue())) {
+        out.reserve(seq->getNumElements());
+        for (unsigned i = 0; i < seq->getNumElements(); ++i)
+          out.push_back(static_cast<uint32_t>(seq->getElementAsInteger(i)));
+        return out;
+      }
+    }
+    if (const auto *tuple = llvm::dyn_cast_or_null<llvm::MDTuple>(md)) {
+      out.reserve(tuple->getNumOperands());
+      for (const llvm::MDOperand &op : tuple->operands()) {
+        auto v = MetadataValue<uint32_t>::get(op.get());
+        if (!v)
+          return v.takeError();
+        out.push_back(*v);
+      }
+      return out;
+    }
+    return metadata_error("expected array metadata");
+  }
+};
+
 template <> struct MetadataValue<const llvm::Function *> {
   static llvm::Expected<const llvm::Function *>
   get(const llvm::Metadata *md) {

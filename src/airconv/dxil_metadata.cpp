@@ -40,18 +40,21 @@ extract_dxil_bitcode(StringRef chunk) {
 
 Expected<SignatureElement>
 parse_signature_element(MetadataReader r) {
+  using Indices = std::vector<uint32_t>;
   auto element =
       r.slice(0, 10)
           .asMappedTuple<
-              uint32_t, std::string, uint32_t, uint32_t, Ignore, uint32_t, uint32_t, uint32_t, int32_t, int32_t>(
-              [](uint32_t id, std::string name, uint32_t component_type, uint32_t semantic_kind, Ignore,
+              uint32_t, std::string, uint32_t, uint32_t, Indices, uint32_t, uint32_t, uint32_t, int32_t, int32_t>(
+              [](uint32_t id, std::string name, uint32_t component_type, uint32_t semantic_kind, Indices indices,
                  uint32_t interpolation, uint32_t rows, uint32_t cols, int32_t start_row, int32_t start_col) {
                 SignatureElement out;
                 out.id = id;
                 out.name = std::move(name);
+                std::transform(out.name.begin(), out.name.end(), out.name.begin(), ::toupper);
                 out.component_type = static_cast<ComponentType>(component_type);
                 out.semantic_kind = static_cast<SemanticKind>(semantic_kind);
                 out.interpolation = static_cast<InterpolationMode>(interpolation);
+                out.semantic_indices = std::move(indices);
                 out.rows = rows;
                 out.cols = cols;
                 out.start_row = start_row;
