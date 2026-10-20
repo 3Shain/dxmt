@@ -157,10 +157,11 @@ element_register_mask(const SignatureElement &element) {
   return element_usage_mask(element) << element.start_col;
 }
 
-std::string
-element_attribute_name(const SignatureElement &element) {
-  return "reg" + std::to_string(element.start_row) + "_" +
-         std::to_string(element.start_col + std::countr_zero(element_usage_mask(element)));
+llvm::Expected<std::string>
+element_attribute_name(const SignatureElement &element, unsigned row) {
+  if (row >= element.semantic_indices.size())
+    return unsupported("dxil: signature row out of range");
+  return element.name + std::to_string(element.semantic_indices[row]);
 }
 
 llvm::Error
@@ -172,11 +173,11 @@ initialize_vertex_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
   uint32_t max_input_register = 0;
   for (uint32_t i = 0; i < input_count; ++i) {
     const auto &element = entry.inputs[i];
-    if (element.rows != 1 || element.start_row < 0 || element.start_col < 0)
+    if (element.start_row < 0 || element.start_col < 0)
       return unsupported("dxil: unsupported vertex shader input layout");
     uint32_t reg = element.start_row;
     uint32_t mask = element_register_mask(element);
-    max_input_register = std::max(max_input_register, reg + 1);
+    max_input_register = std::max(max_input_register, reg + element.rows);
 
     switch (element.semantic_kind) {
     case SemanticKind::VertexID:
@@ -193,37 +194,41 @@ initialize_vertex_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
       auto attribute_type = to_attribute_component_type(element.component_type);
       if (!attribute_type)
         return unsupported("dxil: unsupported vertex shader input component type");
-      std::string name = element_attribute_name(element);
-      shader->signature_handlers.push_back([=](SignatureContext &ctx) {
-        if (ctx.ia_layout) {
-          for (unsigned j = 0; j < ctx.ia_layout->num_elements; ++j) {
-            if (ctx.ia_layout->elements[j].reg != reg)
-              continue;
-            auto element_info = ctx.ia_layout->elements[j];
-            auto slot_mask = ctx.ia_layout->slot_mask;
-            auto vbuf_table = ctx.func_signature.DefineInput(
-                air::ArgumentBindingBuffer{
-                    .buffer_size = {},
-                    .location_index = SM50_BINDING_INDEX_VERTEX_BUFFER,
-                    .array_size = 0,
-                    .memory_access = air::MemoryAccess::read,
-                    .address_space = air::AddressSpace::constant,
-                    .type = air::msl_uint,
-                    .arg_name = "vertex_buffers",
-                    .raster_order_group = {},
-                }
-            );
-            ctx.prologue.Add([=](IOHelper &io) -> llvm::Error {
-              return io.PullVertexInput(vbuf_table, reg, mask, element_info, slot_mask);
-            });
-            return;
+      for (unsigned row = 0; row < element.rows; row++) {
+        auto name = element_attribute_name(element, row);
+        if (auto err = name.takeError())
+          return err;
+        shader->signature_handlers.push_back([=, name = *name, reg = reg + row](SignatureContext &ctx) {
+          if (ctx.ia_layout) {
+            for (unsigned j = 0; j < ctx.ia_layout->num_elements; ++j) {
+              if (ctx.ia_layout->elements[j].reg != reg)
+                continue;
+              auto element_info = ctx.ia_layout->elements[j];
+              auto slot_mask = ctx.ia_layout->slot_mask;
+              auto vbuf_table = ctx.func_signature.DefineInput(
+                  air::ArgumentBindingBuffer{
+                      .buffer_size = {},
+                      .location_index = SM50_BINDING_INDEX_VERTEX_BUFFER,
+                      .array_size = 0,
+                      .memory_access = air::MemoryAccess::read,
+                      .address_space = air::AddressSpace::constant,
+                      .type = air::msl_uint,
+                      .arg_name = "vertex_buffers",
+                      .raster_order_group = {},
+                  }
+              );
+              ctx.prologue.Add([=](IOHelper &io) -> llvm::Error {
+                return io.PullVertexInput(vbuf_table, reg, mask, element_info, slot_mask);
+              });
+              return;
+            }
           }
-        }
-        uint32_t arg = ctx.func_signature.DefineInput(
-            air::InputVertexStageIn{.attribute = reg, .type = *attribute_type, .name = name}
-        );
-        ctx.prologue.Add([=](IOHelper &io) -> llvm::Error { return io.InitializeInput(arg, reg, mask); });
-      });
+          uint32_t arg = ctx.func_signature.DefineInput(
+              air::InputVertexStageIn{.attribute = reg, .type = *attribute_type, .name = name}
+          );
+          ctx.prologue.Add([=](IOHelper &io) -> llvm::Error { return io.InitializeInput(arg, reg, mask); });
+        });
+      }
       break;
     }
     default:
@@ -238,11 +243,11 @@ initialize_vertex_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
   uint32_t max_output_register = 0;
   for (uint32_t i = 0; i < output_count; ++i) {
     const auto &element = entry.outputs[i];
-    if (element.rows != 1 || element.start_row < 0 || element.start_col < 0)
+    if (element.start_row < 0 || element.start_col < 0)
       return unsupported("dxil: unsupported vertex shader output layout");
     uint32_t reg = element.start_row;
     uint32_t mask = element_register_mask(element);
-    max_output_register = std::max(max_output_register, reg + 1);
+    max_output_register = std::max(max_output_register, reg + element.rows);
     switch (element.semantic_kind) {
     case SemanticKind::Position: {
       shader->signature_handlers.push_back([=](SignatureContext &ctx) {
@@ -259,15 +264,19 @@ initialize_vertex_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
       auto msl_type = to_signature_msl_type(element.component_type);
       if (!msl_type)
         return unsupported("dxil: unsupported vertex shader output component type");
-      std::string user = element_attribute_name(element);
-      shader->signature_handlers.push_back([=](SignatureContext &ctx) {
-        uint32_t out = ctx.func_signature.DefineOutput(air::OutputVertex{.user = user, .type = *msl_type});
-        if (ctx.skip_vertex_output)
-          return;
-        ctx.epilogue.Add([=](llvm::Value *ret, IOHelper &io) -> llvm::Expected<llvm::Value *> {
-          return io.PopulateOutput(reg, mask, ret, out);
+      for (unsigned row = 0; row < element.rows; row++) {
+        auto user = element_attribute_name(element, row);
+        if (auto err = user.takeError())
+          return err;
+        shader->signature_handlers.push_back([=, user = *user, reg = reg + row](SignatureContext &ctx) {
+          uint32_t out = ctx.func_signature.DefineOutput(air::OutputVertex{.user = user, .type = *msl_type});
+          if (ctx.skip_vertex_output)
+            return;
+          ctx.epilogue.Add([=](llvm::Value *ret, IOHelper &io) -> llvm::Expected<llvm::Value *> {
+            return io.PopulateOutput(reg, mask, ret, out);
+          });
         });
-      });
+      }
       break;
     }
     default:
@@ -312,11 +321,11 @@ initialize_pixel_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
   for (uint32_t i = 0; i < input_count; ++i) {
     const auto &element = entry.inputs[i];
 
-    if (element.start_row < 0 || element.rows != 1 || element.start_col < 0)
+    if (element.start_row < 0 || element.start_col < 0)
       return unsupported("dxil: unsupported pixel shader input layout");
     uint32_t reg = (uint32_t)element.start_row;
     uint32_t mask = element_register_mask(element);
-    max_input_register = std::max(max_input_register, reg + 1);
+    max_input_register = std::max(max_input_register, reg + element.rows);
 
     switch (element.semantic_kind) {
     case SemanticKind::Position: {
@@ -336,15 +345,19 @@ initialize_pixel_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
         return unsupported("dxil: unsupported pixel shader input component type");
       if (!interpolation)
         return unsupported("dxil: unsupported interpolation mode");
-      std::string user = element_attribute_name(element);
-      shader->signature_handlers.push_back([=](SignatureContext &ctx) {
-        uint32_t arg = ctx.func_signature.DefineInput(
-            air::InputFragmentStageIn{
-                .user = user, .type = *msl_type, .interpolation = *interpolation, .pull_mode = false
-            }
-        );
-        ctx.prologue.Add([=](IOHelper &io) -> llvm::Error { return io.InitializeInput(arg, reg, mask); });
-      });
+      for (unsigned row = 0; row < element.rows; row++) {
+        auto user = element_attribute_name(element, row);
+        if (auto err = user.takeError())
+          return err;
+        shader->signature_handlers.push_back([=, user = *user, reg = reg + row](SignatureContext &ctx) {
+          uint32_t arg = ctx.func_signature.DefineInput(
+              air::InputFragmentStageIn{
+                  .user = user, .type = *msl_type, .interpolation = *interpolation, .pull_mode = false
+              }
+          );
+          ctx.prologue.Add([=](IOHelper &io) -> llvm::Error { return io.InitializeInput(arg, reg, mask); });
+        });
+      }
       break;
     }
     case SemanticKind::IsFrontFace: {
