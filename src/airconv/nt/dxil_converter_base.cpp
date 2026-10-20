@@ -830,6 +830,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitAtomicRMW(Call);
   if (op == "atomicCompareExchange")
     return EmitAtomicCmpXchg(Call);
+  if (op == "discard")
+    return EmitDiscard(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -2143,6 +2145,23 @@ Converter::EmitAtomicCmpXchg(const CallInst &Call) {
   if (!Result)
     return unsupported("dxil: atomic operation failed");
   return ir.CreateExtractElement(Result, 0ull);
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitDiscard(const CallInst &Call) {
+  auto Cond = Get(Call.getArgOperand(1));
+  if (!Cond)
+    return Cond.takeError();
+  if (Call.getNextNonDebugInstruction() && !Call.getNextNonDebugInstruction()->isTerminator())
+    return unsupported("dxil: discard is not the last instruction in a basic block");
+  auto *DiscardBB = llvm::BasicBlock::Create(air.getContext(), "discard", ctx.function);
+  auto *ContinueBB = llvm::BasicBlock::Create(air.getContext(), "continue", ctx.function);
+  ir.CreateCondBr(*Cond, DiscardBB, ContinueBB);
+  ir.SetInsertPoint(DiscardBB);
+  air.CreateDiscard();
+  ir.CreateBr(ContinueBB);
+  ir.SetInsertPoint(ContinueBB);
+  return (llvm::Value *)nullptr;
 }
 
 } // namespace dxmt::dxil
