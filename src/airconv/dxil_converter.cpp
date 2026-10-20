@@ -295,6 +295,28 @@ initialize_vertex_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
       });
       break;
     }
+    case SemanticKind::ClipDistance:
+    case SemanticKind::CullDistance: {
+      bool clip = element.semantic_kind == SemanticKind::ClipDistance;
+      auto &scalars = clip ? shader->clip_distance_scalars : shader->cull_distance_scalars;
+      for (unsigned row = 0; row < element.rows; row++) {
+        auto user = element_attribute_name(element, row);
+        if (auto err = user.takeError())
+          return err;
+        for (uint32_t component = 0; component < element.cols; component++) {
+          scalars.push_back({(uint8_t)(element.start_col + component), (uint8_t)(reg + row)});
+        }
+        shader->signature_handlers.push_back([=, user = *user, reg = reg + row](SignatureContext &ctx) {
+          uint32_t out = ctx.func_signature.DefineOutput(air::OutputVertex{.user = user, .type = air::msl_float4});
+          if (ctx.skip_vertex_output)
+            return;
+          ctx.epilogue.Add([=](llvm::Value *ret, IOHelper &io) -> llvm::Expected<llvm::Value *> {
+            return io.PopulateOutput(reg, mask, ret, out);
+          });
+        });
+      }
+      break;
+    }
     default:
       return unsupported(
           "dxil: unsupported vertex shader output semantic " + std::to_string((uint32_t)element.semantic_kind)
@@ -393,6 +415,26 @@ initialize_pixel_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
         );
         ctx.prologue.Add([=](IOHelper &io) -> llvm::Error { return io.InitializeInput(arg, reg, mask); });
       });
+      break;
+    }
+    case SemanticKind::ClipDistance:
+    case SemanticKind::CullDistance: {
+      auto interpolation = to_air_interpolation(element.interpolation);
+      if (!interpolation)
+        return unsupported("dxil: unsupported interpolation mode");
+      for (unsigned row = 0; row < element.rows; row++) {
+        auto user = element_attribute_name(element, row);
+        if (auto err = user.takeError())
+          return err;
+        shader->signature_handlers.push_back([=, user = *user, reg = reg + row](SignatureContext &ctx) {
+          uint32_t arg = ctx.func_signature.DefineInput(
+              air::InputFragmentStageIn{
+                  .user = user, .type = air::msl_float4, .interpolation = *interpolation, .pull_mode = false
+              }
+          );
+          ctx.prologue.Add([=](IOHelper &io) -> llvm::Error { return io.InitializeInput(arg, reg, mask); });
+        });
+      }
       break;
     }
     default:

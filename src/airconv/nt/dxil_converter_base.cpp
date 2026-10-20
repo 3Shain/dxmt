@@ -1426,6 +1426,8 @@ Converter::EmitLoadInput(const CallInst &Call) {
   case SemanticKind::IsFrontFace:
   case SemanticKind::RenderTargetArrayIndex:
   case SemanticKind::ViewPortArrayIndex:
+  case SemanticKind::ClipDistance:
+  case SemanticKind::CullDistance:
     break;
   default:
     return unsupported("dxil: unsupported loadInput semantic " + std::to_string((uint32_t)signature.semantic_kind));
@@ -1497,6 +1499,8 @@ Converter::EmitStoreOutput(const CallInst &Call) {
   case SemanticKind::Arbitrary:
   case SemanticKind::RenderTargetArrayIndex:
   case SemanticKind::ViewPortArrayIndex:
+  case SemanticKind::ClipDistance:
+  case SemanticKind::CullDistance:
     break;
   case SemanticKind::Depth:
   case SemanticKind::DepthLessEqual:
