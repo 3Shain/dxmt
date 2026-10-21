@@ -278,6 +278,8 @@ public:
 
   CallInst *CreateShuffle(Value *ShuffleValue, Value *LaneId, bool Quad = false);
 
+  CallInst *CreateQuadShuffleXor(Value *ShuffleValue, uint16_t Mask);
+
   /* Math */
 
   Value *CreateFMA(Value *X, Value *Y, Value *Z);
