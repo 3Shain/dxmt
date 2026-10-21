@@ -226,6 +226,7 @@ Converter::LoadOperand(const SrcOperandAttribute &SrcOp, mask_t Mask) {
   switch (SrcOp.attribute) {
   case InputAttribute::VertexId:
   case InputAttribute::InstanceId:
+  case InputAttribute::SampleIndex:
     assert(0 && "never reached: should be handled separately");
     break;
   case InputAttribute::ThreadId: {

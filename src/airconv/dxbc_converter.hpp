@@ -165,6 +165,9 @@ struct io_binding_map {
   llvm::Value *thread_id_in_group_flat_arg = nullptr;
   llvm::Value *coverage_mask_arg = nullptr;
 
+  // only dxil will access it
+  llvm::Value *sample_index_arg = nullptr;
+
   llvm::Value *domain = nullptr;
   llvm::Value *patch_id = nullptr;
 

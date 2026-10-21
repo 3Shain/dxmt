@@ -864,6 +864,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitReadLaneAt(Call, false);
   if (op == "quadOp")
     return EmitQuadOp(Call);
+  if (op == "sampleIndex")
+    return ctx.resource.sample_index_arg;
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
