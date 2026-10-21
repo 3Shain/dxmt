@@ -710,6 +710,17 @@ initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
       case kOpTexture2DMSGetSamplePosition:
         shader_info.use_samplepos = true;
         break;
+      case kOpCoverage: {
+        using namespace dxmt::dxbc;
+        using namespace shader::common;
+        shader->signature_handlers.push_back([=](SignatureContext &ctx) {
+          uint32_t arg = ctx.func_signature.DefineInput(air::InputInputCoverage{});
+          ctx.prologue.Add([=](IOHelper &io) -> llvm::Error {
+            return io.InitializeInputAttribute(InputAttribute::CoverageMask, arg);
+          });
+        });
+        break;
+      }
       default:
         break;
       }
