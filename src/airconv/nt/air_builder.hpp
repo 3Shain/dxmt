@@ -276,6 +276,8 @@ public:
 
   CallInst *CreateAtomicFence(MemFlags Flags, ThreadScope Scope, bool Relaxed = false);
 
+  CallInst *CreateShuffle(Value *ShuffleValue, Value *LaneId, bool Quad = false);
+
   /* Math */
 
   Value *CreateFMA(Value *X, Value *Y, Value *Z);

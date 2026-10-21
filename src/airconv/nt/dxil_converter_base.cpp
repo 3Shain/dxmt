@@ -858,6 +858,10 @@ Converter::EmitDxilOp(CallInst &Call) {
     return air.CreateGetBuiltinID("get_thread_index_in_simdgroup");
   if (op == "waveGetLaneCount")
     return air.CreateGetBuiltinID("get_simdgroup_size");
+  if (op == "quadReadLaneAt")
+    return EmitReadLaneAt(Call, true);
+  if (op == "waveReadLaneAt")
+    return EmitReadLaneAt(Call, false);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -2291,6 +2295,19 @@ Converter::EmitGetTextureSamplePos(const CallInst &Call) {
       ),
       ir.CreateExtractElement(Position, 1ull), {1ull}
   );
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitReadLaneAt(const CallInst &Call, bool Quad) {
+  auto Value = Get(Call.getArgOperand(1));
+  if (!Value)
+    return Value.takeError();
+
+  auto LaneId = Get(Call.getArgOperand(2));
+  if (!LaneId)
+    return LaneId.takeError();
+
+  return air.CreateShuffle(*Value, ir.CreateTrunc(*LaneId, ir.getInt16Ty()), Quad);
 }
 
 } // namespace dxmt::dxil

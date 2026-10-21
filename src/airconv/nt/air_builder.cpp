@@ -1225,6 +1225,32 @@ AIRBuilder::CreateAtomicFence(MemFlags Flags, ThreadScope Scope, bool Relaxed) {
   return builder.CreateCall(Fn, Ops);
 }
 
+CallInst *
+AIRBuilder::CreateShuffle(Value *ShuffleValue, Value *LaneId, bool Quad) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+  auto TyValue = ShuffleValue->getType();
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back(TyValue);
+  Ops.push_back(ShuffleValue);
+  Tys.push_back(builder.getInt16Ty());
+  Ops.push_back(LaneId);
+
+  std::string FnName = Quad ? "air.quad_shuffle" : "air.simd_shuffle";
+  FnName += getTypeOverloadSuffix(ShuffleValue->getType(), Signedness::Unsigned);
+
+  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(TyValue, Tys, false), Attrs);
+
+  return builder.CreateCall(Fn, Ops);
+}
+
 Value *
 AIRBuilder::CreateFMA(Value *X, Value *Y, Value *Z) {
   if (!X->getType()->getScalarType()->isFloatingPointTy()) {
