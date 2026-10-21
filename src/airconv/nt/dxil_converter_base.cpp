@@ -854,6 +854,10 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitCalculateLOD(Call);
   if (op == "texture2DMSGetSamplePosition")
     return EmitGetTextureSamplePos(Call);
+  if (op == "waveGetLaneIndex")
+    return air.CreateGetBuiltinID("get_thread_index_in_simdgroup");
+  if (op == "waveGetLaneCount")
+    return air.CreateGetBuiltinID("get_simdgroup_size");
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }

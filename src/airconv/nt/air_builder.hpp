@@ -270,6 +270,8 @@ public:
 
   Value *CreateGetBuiltinID(llvm::StringRef Name, uint32_t Component);
 
+  Value *CreateGetBuiltinID(llvm::StringRef Name);
+
   CallInst *CreateBarrier(MemFlags Flags, bool SimdGroup = false);
 
   CallInst *CreateAtomicFence(MemFlags Flags, ThreadScope Scope, bool Relaxed = false);
