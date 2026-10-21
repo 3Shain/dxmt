@@ -1527,6 +1527,14 @@ Converter::EmitStoreOutput(const CallInst &Call) {
     ir.CreateStore(Stored, ir.CreateConstInBoundsGEP1_32(ir.getFloatTy(), ctx.resource.depth_output_reg, 0));
     return (llvm::Value *)nullptr;
   }
+  case SemanticKind::Coverage: {
+    if (!ctx.resource.coverage_mask_reg)
+      return unsupported("dxil: coverage output is not available");
+    if (!Stored->getType()->isIntegerTy(32))
+      return unsupported("dxil: unsupported coverage output type");
+    ir.CreateStore(Stored, ir.CreateConstInBoundsGEP1_32(ir.getInt32Ty(), ctx.resource.coverage_mask_reg, 0));
+    return (llvm::Value *)nullptr;
+  }
   default:
     return unsupported("dxil: unsupported storeOutput semantic " + std::to_string((uint32_t)signature.semantic_kind));
   }
