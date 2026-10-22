@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "dxil_converter.hpp"
 #include "metallib_writer.hpp"
 #include "nt/air_builder.hpp"
 #include "shader_common.hpp"
@@ -947,6 +948,13 @@ AIRCONV_API int SM50Initialize(
     errorOut << "Invalid DXBC bytecode\0";
     SM50_RETURN_ERROR(errorObj, ppError, 1);
   }
+
+  UINT32 dxilBlobIdx = DXBCParser.FindNextMatchingBlob(microsoft::DXBC_DXIL, 0);
+  if (dxilBlobIdx != DXBC_BLOB_NOT_FOUND)
+    return dxmt::dxil::initialize(
+      DXBCParser.GetBlob(dxilBlobIdx), DXBCParser.GetBlobSize(dxilBlobIdx), ppShader,
+      pRefl, ppError
+    );
 
   UINT codeBlobIdx = DXBCParser.FindNextMatchingBlob(DXBC_GenericShaderEx);
   if (codeBlobIdx == DXBC_BLOB_NOT_FOUND) {
