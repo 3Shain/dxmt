@@ -430,15 +430,23 @@ initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
   }
 
   auto &func_signature = shader->func_signature;
-  if (shader->shader_type == microsoft::D3D11_SB_COMPUTE_SHADER) {
-    for (auto &property : entry.properties) {
-      if (property.tag != EntryPropertyTag::NumThreads)
-        continue;
+  for (auto &property : entry.properties) {
+    switch (property.tag) {
+    case EntryPropertyTag::ShaderFlags: {
+      if (property.shader_flags & kShaderFlagForceEarlyDepthStencilTest)
+        func_signature.UseEarlyFragmentTests();
+      break;
+    }
+    case EntryPropertyTag::NumThreads: {
       auto n = property.num_threads;
       shader->threadgroup_size[0] = n.x;
       shader->threadgroup_size[1] = n.y;
       shader->threadgroup_size[2] = n.z;
       func_signature.UseMaxWorkgroupSize(n.x * n.y * n.z);
+      break;
+    }
+    default:
+      break;
     }
   }
 
