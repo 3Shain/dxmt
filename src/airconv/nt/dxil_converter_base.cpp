@@ -795,6 +795,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitStoreOutput(Call);
   if (op == "sample" || op == "sampleLevel" || op == "sampleBias" || op == "sampleCmp" || op == "sampleCmpLevelZero")
     return EmitSample(Call, op);
+  if (op == "textureGather" || op == "textureGatherCmp")
+    return EmitGather(Call, op);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -1603,6 +1605,102 @@ Converter::EmitSample(const CallInst &Call, StringRef Op) {
   }
   if (!Value)
     return unsupported("dxil: sampling operation failed");
+  // Metal depth texture must use float type, resolve potential type mismatch here
+  if (Call.getType()->getStructElementType(0)->isHalfTy())
+    Value = air.CreateConvertToHalf(Value);
+  return BuildResRet(Call, Value, Residency);
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitGather(const CallInst &Call, StringRef Op) {
+  auto TextureHandle = ResolveHandleOperand(Call.getArgOperand(1));
+  if (!TextureHandle)
+    return TextureHandle.takeError();
+  auto TextureDescriptor = GetTextureDescriptor(*TextureHandle);
+  if (!TextureDescriptor)
+    return unsupported("dxil: no texture descriptor for resource");
+  auto SamplerHandle = ResolveHandleOperand(Call.getArgOperand(2));
+  if (!SamplerHandle)
+    return SamplerHandle.takeError();
+  auto SamplerDescriptor = GetSamplerDescriptor(*SamplerHandle);
+  if (!SamplerDescriptor)
+    return SamplerDescriptor.takeError();
+  auto Texture = MakeTexture(*TextureDescriptor);
+  auto Sampler = SamplerDescriptor->SamplerHandle;
+
+  auto C0 = Get(Call.getArgOperand(3));
+  if (!C0)
+    return C0.takeError();
+  auto C1 = Get(Call.getArgOperand(4));
+  if (!C1)
+    return C1.takeError();
+  auto C2 = Get(Call.getArgOperand(5));
+  if (!C2)
+    return C2.takeError();
+  auto C3 = Get(Call.getArgOperand(6));
+  if (!C3)
+    return C3.takeError();
+  auto O0 = Get(Call.getArgOperand(7));
+  if (!O0)
+    return O0.takeError();
+  auto O1 = Get(Call.getArgOperand(8));
+  if (!O1)
+    return O1.takeError();
+  auto Component = Get(Call.getArgOperand(9));
+  if (!Component)
+    return Component.takeError();
+
+  Value *Offset = nullptr;
+  Value *Coord = nullptr;
+  Value *Array = nullptr;
+
+  auto ConvertArrayIndexFromFloat = [this](Value *Value) {
+    return air.CreateConvertToSigned(air.CreateFPUnOp(AIRBuilder::rint, Value));
+  };
+
+  switch (TextureDescriptor->ResourceKindLogical) {
+  case Texture::texture2d:
+  case Texture::depth2d:
+    Coord = MakeVec({*C0, *C1});
+    Offset = MakeVec({*O0, *O1});
+    break;
+  case Texture::texture2d_array:
+  case Texture::depth2d_array:
+    Coord = MakeVec({*C0, *C1});
+    Array = ConvertArrayIndexFromFloat(*C2);
+    Offset = MakeVec({*O0, *O1});
+    break;
+  case Texture::texturecube:
+  case Texture::depthcube:
+    Coord = MakeVec({*C0, *C1, *C2});
+    Offset = air.getInt2(0, 0);
+    break;
+  case Texture::texturecube_array:
+  case Texture::depthcube_array:
+    Coord = MakeVec({*C0, *C1, *C2});
+    Array = ConvertArrayIndexFromFloat(*C3);
+    Offset = air.getInt2(0, 0);
+    break;
+  default:
+    return unsupported(
+        "dxil: unsupported texture kind for gathering: " +
+        std::to_string(static_cast<uint32_t>(TextureDescriptor->ResourceKindLogical))
+    );
+  }
+
+  llvm::Value *Value = nullptr, *Residency = nullptr;
+  if (Op == "textureGatherCmp") {
+    auto Reference = Get(Call.getArgOperand(10));
+    if (!Reference)
+      return Reference.takeError();
+    std::tie(Value, Residency) =
+        air.CreateGatherCompare(Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, *Reference, Offset);
+  } else {
+    std::tie(Value, Residency) =
+        air.CreateGather(Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, Offset, *Component);
+  }
+  if (!Value)
+    return unsupported("dxil: gather operation failed");
   // Metal depth texture must use float type, resolve potential type mismatch here
   if (Call.getType()->getStructElementType(0)->isHalfTy())
     Value = air.CreateConvertToHalf(Value);
