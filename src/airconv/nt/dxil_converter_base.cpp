@@ -802,6 +802,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitUnary(Call);
   if (op == "binary")
     return EmitBinary(Call);
+  if (op == "tertiary")
+    return EmitTertiary(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -1836,6 +1838,36 @@ Converter::EmitBinary(const CallInst &Call) {
   }
   default:
     return unsupported("dxil: unsupported binary operation: " + std::to_string(OpId));
+  }
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitTertiary(const CallInst &Call) {
+  auto Op = asU32(Call.getArgOperand(0));
+  if (!Op)
+    return unsupported("dxil: non-constant binary op");
+  if (Call.arg_size() != 4)
+    return unsupported("dxil: unexpected tertiary signature");
+  auto A = Get(Call.getArgOperand(1));
+  if (!A)
+    return A.takeError();
+  auto B = Get(Call.getArgOperand(2));
+  if (!B)
+    return B.takeError();
+  auto C = Get(Call.getArgOperand(3));
+  if (!C)
+    return C.takeError();
+
+  switch (auto OpId = *Op) {
+  case kOpFMad:
+    return ir.CreateFAdd(ir.CreateFMul(*A, *B), *C);
+  case kOpFma:
+    return air.CreateFMA(*A, *B, *C);
+  case kOpIMad:
+  case kOpUMad:
+    return ir.CreateAdd(ir.CreateMul(*A, *B), *C);
+  default:
+    return unsupported("dxil: unsupported tertiary operation: " + std::to_string(OpId));
   }
 }
 
