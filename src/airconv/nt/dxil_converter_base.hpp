@@ -51,6 +51,7 @@ private:
   llvm::Type *MapType(llvm::Type *Type);
   llvm::Expected<llvm::Constant *> MapConstantExpr(llvm::ConstantExpr *Expr);
   llvm::Expected<llvm::Constant *> MapConstant(llvm::Constant *Constant);
+  llvm::Expected<llvm::GlobalVariable *> MapGlobal(llvm::GlobalVariable *Constant);
   llvm::Expected<llvm::Value *> Get(llvm::Value *Value);
   llvm::Expected<HandleInfo> ResolveHandleOperand(llvm::Value *Operand);
   llvm::Optional<dxmt::dxbc::TextureDescirptor> GetTextureDescriptor(const HandleInfo &Handle);
