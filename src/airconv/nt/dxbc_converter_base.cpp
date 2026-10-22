@@ -48,6 +48,11 @@ Converter::LoadOperandIndex(const IndexByTempComponent &SrcOpIndex) {
 }
 
 llvm::Value *
+Converter::LoadOperandIndex(const IndexByControlPointId &SrcOpIndex) {
+  return ir.CreateAdd(res.thread_id_in_patch, ir.getInt32(SrcOpIndex.offset));
+}
+
+llvm::Value *
 Converter::LoadOperandIndex(const IndexByIndexableTempComponent &SrcOpIndex) {
   auto Comp = SrcOpIndex.component;
   SrcOperandIndexableTemp RelReg{

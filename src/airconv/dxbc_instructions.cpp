@@ -38,6 +38,13 @@ auto readOperandRelativeIndex(
     };
   }
 
+  case D3D11_SB_OPERAND_TYPE_OUTPUT_CONTROL_POINT_ID: {
+    // Hull shaders index the input patch with the control point they run for.
+    return IndexByControlPointId{
+      .offset = offset,
+    };
+  }
+
   case D3D10_SB_OPERAND_TYPE_INDEXABLE_TEMP: {
     return IndexByIndexableTempComponent{
       .regfile = OpIndex.m_RelIndex,
@@ -50,6 +57,7 @@ auto readOperandRelativeIndex(
 
   default:
     DXASSERT_DXBC(false);
+    return 0u;
   };
 };
 

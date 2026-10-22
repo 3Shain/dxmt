@@ -80,6 +80,10 @@ struct IndexByTempComponent {
   uint32_t offset;
 };
 
+struct IndexByControlPointId {
+  uint32_t offset;
+};
+
 struct IndexByIndexableTempComponent {
   uint32_t regfile;
   uint32_t regid;
@@ -88,8 +92,8 @@ struct IndexByIndexableTempComponent {
   uint32_t offset;
 };
 
-using OperandIndex =
-  std::variant<uint32_t, IndexByIndexableTempComponent, IndexByTempComponent>;
+using OperandIndex = std::variant<uint32_t, IndexByIndexableTempComponent,
+                                  IndexByTempComponent, IndexByControlPointId>;
 #pragma endregion
 
 enum class OperandDataType {

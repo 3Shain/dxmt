@@ -113,6 +113,7 @@ public:
     return ir.getInt32(SrcOpIndex);
   }
   llvm::Value *LoadOperandIndex(const IndexByIndexableTempComponent &SrcOpIndex);
+  llvm::Value *LoadOperandIndex(const IndexByControlPointId &SrcOpIndex);
   llvm::Value *LoadOperandIndex(const IndexByTempComponent &SrcOpIndex);
 
   llvm::Value *
