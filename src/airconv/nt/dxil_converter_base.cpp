@@ -869,6 +869,8 @@ Converter::EmitDxilOp(CallInst &Call) {
   if (op == "coverage")
     return ctx.pso_sample_mask != 0xffffffff ? ir.CreateAnd(ctx.resource.coverage_mask_arg, ctx.pso_sample_mask)
                                              : ctx.resource.coverage_mask_arg;
+  if (op == "renderTargetGetSampleCount")
+    return air.CreateGetNumSamples();
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
