@@ -515,6 +515,19 @@ initialize_pixel_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
       });
       break;
     }
+    case SemanticKind::Coverage: {
+      shader->signature_handlers.push_back([](SignatureContext &ctx) {
+        ctx.prologue.Add([](IOHelper &io) -> llvm::Error { return io.CreateCoverageMaskOutputRegister(); });
+        auto out = ctx.func_signature.DefineOutput(air::OutputCoverageMask{});
+        ctx.epilogue.Add(
+            [=, sample_mask = ctx.pso_sample_mask](llvm::Value *ret, IOHelper &io) -> llvm::Expected<llvm::Value *> {
+              return io.PopulateOutputCoverageMask(ret, out, sample_mask);
+            }
+        );
+      });
+      shader->ps_has_coverage_output = 1;
+      break;
+    }
     default:
       return unsupported(
           "dxil: unsupported pixel shader output semantic " + std::to_string((uint32_t)element.semantic_kind)
