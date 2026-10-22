@@ -699,6 +699,24 @@ Converter::GetTextureSampleType(Texture::SampleType SampleType) {
   }
 }
 
+llvm::Value *
+Converter::GetSamplePos(llvm::Value *SampleCount, llvm::Value *Index) {
+  using namespace llvm;
+
+  auto &Context = air.getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)}}
+  );
+
+  std::string FnName = "dxmt.sample_pos.i32";
+  auto Fn = air.getModule()->getOrInsertFunction(
+      FnName, llvm::FunctionType::get(air.getFloatTy(2), {air.getIntTy(), air.getIntTy()}, false), Attrs
+  );
+  return ir.CreateCall(Fn, {SampleCount, Index});
+}
+
 llvm::Expected<std::tuple<Value *, Value *, Value *>>
 Converter::BuildRwAddress(
     Texture::ResourceKind LogicalKind, Value *C0, Value *C1, Value *C2, Value *MipOrSampleIndex, int32_t Off0,
@@ -834,6 +852,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitDiscard(Call);
   if (op == "calculateLOD")
     return EmitCalculateLOD(Call);
+  if (op == "texture2DMSGetSamplePosition")
+    return EmitGetTextureSamplePos(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -2235,6 +2255,30 @@ Converter::EmitCalculateLOD(const CallInst &Call) {
   }
 
   return air.CreateCalculateLOD(Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, *Clamped);
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitGetTextureSamplePos(const CallInst &Call) {
+  auto TextureHandle = ResolveHandleOperand(Call.getArgOperand(1));
+  if (!TextureHandle)
+    return TextureHandle.takeError();
+  auto TextureDescriptor = GetTextureDescriptor(*TextureHandle);
+  if (!TextureDescriptor)
+    return unsupported("dxil: no texture descriptor for resource");
+  auto Texture = MakeTexture(*TextureDescriptor);
+
+  auto Index = Get(Call.getArgOperand(2));
+  if (!Index)
+    return Index.takeError();
+  auto *SampleCount =
+      air.CreateTextureQuery(Texture, TextureDescriptor->ResourceHandle, Texture::num_samples, ir.getInt32(0));
+  auto Position = GetSamplePos(SampleCount, *Index);
+  return ir.CreateInsertValue(
+      ir.CreateInsertValue(
+          llvm::PoisonValue::get(MapType(Call.getType())), ir.CreateExtractElement(Position, 0ull), {0ull}
+      ),
+      ir.CreateExtractElement(Position, 1ull), {1ull}
+  );
 }
 
 } // namespace dxmt::dxil
