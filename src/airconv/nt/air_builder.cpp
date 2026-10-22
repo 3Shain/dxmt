@@ -980,6 +980,54 @@ AIRBuilder::CreateTextureQuery(const Texture &Texture, Value *Handle, Texture::Q
   return builder.CreateSelect(builder.CreateIsNull(Handle), builder.getInt32(0), builder.CreateCall(Fn, Ops));
 }
 
+Value *
+AIRBuilder::CreateCalculateLOD(const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, bool Clamped) {
+  assert(Texture.kind <= Texture::last_resource_kind);
+  auto &TexInfo = TextureInfo[Texture.kind];
+
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {
+                   {1U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+                   {1U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)},
+                   {2U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+                   {2U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)},
+                   {~0U, Attribute::get(Context, Attribute::AttrKind::ArgMemOnly)},
+                   {~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
+                   {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                   {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+                   {~0U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)},
+               }
+  );
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back(getTextureHandleType(Texture));
+  Ops.push_back(Handle);
+
+  Tys.push_back(getSamplerHandleType());
+  Ops.push_back(Sampler);
+
+  Tys.push_back(getTextureSampleCoordType(Texture));
+  if (options.sampleNaNToZero) {
+    Ops.push_back(getNaNToZero(Coord));
+  } else {
+    Ops.push_back(Coord);
+  }
+
+  /* access: always 0 = sample */
+  Tys.push_back(getIntTy());
+  Ops.push_back(getInt(0));
+
+  std::string FnName = Clamped ? "air.calculate_clamped_lod_" : "air.calculate_unclamped_lod_";
+  FnName += TexInfo.air_symbol_suffix;
+
+  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(getFloatTy(), Tys, false), Attrs);
+
+  return builder.CreateCall(Fn, Ops);
+}
+
 std::pair<Value *, Value *>
 AIRBuilder::CreateCalculateLOD(const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord) {
   assert(Texture.kind <= Texture::last_resource_kind);
