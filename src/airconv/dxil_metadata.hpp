@@ -130,6 +130,7 @@ struct SignatureElement {
   ComponentType component_type = ComponentType::Invalid;
   SemanticKind semantic_kind = SemanticKind::Arbitrary;
   InterpolationMode interpolation = InterpolationMode::Undefined;
+  std::vector<uint32_t> semantic_indices;
   uint32_t rows = 0;
   uint32_t cols = 0;
   int32_t start_row = 0;
