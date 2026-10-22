@@ -359,6 +359,17 @@ initialize_pixel_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
   for (uint32_t i = 0; i < input_count; ++i) {
     const auto &element = entry.inputs[i];
 
+    if (element.semantic_kind == SemanticKind::SampleIndex) {
+      using namespace shader::common;
+      shader->signature_handlers.push_back([=](SignatureContext &ctx) {
+        uint32_t arg = ctx.func_signature.DefineInput(air::InputSampleIndex{});
+        ctx.prologue.Add([=](IOHelper &io) -> llvm::Error {
+          return io.InitializeInputAttribute(InputAttribute::SampleIndex, arg);
+        });
+      });
+      continue;
+    }
+
     if (element.start_row < 0 || element.start_col < 0)
       return unsupported("dxil: unsupported pixel shader input layout");
     uint32_t reg = (uint32_t)element.start_row;

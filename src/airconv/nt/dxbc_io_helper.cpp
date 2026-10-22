@@ -288,6 +288,9 @@ IOHelper::InitializeInputAttribute(shader::common::InputAttribute value, uint32_
   case shader::common::InputAttribute::CoverageMask:
     io.coverage_mask_arg = arg;
     break;
+  case shader::common::InputAttribute::SampleIndex:
+    io.sample_index_arg = arg;
+    break;
   default:
     return llvm::make_error<UnsupportedFeature>("unhandled input system value");
   }
