@@ -80,6 +80,7 @@ private:
   llvm::Expected<llvm::Value *> EmitTextureStore(llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitTextureLoad(llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitBufferUpdateCounter(llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitGetDimensions(llvm::CallInst &Call);
 };
 
 } // namespace dxmt::dxil
