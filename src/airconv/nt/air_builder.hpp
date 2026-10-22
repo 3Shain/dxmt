@@ -356,6 +356,12 @@ public:
 
   Value *CreateIsNaN(Value *Operand);
 
+  Value *CreateIsFinite(Value *Operand);
+
+  Value *CreateIsInfinite(Value *Operand);
+
+  Value *CreateIsNormal(Value *Operand);
+
   enum FPBinOp {
     fmax,
     fmin,

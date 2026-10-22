@@ -810,6 +810,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitDotProduct(Call, 3);
   if (op == "dot4")
     return EmitDotProduct(Call, 4);
+  if (op == "isSpecialFloat")
+    return EmitIsSpecialFloat(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -1894,6 +1896,29 @@ Converter::EmitDotProduct(const CallInst &Call, unsigned Dimension) {
     RHSs.push_back(*RHS);
   }
   return air.CreateDotProduct(MakeVec(LHSs), MakeVec(RHSs));
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitIsSpecialFloat(const CallInst &Call) {
+  auto Op = asU32(Call.getArgOperand(0));
+  if (!Op)
+    return unsupported("dxil: non-constant binary op");
+  auto Operand = Get(Call.getArgOperand(1));
+  if (!Operand)
+    return Operand.takeError();
+
+  switch (auto OpId = *Op) {
+  case kOpIsNaN:
+    return air.CreateIsNaN(*Operand);
+  case kOpIsInf:
+    return air.CreateIsInfinite(*Operand);
+  case kOpIsFinite:
+    return air.CreateIsFinite(*Operand);
+  case kOpIsNormal:
+    return air.CreateIsNormal(*Operand);
+  default:
+    return unsupported("dxil: unsupported isSpecialFloat operation: " + std::to_string(OpId));
+  }
 }
 
 } // namespace dxmt::dxil
