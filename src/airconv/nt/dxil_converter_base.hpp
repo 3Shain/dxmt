@@ -99,6 +99,7 @@ private:
   llvm::Expected<llvm::Value *> EmitTertiary(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitDotProduct(const llvm::CallInst &Call, unsigned Dimension);
   llvm::Expected<llvm::Value *> EmitIsSpecialFloat(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitAtomicRMW(const llvm::CallInst &Call);
 };
 
 } // namespace dxmt::dxil
