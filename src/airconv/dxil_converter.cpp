@@ -347,6 +347,13 @@ initialize_pixel_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
       });
       break;
     }
+    case SemanticKind::IsFrontFace: {
+      shader->signature_handlers.push_back([=](SignatureContext &ctx) {
+        uint32_t arg = ctx.func_signature.DefineInput(air::InputFrontFacing{});
+        ctx.prologue.Add([=](IOHelper &io) -> llvm::Error { return io.InitializeInput(arg, reg, mask); });
+      });
+      break;
+    }
     default:
       return unsupported(
           "dxil: unsupported pixel shader input semantic " + std::to_string((uint32_t)element.semantic_kind)

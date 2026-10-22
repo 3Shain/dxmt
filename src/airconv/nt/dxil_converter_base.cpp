@@ -1401,6 +1401,7 @@ Converter::EmitLoadInput(const CallInst &Call) {
   case SemanticKind::VertexID:
   case SemanticKind::InstanceID:
   case SemanticKind::Arbitrary:
+  case SemanticKind::IsFrontFace:
     break;
   default:
     return unsupported("dxil: unsupported loadInput semantic " + std::to_string((uint32_t)signature.semantic_kind));
