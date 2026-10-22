@@ -394,6 +394,26 @@ initialize_pixel_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
       });
       break;
     }
+    case SemanticKind::Depth:
+    case SemanticKind::DepthLessEqual:
+    case SemanticKind::DepthGreaterEqual: {
+      air::DepthArgument depth_argument =
+          element.semantic_kind == SemanticKind::DepthLessEqual      ? air::DepthArgument::less
+          : element.semantic_kind == SemanticKind::DepthGreaterEqual ? air::DepthArgument::greater
+                                                                     : air::DepthArgument::any;
+      shader->signature_handlers.push_back([=](SignatureContext &ctx) {
+        ctx.prologue.Add([](IOHelper &io) -> llvm::Error { return io.CreateDepthOutputRegister(); });
+      });
+      shader->signature_handlers.push_back([=](SignatureContext &ctx) {
+        if (ctx.disable_depth_output)
+          return;
+        uint32_t out = ctx.func_signature.DefineOutput(air::OutputDepth{.depth_argument = depth_argument});
+        ctx.epilogue.Add([=](llvm::Value *ret, IOHelper &io) -> llvm::Expected<llvm::Value *> {
+          return io.PopulateOutputDepth(ret, out);
+        });
+      });
+      break;
+    }
     default:
       return unsupported(
           "dxil: unsupported pixel shader output semantic " + std::to_string((uint32_t)element.semantic_kind)
