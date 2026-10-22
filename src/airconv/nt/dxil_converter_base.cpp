@@ -862,6 +862,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitReadLaneAt(Call, true);
   if (op == "waveReadLaneAt")
     return EmitReadLaneAt(Call, false);
+  if (op == "quadOp")
+    return EmitQuadOp(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -2308,6 +2310,19 @@ Converter::EmitReadLaneAt(const CallInst &Call, bool Quad) {
     return LaneId.takeError();
 
   return air.CreateShuffle(*Value, ir.CreateTrunc(*LaneId, ir.getInt16Ty()), Quad);
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitQuadOp(const CallInst &Call) {
+  auto Value = Get(Call.getArgOperand(1));
+  if (!Value)
+    return Value.takeError();
+
+  auto Kind = asU32(Call.getArgOperand(2));
+  if (!Kind)
+    return unsupported("dxil: non-constant quadOp kind");
+
+  return air.CreateQuadShuffleXor(*Value, *Kind + 1);
 }
 
 } // namespace dxmt::dxil
