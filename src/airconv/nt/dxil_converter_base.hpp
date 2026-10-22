@@ -44,6 +44,7 @@ private:
   llvm::Expected<llvm::Constant *> MapConstantExpr(llvm::ConstantExpr *Expr);
   llvm::Expected<llvm::Constant *> MapConstant(llvm::Constant *Constant);
   llvm::Expected<llvm::Value *> Get(llvm::Value *Value);
+  llvm::Expected<HandleInfo> ResolveHandleOperand(llvm::Value *Operand);
 
   llvm::Error TranslateTerminator(llvm::Instruction *Inst, llvm::BasicBlock *ReturnBB);
   llvm::Expected<llvm::Value *> TranslateInstruction(llvm::Instruction *Inst);
@@ -51,6 +52,7 @@ private:
 
   llvm::Expected<llvm::Value *> EmitDxilOp(llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitCreateHandle(llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitCbufferLoadLegacy(llvm::CallInst &Call);
 };
 
 } // namespace dxmt::dxil
