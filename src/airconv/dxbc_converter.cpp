@@ -1311,9 +1311,7 @@ AIRCONV_API int SM50Compile(
   if (auto err = dxmt::dxbc::convertDXBC(
         pShader, FunctionName, context, *pModule, pArgs
       )) {
-    llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
-      errorOut << u.msg;
-    });
+    errorOut << llvm::toString(std::move(err));
     SM50_RETURN_ERROR(errorObj, ppError, 1);
   }
 
@@ -1372,9 +1370,7 @@ AIRCONV_API int SM50CompileTessellationPipelineHull(
         (dxbc::SM50ShaderInternal *)pVertexShader, (dxbc::SM50ShaderInternal *)pHullShader, 
         FunctionName, context, *pModule, pHullShaderArgs
       )) {
-    llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
-      errorOut << u.msg;
-    });
+    errorOut << llvm::toString(std::move(err));
     SM50_RETURN_ERROR(errorObj, ppError, 1);
   }
 
@@ -1435,9 +1431,7 @@ AIRCONV_API int SM50CompileTessellationPipelineDomain(
         (dxbc::SM50ShaderInternal *)pHullShader, context, *pModule,
         pDomainShaderArgs
       )) {
-    llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
-      errorOut << u.msg;
-    });
+    errorOut << llvm::toString(std::move(err));
     SM50_RETURN_ERROR(errorObj, ppError, 1);
   }
 
@@ -1497,9 +1491,7 @@ AIRCONV_API int SM50CompileGeometryPipelineVertex(
         (dxbc::SM50ShaderInternal *)pGeometryShader, context, *pModule,
         pVertexShaderArgs
       )) {
-    llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
-      errorOut << u.msg;
-    });
+    errorOut << llvm::toString(std::move(err));
     SM50_RETURN_ERROR(errorObj, ppError, 1);
   }
 
@@ -1559,9 +1551,7 @@ AIRCONV_API int SM50CompileGeometryPipelineGeometry(
         (dxbc::SM50ShaderInternal *)pVertexShader, context, *pModule,
         pGeometryShaderArgs
       )) {
-    llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
-      errorOut << u.msg;
-    });
+    errorOut << llvm::toString(std::move(err));
     SM50_RETURN_ERROR(errorObj, ppError, 1);
   }
 
