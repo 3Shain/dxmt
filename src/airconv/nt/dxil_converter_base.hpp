@@ -57,6 +57,7 @@ private:
   llvm::Optional<dxmt::dxbc::TextureDescirptor> GetTextureDescriptor(const HandleInfo &Handle);
   llvm::Optional<dxmt::dxbc::BufferDescriptor> GetBufferDescriptor(const HandleInfo &Handle);
   bool SupportsMemoryCoherency() const;
+  bool SupportsNonExecutionBarrier() const;
   static llvm::air::Texture MakeTexture(const dxmt::dxbc::TextureDescirptor &Descriptor);
   llvm::Value *BitcastIfNeeded(llvm::Value *Value, llvm::Type *Type);
   llvm::Value *BuildResRet(llvm::CallInst &Call, llvm::Value *VecOrScalar, llvm::Value *Residency);
@@ -87,6 +88,7 @@ private:
   llvm::Expected<llvm::Value *> EmitLegacyF16ToF32(llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitLegacyF32ToF16(llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitUnaryBits(llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitBarrier(llvm::CallInst &Call);
 };
 
 } // namespace dxmt::dxil
