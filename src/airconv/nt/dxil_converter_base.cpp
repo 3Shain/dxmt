@@ -708,6 +708,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitTextureStore(Call);
   if (op == "textureLoad")
     return EmitTextureLoad(Call);
+  if (op == "bufferUpdateCounter")
+    return EmitBufferUpdateCounter(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -964,6 +966,26 @@ Converter::EmitTextureLoad(CallInst &Call) {
   auto [Value, Residency] =
       air.CreateRead(Texture, Descriptor->ResourceHandle, Position, Slice, SampleIndex, Level, Coherent);
   return BuildResRet(Call, Value, Residency);
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitBufferUpdateCounter(CallInst &Call) {
+  auto Handle = ResolveHandleOperand(Call.getArgOperand(1));
+  if (!Handle)
+    return Handle.takeError();
+  auto Descriptor = ctx.binding.GetUAVCounter(air, Handle->range_id, Handle->index);
+  if (!Descriptor)
+    return unsupported("dxil: no counter descriptor for resource");
+  if (auto Increment = llvm::dyn_cast<llvm::ConstantInt>(Call.getArgOperand(2))) {
+    auto Amount = Increment->getSExtValue();
+    auto *OldValue = air.CreateAtomicRMW(AtomicRMWInst::Add, Descriptor->Pointer, ir.getInt32(Amount));
+    if (!OldValue)
+      return unsupported("dxil: buffer counter update failed");
+    if (Amount < 0)
+      return ir.CreateAdd(OldValue, ir.getInt32(Amount));
+    return OldValue;
+  }
+  return unsupported("dxil: non-constant buffer counter increment");
 }
 
 } // namespace dxmt::dxil
