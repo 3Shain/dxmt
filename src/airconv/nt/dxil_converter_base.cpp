@@ -546,6 +546,39 @@ Converter::ResolveHandleOperand(llvm::Value *Operand) {
   return Found->second;
 }
 
+llvm::Optional<dxmt::dxbc::TextureDescirptor>
+Converter::GetTextureDescriptor(const HandleInfo &Handle) {
+  return Handle.resource_class == ResourceClass::SRV ? ctx.binding.GetSRVTexture(air, Handle.range_id, Handle.index)
+                                                     : ctx.binding.GetUAVTexture(air, Handle.range_id, Handle.index);
+}
+
+llvm::Optional<dxmt::dxbc::BufferDescriptor>
+Converter::GetBufferDescriptor(const HandleInfo &Handle) {
+  return Handle.resource_class == ResourceClass::SRV ? ctx.binding.GetSRVBuffer(air, Handle.range_id, Handle.index)
+                                                     : ctx.binding.GetUAVBuffer(air, Handle.range_id, Handle.index);
+}
+
+bool
+Converter::SupportsMemoryCoherency() const {
+  return ctx.metal_version >= SM50_SHADER_METAL_320;
+}
+
+llvm::air::Texture
+Converter::MakeTexture(const dxmt::dxbc::TextureDescirptor &Descriptor) {
+  return llvm::air::Texture{
+      .kind = Descriptor.ResourceKind,
+      .sample_type = Descriptor.SampleType,
+      .memory_access = Descriptor.MemoryAccess,
+  };
+}
+
+Value *
+Converter::BitcastIfNeeded(Value *Value, Type *Type) {
+  if (Value->getType() == Type)
+    return Value;
+  return ir.CreateBitCast(Value, Type);
+}
+
 llvm::Expected<llvm::Value *>
 Converter::TranslateCall(llvm::CallInst &Call) {
   auto *Callee = Call.getCalledFunction();
@@ -576,6 +609,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitThreadId(Call, ThreadBuiltin::kLocalId);
   if (op == "flattenedThreadIdInGroup")
     return EmitThreadId(Call, ThreadBuiltin::kLocalLinearId);
+  if (op == "bufferStore")
+    return EmitBufferStore(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -634,6 +669,70 @@ Converter::EmitThreadId(CallInst &Call, ThreadBuiltin Kind) {
   default:
     return air.CreateGetLocalID(*component);
   }
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitBufferStore(CallInst &Call) {
+  auto Handle = ResolveHandleOperand(Call.getArgOperand(1));
+  if (!Handle)
+    return Handle.takeError();
+
+  auto Index = Get(Call.getArgOperand(2));
+  if (!Index)
+    return Index.takeError();
+  auto Mask = asU32(Call.getArgOperand(8));
+  if (!Mask)
+    return unsupported("dxil: non-constant bufferStore mask");
+
+  auto Texture = GetTextureDescriptor(*Handle);
+  if (Texture) {
+    auto TyElement = Texture->SampleType == Texture::sample_float ? (Type *)ir.getFloatTy() : (Type *)ir.getInt32Ty();
+    auto *VecType = FixedVectorType::get(TyElement, 4);
+    Value *Value = PoisonValue::get(VecType);
+    for (unsigned i = 0; i < 4; i++) {
+      if (!(*Mask & (1u << i)))
+        continue;
+      auto component = Get(Call.getArgOperand(4 + i));
+      if (!component)
+        return component.takeError();
+      Value = ir.CreateInsertElement(Value, BitcastIfNeeded(*component, TyElement), (uint64_t)i);
+    }
+    bool Coherent = Texture->GlobalCoherent && SupportsMemoryCoherency();
+    air.CreateWrite(
+        MakeTexture(*Texture), Texture->ResourceHandle, *Index, nullptr, nullptr, air.getInt(0), Value, Coherent
+    );
+    return (llvm::Value *)nullptr;
+  }
+
+  auto Buffer = GetBufferDescriptor(*Handle);
+  if (!Buffer)
+    return unsupported("dxil: no buffer descriptor for resource");
+
+  Value *ByteOffset = *Index;
+  if (Buffer->StructureStride != 0) {
+    auto ElementOffset = Get(Call.getArgOperand(3));
+    if (!ElementOffset)
+      return ElementOffset.takeError();
+    ByteOffset = ir.CreateMul(ByteOffset, ir.getInt32(Buffer->StructureStride));
+    ByteOffset = ir.CreateAdd(ByteOffset, *ElementOffset);
+  }
+  auto Base = ir.CreateLShr(ByteOffset, ir.getInt32(2));
+  bool Coherent = Buffer->GlobalCoherent && SupportsMemoryCoherency();
+
+  for (unsigned i = 0; i < 4; i++) {
+    if (!(*Mask & (1u << i)))
+      continue;
+    auto Component = Get(Call.getArgOperand(4 + i));
+    if (!Component)
+      return Component.takeError();
+    Value *Word = BitcastIfNeeded(*Component, ir.getInt32Ty());
+    auto *Ptr = ir.CreateGEP(ir.getInt32Ty(), Buffer->Pointer, {ir.CreateAdd(Base, ir.getInt32(i))});
+    if (Coherent)
+      air.CreateDeviceCoherentStore(Word, Ptr);
+    else
+      ir.CreateStore(Word, Ptr);
+  }
+  return (llvm::Value *)nullptr;
 }
 
 } // namespace dxmt::dxil
