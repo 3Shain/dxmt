@@ -216,18 +216,10 @@ convert_dxbc_vertex_hull_shader(
 
   bool is_indexed_draw = ia_layout && ia_layout->index_buffer_format > 0;
 
-  IREffect prologue_vs([](auto) { return std::monostate(); });
-  IREffect prologue_hs([](auto) { return std::monostate(); });
-  IRValue epilogue_vs([](struct context ctx) -> pvalue {
-    // just return null since the function returns void
-    // and we handle output registers directly
-    return nullptr;
-  });
-  IRValue epilogue_hs([](struct context ctx) -> pvalue {
-    // just return null since the function returns void
-    // and we handle output registers directly
-    return nullptr;
-  });
+  Prologues prologue_vs;
+  Prologues prologue_hs;
+  Epilogues epilogue_vs;
+  Epilogues epilogue_hs;
 
   io_binding_map resource_map_vs;
   io_binding_map resource_map_hs;
@@ -465,7 +457,9 @@ convert_dxbc_vertex_hull_shader(
     resource_map.base_instance_id = builder.CreateExtractValue(draw_arguments, is_indexed_draw ? 4 : 3);
     resource_map.instance_id_with_base = builder.CreateAdd(resource_map.instance_id, resource_map.base_instance_id);
 
-    if (auto err = prologue.build(ctx).takeError()) {
+    IOHelper io(air, function, types, resource_map);
+
+    if (auto err = prologue.Run(io)) {
       return err;
     }
     auto real_entry = convert_basicblocks(pVertexStage->entry(), ctx, epilogue_bb);
@@ -475,7 +469,7 @@ convert_dxbc_vertex_hull_shader(
     builder.CreateBr(real_entry.get());
 
     builder.SetInsertPoint(epilogue_bb);
-    auto epilogue_result = epilogue.build(ctx);
+    auto epilogue_result = epilogue.Run(function->getReturnType(), io);
     if (auto err = epilogue_result.takeError()) {
       return err;
     }
@@ -609,7 +603,9 @@ convert_dxbc_vertex_hull_shader(
     };
     dxbc::Converter dxbc(ctx.air, ctx, ctx.resource);
 
-    if (auto err = prologue.build(ctx).takeError()) {
+    IOHelper io(air, function, types, resource_map);
+
+    if (auto err = prologue.Run(io)) {
       return err;
     }
     auto real_entry = convert_basicblocks(pHullStage->entry(), ctx, epilogue_bb);
@@ -632,7 +628,8 @@ convert_dxbc_vertex_hull_shader(
     );
 
     builder.SetInsertPoint(write_patch_constant);
-    if (auto err = epilogue.build(ctx).takeError()) {
+    auto epilogue_result = epilogue.Run(function->getReturnType(), io);
+    if (auto err = epilogue_result.takeError()) {
       return err;
     }
 
@@ -756,10 +753,8 @@ convert_dxbc_tesselator_domain_shader(
 
   auto [final_maxtessfactor, factor_int] = get_final_maxtessfactor(pHullStage, pArgs);
 
-  IREffect prologue([](auto) { return std::monostate(); });
-  IRValue epilogue([](struct context ctx) -> pvalue {
-    return nullptr; // a mesh shader...
-  });
+  Prologues prologue;
+  Epilogues epilogue;
 
   io_binding_map resource_map;
   air::AirType types(context);
@@ -993,10 +988,9 @@ convert_dxbc_tesselator_domain_shader(
   auto vertex_id = actual_thread_index;
   auto primitive_id = actual_thread_index; // 
   MeshOutputContext gs_out_ctx{vertex_id, primitive_id};
+  IOHelper io(air, function, types, resource_map);
   for (auto &h : ds_output_handlers) {
-    if (auto err = h(gs_out_ctx).build(ctx).takeError()) {
-      return err;
-    }
+    h(gs_out_ctx, io);
   }
 
   for (auto x : llvm::enumerate(pShaderInternal->clip_distance_scalars)) {
