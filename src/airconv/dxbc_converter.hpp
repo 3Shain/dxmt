@@ -14,6 +14,7 @@
 #include "air_type.hpp"
 #include "dxbc_constants.hpp"
 #include "dxbc_instructions.hpp"
+#include "dxil_metadata.hpp"
 #include "nt/air_builder.hpp"
 #include "nt/dxbc_binding_map.hpp"
 #include "nt/dxbc_io_helper.hpp"
@@ -350,7 +351,7 @@ public:
   std::vector<std::unique_ptr<BasicBlock>> bbs;
   std::unique_ptr<llvm::LLVMContext> dxil_context;
   std::unique_ptr<llvm::Module> dxil;
-  llvm::Function *dxil_entry = nullptr;
+  dxil::EntryPoint dxil_entry;
   std::vector<std::function<void(SignatureContext &)>> signature_handlers;
   microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type;
   /* for domain shader, it refers to patch constant input count */
