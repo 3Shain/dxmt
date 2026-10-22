@@ -101,6 +101,7 @@ private:
   llvm::Expected<llvm::Value *> EmitIsSpecialFloat(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitAtomicRMW(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitAtomicCmpXchg(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitDiscard(const llvm::CallInst &Call);
 };
 
 } // namespace dxmt::dxil
