@@ -7,6 +7,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include "airconv_error.hpp"
+#include "nt/dxil_constants.hpp"
 #include "nt/dxil_converter_base.hpp"
 
 #include <memory>
@@ -73,23 +74,6 @@ to_shader_resource_type(ResourceKind kind) {
     return std::nullopt;
   }
 }
-
-// constants for resolving resource handles
-constexpr uint32_t kOpCreateHandle = 57;
-constexpr uint32_t kOpTextureLoad = 66;
-constexpr uint32_t kOpTextureStore = 67;
-constexpr uint32_t kOpBufferLoad = 68;
-constexpr uint32_t kOpBufferStore = 69;
-constexpr uint32_t kOpAtomicBinOp = 78;
-constexpr uint32_t kOpAtomicCmpXchg = 79;
-constexpr uint32_t kOpSample = 60;
-constexpr uint32_t kOpSampleBias = 61;
-constexpr uint32_t kOpSampleLevel = 62;
-constexpr uint32_t kOpSampleGrad = 63;
-constexpr uint32_t kOpSampleCmp = 64;
-constexpr uint32_t kOpSampleCmpLevelZero = 65;
-constexpr uint32_t kOpTextureGather = 73;
-constexpr uint32_t kOpTextureGatherCmp = 74;
 
 // defined in `nt/dxil_converter_base.hpp`
 std::optional<uint32_t> asU32(llvm::Value *value);
