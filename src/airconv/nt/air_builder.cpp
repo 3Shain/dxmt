@@ -1336,7 +1336,7 @@ AIRBuilder::CreateGetLocalID(uint32_t Component) {
 }
 
 Value *
-AIRBuilder::CreateGetLocalLinearID() {
+AIRBuilder::CreateGetBuiltinID(llvm::StringRef Name) {
   auto &Context = getContext();
   auto Attrs = AttributeList::get(
       Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)},
@@ -1344,11 +1344,17 @@ AIRBuilder::CreateGetLocalLinearID() {
                 {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
   );
 
-  auto Fn = getModule()->getOrInsertFunction(
-      "air.get_local_linear_id.i32", FunctionType::get(getIntTy(), {}, false), Attrs
-  );
+  std::string FnName = "air.";
+  FnName += Name;
+  FnName += ".i32";
+  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(getIntTy(), {}, false), Attrs);
 
   return builder.CreateCall(Fn, {});
+}
+
+Value *
+AIRBuilder::CreateGetLocalLinearID() {
+  return CreateGetBuiltinID("get_local_linear_id");
 }
 
 Value *
