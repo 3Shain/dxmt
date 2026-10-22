@@ -56,11 +56,12 @@ private:
   llvm::Expected<HandleInfo> ResolveHandleOperand(llvm::Value *Operand);
   llvm::Optional<dxmt::dxbc::TextureDescirptor> GetTextureDescriptor(const HandleInfo &Handle);
   llvm::Optional<dxmt::dxbc::BufferDescriptor> GetBufferDescriptor(const HandleInfo &Handle);
+  llvm::Expected<dxmt::dxbc::SamplerDescriptor> GetSamplerDescriptor(const HandleInfo &Handle);
   bool SupportsMemoryCoherency() const;
   bool SupportsNonExecutionBarrier() const;
   static llvm::air::Texture MakeTexture(const dxmt::dxbc::TextureDescirptor &Descriptor);
   llvm::Value *BitcastIfNeeded(llvm::Value *Value, llvm::Type *Type);
-  llvm::Value *BuildResRet(llvm::CallInst &Call, llvm::Value *VecOrScalar, llvm::Value *Residency);
+  llvm::Value *BuildResRet(const llvm::CallInst &Call, llvm::Value *VecOrScalar, llvm::Value *Residency);
   llvm::Value *MakeVec(llvm::ArrayRef<llvm::Value *> Components);
   llvm::Value *AddOffsetIfNeeded(llvm::Value *Coord, int32_t Offset);
   llvm::Expected<std::tuple<llvm::Value *, llvm::Value *, llvm::Value *>> BuildRwAddress(
@@ -91,6 +92,7 @@ private:
   llvm::Expected<llvm::Value *> EmitBarrier(llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitLoadInput(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitStoreOutput(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitSample(const llvm::CallInst &Call);
 };
 
 } // namespace dxmt::dxil
