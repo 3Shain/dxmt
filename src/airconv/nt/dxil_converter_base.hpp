@@ -89,6 +89,8 @@ private:
   llvm::Expected<llvm::Value *> EmitLegacyF32ToF16(llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitUnaryBits(llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitBarrier(llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitLoadInput(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitStoreOutput(const llvm::CallInst &Call);
 };
 
 } // namespace dxmt::dxil
