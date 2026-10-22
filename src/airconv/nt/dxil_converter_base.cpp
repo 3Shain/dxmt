@@ -804,6 +804,12 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitBinary(Call);
   if (op == "tertiary")
     return EmitTertiary(Call);
+  if (op == "dot2")
+    return EmitDotProduct(Call, 2);
+  if (op == "dot3")
+    return EmitDotProduct(Call, 3);
+  if (op == "dot4")
+    return EmitDotProduct(Call, 4);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -1869,6 +1875,25 @@ Converter::EmitTertiary(const CallInst &Call) {
   default:
     return unsupported("dxil: unsupported tertiary operation: " + std::to_string(OpId));
   }
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitDotProduct(const CallInst &Call, unsigned Dimension) {
+  if (Call.arg_size() != 1 + 2 * Dimension)
+    return unsupported("dxil: unexpected dot signature");
+  SmallVector<Value *, 4> LHSs;
+  SmallVector<Value *, 4> RHSs;
+  for (unsigned i = 0; i < Dimension; ++i) {
+    auto LHS = Get(Call.getArgOperand(1 + i));
+    if (!LHS)
+      return LHS.takeError();
+    auto RHS = Get(Call.getArgOperand(1 + Dimension + i));
+    if (!RHS)
+      return RHS.takeError();
+    LHSs.push_back(*LHS);
+    RHSs.push_back(*RHS);
+  }
+  return air.CreateDotProduct(MakeVec(LHSs), MakeVec(RHSs));
 }
 
 } // namespace dxmt::dxil
