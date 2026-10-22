@@ -105,6 +105,7 @@ private:
   llvm::Expected<llvm::Value *> EmitDiscard(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitCalculateLOD(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitGetTextureSamplePos(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitReadLaneAt(const llvm::CallInst &Call, bool Quad);
 };
 
 } // namespace dxmt::dxil
