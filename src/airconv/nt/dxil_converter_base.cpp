@@ -1395,6 +1395,13 @@ Converter::EmitLoadInput(const CallInst &Call) {
     return ir.CreateLoad(ir.getFloatTy(), Ptr);
   }
   if (Type->isHalfTy()) {
+    if (signature.semantic_kind == SemanticKind::Position) {
+      auto *Ptr = ir.CreateGEP(
+          ctx.resource.input.ptr_float4->getType()->getNonOpaquePointerElementType(), ctx.resource.input.ptr_float4,
+          {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+      );
+      return air.CreateConvertToHalf(ir.CreateLoad(ir.getFloatTy(), Ptr));
+    }
     auto *Ptr = ir.CreateGEP(
         ctx.resource.input.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.input.ptr_int4,
         {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
@@ -1449,6 +1456,14 @@ Converter::EmitStoreOutput(const CallInst &Call) {
     return (llvm::Value *)nullptr;
   }
   if (Stored->getType()->isHalfTy()) {
+    if (signature.semantic_kind == SemanticKind::Position) {
+      auto *Ptr = ir.CreateGEP(
+          ctx.resource.output.ptr_float4->getType()->getNonOpaquePointerElementType(), ctx.resource.output.ptr_float4,
+          {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+      );
+      ir.CreateStore(air.CreateConvertToFloat(Stored), Ptr);
+      return (llvm::Value *)nullptr;
+    }
     Stored = ir.CreateZExt(ir.CreateBitCast(Stored, ir.getInt16Ty()), ir.getInt32Ty());
     auto *Ptr = ir.CreateGEP(
         ctx.resource.output.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.output.ptr_int4,
