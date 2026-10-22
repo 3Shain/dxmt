@@ -34,6 +34,13 @@ asU32(Value *value) {
   return std::nullopt;
 }
 
+int32_t
+tryGetI32(Value *value) {
+  if (auto *ci = dyn_cast<ConstantInt>(value))
+    return (int32_t)ci->getSExtValue();
+  return (int32_t)0;
+}
+
 Converter::Converter(llvm::Function *entry, dxmt::dxbc::context &ctx) :
     ctx(ctx),
     ir(ctx.builder),
@@ -699,6 +706,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitBufferLoad(Call);
   if (op == "textureStore")
     return EmitTextureStore(Call);
+  if (op == "textureLoad")
+    return EmitTextureLoad(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -916,6 +925,45 @@ Converter::EmitTextureStore(CallInst &Call) {
   bool Coherent = Descriptor->GlobalCoherent && SupportsMemoryCoherency();
   air.CreateWrite(Texture, Descriptor->ResourceHandle, Position, Slice, nullptr, air.getInt(0), Value, Coherent);
   return (llvm::Value *)nullptr;
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitTextureLoad(CallInst &Call) {
+  auto Handle = ResolveHandleOperand(Call.getArgOperand(1));
+  if (!Handle)
+    return Handle.takeError();
+  auto Descriptor = GetTextureDescriptor(*Handle);
+  if (!Descriptor)
+    return unsupported("dxil: no texture descriptor for resource");
+
+  auto MipOrSampleIndex = Get(Call.getArgOperand(2));
+  if (!MipOrSampleIndex)
+    return MipOrSampleIndex.takeError();
+  auto C0 = Get(Call.getArgOperand(3));
+  if (!C0)
+    return C0.takeError();
+  auto C1 = Get(Call.getArgOperand(4));
+  if (!C1)
+    return C1.takeError();
+  auto C2 = Get(Call.getArgOperand(5));
+  if (!C2)
+    return C2.takeError();
+
+  int32_t O0 = tryGetI32(Call.getArgOperand(6));
+  int32_t O1 = tryGetI32(Call.getArgOperand(7));
+  int32_t O2 = tryGetI32(Call.getArgOperand(8));
+
+  auto Address = BuildRwAddress(Descriptor->ResourceKindLogical, *C0, *C1, *C2, *MipOrSampleIndex, O0, O1, O2);
+  if (!Address)
+    return Address.takeError();
+
+  auto [Position, Slice, SampleIndex] = *Address;
+  auto Texture = MakeTexture(*Descriptor);
+  Value *Level = SampleIndex ? air.getInt(0) : *MipOrSampleIndex;
+  bool Coherent = Descriptor->GlobalCoherent && SupportsMemoryCoherency();
+  auto [Value, Residency] =
+      air.CreateRead(Texture, Descriptor->ResourceHandle, Position, Slice, SampleIndex, Level, Coherent);
+  return BuildResRet(Call, Value, Residency);
 }
 
 } // namespace dxmt::dxil
