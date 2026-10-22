@@ -1,4 +1,3 @@
-#include "air_operations.hpp"
 #include "air_signature.hpp"
 #include "airconv_error.hpp"
 #include "dxbc_converter.hpp"
@@ -883,10 +882,3 @@ convert_dxbc_vertex_for_geometry_shader(
 };
 
 } // namespace dxmt::dxbc
-
-template <> struct environment_cast<::dxmt::dxbc::context, ::dxmt::air::AIRBuilderContext> {
-  ::dxmt::air::AIRBuilderContext
-  cast(const ::dxmt::dxbc::context &src) {
-    return {src.llvm, src.module, src.builder, src.types, src.air};
-  };
-};
