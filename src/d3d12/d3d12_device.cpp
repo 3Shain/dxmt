@@ -346,7 +346,7 @@ public:
         return E_INVALIDARG;
       auto *out = reinterpret_cast<D3D12_FEATURE_DATA_D3D12_OPTIONS4 *>(pFeatureData);
       out->MSAA64KBAlignedTextureSupported = TRUE;
-      out->Native16BitShaderOpsSupported = FALSE; // TODO(d3d12): should be true
+      out->Native16BitShaderOpsSupported = TRUE;
       // TODO(d3d12): revise when d3d12 shared resource is implemented
       out->SharedResourceCompatibilityTier = D3D12_SHARED_RESOURCE_COMPATIBILITY_TIER_0;
       return S_OK;
