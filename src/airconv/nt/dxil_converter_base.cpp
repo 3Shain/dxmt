@@ -597,6 +597,72 @@ Converter::BuildResRet(CallInst &Call, Value *VecOrScalar, Value *Residency) {
   return Result;
 }
 
+Value *
+Converter::MakeVec(ArrayRef<Value *> Components) {
+  Type *element = Components.front()->getType();
+  Value *vec = PoisonValue::get(FixedVectorType::get(element, Components.size()));
+  for (unsigned i = 0; i < Components.size(); i++)
+    vec = ir.CreateInsertElement(vec, Components[i], (uint64_t)i);
+  return vec;
+}
+
+Value *
+Converter::AddOffsetIfNeeded(Value *Coord, int32_t Offset) {
+  if (Offset == 0)
+    return Coord;
+  return ir.CreateAdd(Coord, ir.getInt32(Offset));
+}
+
+llvm::Expected<std::tuple<Value *, Value *, Value *>>
+Converter::BuildRwAddress(
+    Texture::ResourceKind LogicalKind, Value *C0, Value *C1, Value *C2, Value *MipOrSampleIndex, int32_t Off0,
+    int32_t Off1, int32_t Off2
+) {
+  Value *Position = nullptr;
+  Value *ArraySlice = nullptr;
+  Value *SampleIndex = nullptr;
+  switch (LogicalKind) {
+  case Texture::texture1d:
+    Position = MakeVec({AddOffsetIfNeeded(C0, Off0), ir.getInt32(0)});
+    break;
+  case Texture::texture1d_array:
+    Position = MakeVec({AddOffsetIfNeeded(C0, Off0), ir.getInt32(0)});
+    ArraySlice = C1;
+    break;
+  case Texture::texture2d:
+  case Texture::depth2d:
+    Position = MakeVec({AddOffsetIfNeeded(C0, Off0), AddOffsetIfNeeded(C1, Off1)});
+    break;
+  case Texture::texture2d_array:
+  case Texture::depth2d_array:
+    Position = MakeVec({AddOffsetIfNeeded(C0, Off0), AddOffsetIfNeeded(C1, Off1)});
+    ArraySlice = C2;
+    break;
+  case Texture::texture3d:
+    Position = MakeVec({AddOffsetIfNeeded(C0, Off0), AddOffsetIfNeeded(C1, Off1), AddOffsetIfNeeded(C2, Off2)});
+    break;
+  case Texture::texture2d_ms:
+  case Texture::depth_2d_ms:
+    Position = MakeVec({AddOffsetIfNeeded(C0, Off0), AddOffsetIfNeeded(C1, Off1)});
+    SampleIndex = MipOrSampleIndex;
+    break;
+  case Texture::texture2d_ms_array:
+  case Texture::depth_2d_ms_array:
+    Position = MakeVec({AddOffsetIfNeeded(C0, Off0), AddOffsetIfNeeded(C1, Off1)});
+    ArraySlice = C2;
+    SampleIndex = MipOrSampleIndex;
+    break;
+  case Texture::texture_buffer:
+    Position = C0;
+    break;
+  default:
+    return unsupported(
+        "dxil: unsupported texture kind for indexing: " + std::to_string(static_cast<uint32_t>(LogicalKind))
+    );
+  }
+  return std::make_tuple(Position, ArraySlice, SampleIndex);
+}
+
 llvm::Expected<llvm::Value *>
 Converter::TranslateCall(llvm::CallInst &Call) {
   auto *Callee = Call.getCalledFunction();
@@ -631,6 +697,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitBufferStore(Call);
   if (op == "bufferLoad")
     return EmitBufferLoad(Call);
+  if (op == "textureStore")
+    return EmitTextureStore(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -802,6 +870,52 @@ Converter::EmitBufferLoad(CallInst &Call) {
   if (TyElement->isFloatingPointTy())
     Words = ir.CreateBitCast(Words, FixedVectorType::get(TyElement, 4));
   return BuildResRet(Call, Words, nullptr);
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitTextureStore(CallInst &Call) {
+  auto Handle = ResolveHandleOperand(Call.getArgOperand(1));
+  if (!Handle)
+    return Handle.takeError();
+  auto Descriptor = GetTextureDescriptor(*Handle);
+  if (!Descriptor)
+    return unsupported("dxil: no texture descriptor for resource");
+
+  auto C0 = Get(Call.getArgOperand(2));
+  if (!C0)
+    return C0.takeError();
+  auto C1 = Get(Call.getArgOperand(3));
+  if (!C1)
+    return C1.takeError();
+  auto C2 = Get(Call.getArgOperand(4));
+  if (!C2)
+    return C2.takeError();
+
+  auto Mask = asU32(Call.getArgOperand(9));
+  if (!Mask)
+    return unsupported("dxil: non-constant textureStore mask");
+
+  auto Address = BuildRwAddress(Descriptor->ResourceKindLogical, *C0, *C1, *C2, nullptr, 0, 0, 0);
+  if (!Address)
+    return Address.takeError();
+
+  auto [Position, Slice, Unused] = *Address;
+  auto Texture = MakeTexture(*Descriptor);
+  auto TyElement = Texture.sample_type == Texture::sample_float ? (Type *)ir.getFloatTy() : (Type *)ir.getInt32Ty();
+  auto *TyVec = FixedVectorType::get(TyElement, 4);
+  Value *Value = PoisonValue::get(TyVec);
+  for (unsigned i = 0; i < 4; i++) {
+    if (!(*Mask & (1u << i)))
+      continue;
+    auto Component = Get(Call.getArgOperand(5 + i));
+    if (!Component)
+      return Component.takeError();
+    Value = ir.CreateInsertElement(Value, BitcastIfNeeded(*Component, TyElement), (uint64_t)i);
+  }
+
+  bool Coherent = Descriptor->GlobalCoherent && SupportsMemoryCoherency();
+  air.CreateWrite(Texture, Descriptor->ResourceHandle, Position, Slice, nullptr, air.getInt(0), Value, Coherent);
+  return (llvm::Value *)nullptr;
 }
 
 } // namespace dxmt::dxil
