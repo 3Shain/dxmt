@@ -616,6 +616,27 @@ initialize_geometry_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
       });
       break;
     }
+    case SemanticKind::ClipDistance:
+    case SemanticKind::CullDistance: {
+      bool clip = element.semantic_kind == SemanticKind::ClipDistance;
+      auto &scalars = clip ? shader->clip_distance_scalars : shader->cull_distance_scalars;
+      for (unsigned row = 0; row < element.rows; row++) {
+        auto user = element_attribute_name(element, row);
+        if (auto err = user.takeError())
+          return err;
+        for (uint32_t component = 0; component < element.cols; component++) {
+          scalars.push_back({(uint8_t)(element.start_col + component), (uint8_t)(reg + row)});
+        }
+        auto const mesh_vertex_data_index = num_mesh_vertex_data++;
+        shader->func_signature.DefineMeshVertexOutput(
+            air::OutputMeshData{.user = *user, .type = air::msl_float4, .index = mesh_vertex_data_index}
+        );
+        mesh_output_handlers.push_back([=, reg = reg + row](MeshOutputContext &output, IOHelper &io) {
+          io.PopulateMeshOutputVertexData(reg, mask, mesh_vertex_data_index, output.vertex_id, air::msl_float4);
+        });
+      }
+      break;
+    }
     default:
       return unsupported(
           "dxil: unsupported geometry shader output semantic " + std::to_string((uint32_t)element.semantic_kind)
