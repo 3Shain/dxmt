@@ -252,6 +252,18 @@ parse_property(EntryPropertyTag tag, MetadataReader r) {
     property.num_threads = *num_threads;
     break;
   }
+  case EntryPropertyTag::GSState: {
+    auto state = r.slice(0, 5).asMappedTuple<uint32_t, uint32_t, uint32_t, uint32_t, uint32_t>(
+        [](uint32_t primitive, uint32_t max_vertex_count, uint32_t active_stream_mask, uint32_t topology,
+           uint32_t instance_count) {
+          return GSState{primitive, max_vertex_count, active_stream_mask, topology, instance_count};
+        }
+    );
+    if (!state)
+      return state.takeError();
+    property.gs_state = *state;
+    break;
+  }
   default:
     break;
   }
