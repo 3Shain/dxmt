@@ -202,6 +202,39 @@ if dxmt_crossbuild
   add_project_link_arguments(['-arch', native_compiler_arch], language: 'cpp',  native: true)
 endif
 
+wine_build_path = get_option('wine_build_path')
+wine_install_path = get_option('wine_install_path')
+if wine_build_path != ''
+  if not wine_build_path.startswith('/')
+    wine_build_path = join_paths(meson.project_source_root(), wine_build_path)
+  endif
+  lib_winecrt0 = cc.find_library('winecrt0', dirs: [
+      join_paths(wine_build_path, 'libs/winecrt0', windows_builtin_install_dir),
+      join_paths(wine_build_path, 'dlls/winecrt0', windows_builtin_install_dir),
+    ],
+  )
+  lib_ntdll = cc.find_library('ntdll', dirs : [ join_paths(wine_build_path, 'dlls/ntdll', windows_builtin_install_dir)], static: true)
+  lib_dbghelp = cc.find_library('dbghelp', dirs : [ join_paths(wine_build_path, 'dlls/dbghelp', windows_builtin_install_dir) ])
+  winebuild = find_program(join_paths(wine_build_path, 'tools/winebuild/winebuild'), 'winebuild')
+  idl_compiler  = find_program(join_paths(wine_install_path, 'bin/widl/widl'), 'widl')
+elif wine_install_path != ''
+  if not wine_install_path.startswith('/')
+    wine_install_path = join_paths(meson.project_source_root(), wine_install_path)
+  endif
+  lib_winecrt0 = cc.find_library('winecrt0', dirs : [ join_paths(wine_install_path,'lib/wine', windows_builtin_install_dir) ])
+  lib_ntdll = cc.find_library('ntdll', dirs : [ join_paths(wine_install_path, 'lib/wine', windows_builtin_install_dir)], static: true)
+  lib_dbghelp = cc.find_library('dbghelp', dirs : [ join_paths(wine_install_path, 'lib/wine', windows_builtin_install_dir) ])
+  winebuild = find_program(join_paths(wine_install_path, 'bin/winebuild'), 'winebuild')
+  idl_compiler  = find_program(join_paths(wine_install_path, 'bin/widl'), 'widl')
+else
+  error('One of the options -Dwine_build_path or -Dwine_install_path is required')
+endif
+
+idl_generator = generator(idl_compiler,
+  output    : [ '@BASENAME@.h' ],
+  arguments : [ '-h', '-o', '@OUTPUT@', '@INPUT@' ])
+
+subdir('include')
 subdir('libs')
 subdir('src')
 
