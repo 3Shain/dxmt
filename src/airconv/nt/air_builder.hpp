@@ -318,6 +318,8 @@ public:
 
   CallInst *CreateSetMeshViewportArrayIndex(Value *Vertex, Value *ArrayIndex);
 
+  CallInst *CreateSetMeshPrimitiveID(Value *Vertex, Value *ID);
+
   CallInst *CreateSetMeshPosition(Value *Vertex, Value *Position);
 
   CallInst *CreateSetMeshClipDistance(Value *Vertex, Value *Index, Value *Value);

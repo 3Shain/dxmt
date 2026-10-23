@@ -415,6 +415,12 @@ IOHelper::PopulateMeshOutputViewportArrayIndex(uint32_t from_reg, uint32_t mask,
 }
 
 void
+IOHelper::PopulateMeshOutputPrimitiveID(uint32_t from_reg, uint32_t mask, llvm::Value *primitive_id) {
+  auto result = ToDesiredTypeFromIntVec4(LoadFromArrayAt(io.output.ptr_int4, air.getInt(from_reg)), types._int, mask);
+  air.CreateSetMeshPrimitiveID(primitive_id, result);
+}
+
+void
 IOHelper::PopulateMeshOutputPosition(uint32_t from_reg, uint32_t mask, llvm::Value *vertex_id) {
   auto result = LoadFromArrayAt(io.output.ptr_float4, air.getInt(from_reg));
   air.CreateSetMeshPosition(vertex_id, result);

@@ -1704,6 +1704,24 @@ AIRBuilder::CreateSetMeshViewportArrayIndex(Value *Vertex, Value *ArrayIndex) {
 }
 
 CallInst *
+AIRBuilder::CreateSetMeshPrimitiveID(Value *Vertex, Value *ID) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{1U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ArgMemOnly)}}
+  );
+
+  auto Fn = getModule()->getOrInsertFunction(
+      "air.set_primitive_id_mesh",
+      FunctionType::get(getVoidTy(), {getMeshHandleType(), getIntTy(), getIntTy()}, false), Attrs
+  );
+
+  return builder.CreateCall(Fn, {getMeshHandle(), Vertex, ID});
+}
+
+CallInst *
 AIRBuilder::CreateSetMeshPosition(Value *Vertex, Value *Position) {
   auto &Context = getContext();
   auto Attrs = AttributeList::get(

@@ -448,6 +448,13 @@ initialize_pixel_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
       }
       break;
     }
+    case SemanticKind::PrimitiveID: {
+      shader->signature_handlers.push_back([=](SignatureContext &ctx) {
+        uint32_t arg = ctx.func_signature.DefineInput(air::FunctionInput(air::InputPrimitiveID{}));
+        ctx.prologue.Add([=](IOHelper &io) -> llvm::Error { return io.InitializeInput(arg, reg, mask); });
+      });
+      break;
+    }
     default:
       return unsupported(
           "dxil: unsupported pixel shader input semantic " + std::to_string((uint32_t)element.semantic_kind)
@@ -550,6 +557,10 @@ initialize_geometry_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
   uint32_t max_input_register = 0;
   for (uint32_t i = 0; i < input_count; ++i) {
     const auto &element = entry.inputs[i];
+
+    if (element.semantic_kind == SemanticKind::PrimitiveID)
+      continue; // it has special dx.op.primitiveID instrinsic
+
     if (element.start_row < 0 || element.start_col < 0)
       return unsupported("dxil: unsupported geometry shader input layout");
     uint32_t reg = element.start_row;
@@ -635,6 +646,13 @@ initialize_geometry_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
           io.PopulateMeshOutputVertexData(reg, mask, mesh_vertex_data_index, output.vertex_id, air::msl_float4);
         });
       }
+      break;
+    }
+    case SemanticKind::PrimitiveID: {
+      shader->func_signature.DefineMeshPrimitiveOutput(air::OutputPrimitiveID{});
+      mesh_output_handlers.push_back([=](MeshOutputContext &output, IOHelper &io) {
+        io.PopulateMeshOutputPrimitiveID(reg, mask, output.primitive_id);
+      });
       break;
     }
     default:

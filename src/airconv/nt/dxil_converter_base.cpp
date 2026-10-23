@@ -886,6 +886,8 @@ Converter::EmitDxilOp(CallInst &Call) {
   }
   if (op == "gsInstanceID")
     return ctx.resource.gs_instance_id;
+  if (op == "primitiveID")
+    return ctx.resource.patch_id;
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -1465,6 +1467,7 @@ Converter::EmitLoadInput(const CallInst &Call) {
   case SemanticKind::ViewPortArrayIndex:
   case SemanticKind::ClipDistance:
   case SemanticKind::CullDistance:
+  case SemanticKind::PrimitiveID:
     break;
   default:
     return unsupported("dxil: unsupported loadInput semantic " + std::to_string((uint32_t)signature.semantic_kind));
@@ -1543,6 +1546,7 @@ Converter::EmitStoreOutput(const CallInst &Call) {
   case SemanticKind::ViewPortArrayIndex:
   case SemanticKind::ClipDistance:
   case SemanticKind::CullDistance:
+  case SemanticKind::PrimitiveID:
     break;
   case SemanticKind::Depth:
   case SemanticKind::DepthLessEqual:
