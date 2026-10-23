@@ -262,6 +262,8 @@ protected:
   WMT::Reference<WMT::DepthStencilState> dsso_no_stencil;
   WMT::Reference<WMT::DepthStencilState> dsso_readonly_no_stencil;
 
+  WMT::Reference<WMT::RenderPipelineState> pso;
+
 public:
   MTLD3D12GraphicsPipelineStateImpl(MTLD3D12Device *pDevice) :
       MTLD3D12Pageable<MTLD3D12GraphicsPipelineState>(pDevice) {
@@ -671,6 +673,261 @@ public:
       return dsso;
     }
   }
+
+  virtual WMT::RenderPipelineState
+  GetRenderPipelineVariant(D3D12_PRIMITIVE_TOPOLOGY Topology) {
+    return pso;
+  }
+};
+
+bool
+is_strip_topology(D3D12_PRIMITIVE_TOPOLOGY topo) {
+  switch (topo) {
+  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP:
+  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
+    return true;
+  default:
+    break;
+  }
+  return false;
+}
+
+class MTLD3D12GeometryGraphicsPipelineStateImpl : public MTLD3D12GraphicsPipelineStateImpl {
+protected:
+  MTL_SHADER_REFLECTION ref_gs;
+
+  WMT::Reference<WMT::RenderPipelineState> pso_gs_strip;
+
+public:
+  MTLD3D12GeometryGraphicsPipelineStateImpl(MTLD3D12Device *pDevice) : MTLD3D12GraphicsPipelineStateImpl(pDevice) {}
+
+  virtual HRESULT
+  Initialize(const D3D12_GRAPHICS_PIPELINE_STATE_DESC *pDesc) {
+    if (pDesc->StreamOutput.NumEntries) {
+      ERR("CreatePipelineState: SO not supported");
+      return E_NOTIMPL;
+    }
+
+    if (pDesc->HS.pShaderBytecode || pDesc->DS.pShaderBytecode) {
+      ERR("CreatePipelineState: Geo-Tess not supported");
+      return E_NOTIMPL;
+    }
+
+    if (!pDesc->VS.pShaderBytecode) {
+      return E_INVALIDARG;
+    }
+
+    HRESULT hr;
+    SM50Shader shader_vs, shader_ps, shader_gs;
+    SM50Error sm50_err;
+    auto metal = device_->GetMTLDevice();
+    WMT::Reference<WMT::Error> err;
+    WMT::Reference<WMT::Function> vsgs_func_strip, vsgs_func_nonstrip, gs_func_strip, gs_func_nonstrip, ps_func;
+
+    SM50_SHADER_COMMON_DATA common;
+    common.flags = {};
+    common.type = SM50_SHADER_COMMON;
+    common.metal_version = SM50_SHADER_METAL_310;
+    common.next = nullptr;
+
+    if (pDesc->VS.pShaderBytecode && pDesc->GS.pShaderBytecode) {
+      if (FAILED(hr = InitializeShader(pDesc->VS, &shader_vs, &ref_vs)))
+        return hr;
+      if (FAILED(hr = InitializeShader(pDesc->GS, &shader_gs, &ref_gs)))
+        return hr;
+
+      {
+        SM50_SHADER_IA_INPUT_LAYOUT_DATA data_ia_layout;
+        data_ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
+        data_ia_layout.index_buffer_format = SM50_INDEX_BUFFER_FORMAT_DYNAMIC;
+        std::vector<SM50_IA_INPUT_ELEMENT> elements(pDesc->InputLayout.NumElements);
+        if (FAILED(
+                hr = ExtractMTLInputLayoutElements(
+                    device_, pDesc->VS.pShaderBytecode, pDesc->InputLayout.pInputElementDescs,
+                    pDesc->InputLayout.NumElements, elements.data(), &data_ia_layout.num_elements
+                )
+            ))
+          return hr;
+        elements.resize(data_ia_layout.num_elements);
+        data_ia_layout.elements = elements.data();
+        slot_mask = 0;
+        for (auto &element : elements) {
+          slot_mask |= (1 << element.slot);
+        }
+        data_ia_layout.slot_mask = slot_mask;
+        data_ia_layout.next = &common;
+
+        SM50_SHADER_ROOT_SIGNATURE_DATA rootsig;
+        rootsig.type = SM50_SHADER_ROOT_SIGNATURE;
+        if (pDesc->pRootSignature) {
+          rootsig.bytecode_length =
+              static_cast<MTLD3D12RootSignature *>(pDesc->pRootSignature)->GetBlob(&rootsig.bytecode);
+        } else {
+          rootsig.bytecode = pDesc->VS.pShaderBytecode;
+          rootsig.bytecode_length = pDesc->VS.BytecodeLength;
+        }
+        rootsig.next = &data_ia_layout;
+
+        SM50_SHADER_PSO_GEOMETRY_SHADER_DATA geometry;
+        geometry.type = SM50_SHADER_PSO_GEOMETRY_SHADER;
+        geometry.next = &rootsig;
+
+        auto compile_vs = [&](bool strip) -> WMT::Reference<WMT::Function> {
+          geometry.strip_topology = strip;
+          SM50ShaderBitcode vsgs_bitcode;
+
+          if (SM50CompileGeometryPipelineVertex(
+                  shader_vs, shader_gs, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&geometry, "vsgs_main", &vsgs_bitcode,
+                  &sm50_err
+              )) {
+            ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
+            SM50FreeError(sm50_err);
+            return {};
+          }
+
+          SM50_COMPILED_BITCODE vsgs_bitcode_compiled;
+          SM50GetCompiledBitcode(vsgs_bitcode, &vsgs_bitcode_compiled);
+          auto vsgs_data = WMT::MakeDispatchData(vsgs_bitcode_compiled.Data, vsgs_bitcode_compiled.Size);
+          auto vsgs_lib = metal.newLibrary(vsgs_data, err);
+          return vsgs_lib.newFunction("vsgs_main");
+        };
+
+        vsgs_func_nonstrip = compile_vs(false);
+        vsgs_func_strip = compile_vs(true);
+      }
+      {
+        SM50_SHADER_ROOT_SIGNATURE_DATA rootsig;
+        rootsig.type = SM50_SHADER_ROOT_SIGNATURE;
+        if (pDesc->pRootSignature) {
+          rootsig.bytecode_length =
+              static_cast<MTLD3D12RootSignature *>(pDesc->pRootSignature)->GetBlob(&rootsig.bytecode);
+        } else {
+          rootsig.bytecode = pDesc->GS.pShaderBytecode;
+          rootsig.bytecode_length = pDesc->GS.BytecodeLength;
+        }
+        rootsig.next = &common;
+
+        SM50_SHADER_PSO_GEOMETRY_SHADER_DATA geometry;
+        geometry.type = SM50_SHADER_PSO_GEOMETRY_SHADER;
+        geometry.next = &rootsig;
+
+        auto compile_gs = [&](bool strip) -> WMT::Reference<WMT::Function> {
+          geometry.strip_topology = strip;
+
+          SM50ShaderBitcode gs_bitcode;
+
+          if (SM50CompileGeometryPipelineGeometry(
+                  shader_vs, shader_gs, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&geometry, "gs_main", &gs_bitcode,
+                  &sm50_err
+              )) {
+            ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
+            SM50FreeError(sm50_err);
+            return {};
+          }
+
+          SM50_COMPILED_BITCODE gs_bitcode_compiled;
+          SM50GetCompiledBitcode(gs_bitcode, &gs_bitcode_compiled);
+          auto gs_data = WMT::MakeDispatchData(gs_bitcode_compiled.Data, gs_bitcode_compiled.Size);
+          auto gs_lib = metal.newLibrary(gs_data, err);
+          return gs_lib.newFunction("gs_main");
+        };
+
+        gs_func_nonstrip = compile_gs(false);
+        gs_func_strip = compile_gs(true);
+      }
+    } else {
+      ERR("no vertex/geometry shader");
+      return E_INVALIDARG;
+    }
+
+    WMTMeshRenderPipelineInfo info;
+    WMT::InitializeMeshRenderPipelineInfo(info);
+
+    bool dual_source_blending = false;
+
+    if (FAILED(hr = InitializePSO(pDesc, info, dual_source_blending)))
+      return hr;
+
+    if (pDesc->PS.pShaderBytecode) {
+      auto sha1 = Sha1HashState::compute(pDesc->PS.pShaderBytecode, pDesc->PS.BytecodeLength);
+
+      std::string ps_name = "ps_main" + sha1.string().substr(0, 8);
+
+      if (FAILED(hr = InitializeShader(pDesc->PS, &shader_ps, &ref_ps)))
+        return hr;
+      SM50_SHADER_PSO_PIXEL_SHADER_DATA data_ps;
+      data_ps.dual_source_blending = dual_source_blending;
+      data_ps.disable_depth_output = false;
+      data_ps.unorm_output_reg_mask = 0;
+      data_ps.sample_mask = pDesc->SampleMask;
+      data_ps.type = SM50_SHADER_PSO_PIXEL_SHADER;
+      data_ps.next = &common;
+
+      memset(data_ps.pixel_formats, 0, sizeof(data_ps.pixel_formats));
+      for (unsigned i = 0; i < pDesc->NumRenderTargets; i++) {
+        data_ps.pixel_formats[i] = ORIGINAL_FORMAT(info.colors[i].pixel_format);
+      }
+
+      SM50_SHADER_ROOT_SIGNATURE_DATA rootsig;
+      rootsig.type = SM50_SHADER_ROOT_SIGNATURE;
+      if (pDesc->pRootSignature) {
+        rootsig.bytecode_length =
+            static_cast<MTLD3D12RootSignature *>(pDesc->pRootSignature)->GetBlob(&rootsig.bytecode);
+      } else {
+        rootsig.bytecode = pDesc->PS.pShaderBytecode;
+        rootsig.bytecode_length = pDesc->PS.BytecodeLength;
+      }
+      rootsig.next = &data_ps;
+
+      SM50ShaderBitcode ps_bitcode;
+      if (SM50Compile(
+              shader_ps, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&rootsig, ps_name.c_str(), &ps_bitcode, &sm50_err
+          )) {
+        ERR("Failed to compile ps shader: ", SM50GetErrorMessageString(sm50_err));
+        return E_FAIL;
+      }
+      SM50_COMPILED_BITCODE ps_bitcode_compiled;
+      SM50GetCompiledBitcode(ps_bitcode, &ps_bitcode_compiled);
+      auto ps_data = WMT::MakeDispatchData(ps_bitcode_compiled.Data, ps_bitcode_compiled.Size);
+      auto ps_lib = metal.newLibrary(ps_data, err);
+      ps_func = ps_lib.newFunction(ps_name.c_str());
+    }
+
+    // PSO
+    auto compile_pso = [&](WMT::Function vsgs_func, WMT::Function gs_func) -> WMT::Reference<WMT::RenderPipelineState> {
+      info.object_function = vsgs_func.handle;
+      info.mesh_function = gs_func.handle;
+      info.fragment_function = ps_func.handle;
+
+      auto pso = metal.newRenderPipelineState(info, err);
+
+      if (!pso) {
+        ERR("Failed to create mesh PSO: ", err.description().getUTF8String());
+        return {};
+      }
+      return pso;
+    };
+
+    if (pso = compile_pso(vsgs_func_nonstrip, gs_func_nonstrip); !pso)
+      return E_FAIL;
+    if (pso_gs_strip = compile_pso(vsgs_func_strip, gs_func_strip); !pso_gs_strip)
+      return E_FAIL;
+
+    InitializeDSSO(pDesc);
+
+    InitializeRasterizerState(pDesc);
+
+    is_geometry = 1;
+
+    return S_OK;
+  }
+
+  virtual WMT::RenderPipelineState
+  GetRenderPipelineVariant(D3D12_PRIMITIVE_TOPOLOGY Topology) {
+    return is_strip_topology(Topology) ? pso_gs_strip : pso;
+  }
 };
 
 HRESULT
@@ -678,7 +935,11 @@ CreateGraphicsPipelineState(
     MTLD3D12Device *pDevice, const D3D12_GRAPHICS_PIPELINE_STATE_DESC *pDesc, REFIID riid, void **ppPipelineState
 ) {
   InitReturnPtr(ppPipelineState);
-  auto pso = Com(new MTLD3D12GraphicsPipelineStateImpl(pDevice));
+  Com<MTLD3D12GraphicsPipelineStateImpl> pso;
+  if (pDesc->GS.pShaderBytecode)
+    pso = Com<MTLD3D12GraphicsPipelineStateImpl>(new MTLD3D12GeometryGraphicsPipelineStateImpl(pDevice));
+  else
+    pso = Com(new MTLD3D12GraphicsPipelineStateImpl(pDevice));
   HRESULT hr = pso->Initialize(pDesc);
   if (FAILED(hr))
     return hr;

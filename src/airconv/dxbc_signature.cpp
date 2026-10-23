@@ -290,6 +290,10 @@ void handle_signature_vs(
     }
     break;
   }
+  case D3D10_SB_OPCODE_DCL_OUTPUT_SGV: {
+    assert(0 && "dcl_output_sgv should not happen in vs");
+    break;
+  }
   default:
     assert(0);
     break;
@@ -492,8 +496,7 @@ void handle_signature_ps(
     break;
   }
   case D3D10_SB_OPCODE_DCL_OUTPUT_SGV: {
-    assert(0 && "dcl_output_sgv should not happen for now");
-    // only GS PrimitiveID uses this, but we don't support GS for now
+    assert(0 && "dcl_output_sgv should not happen in ps");
     break;
   }
   case D3D10_SB_OPCODE_DCL_OUTPUT_SIV: {
@@ -675,8 +678,7 @@ void handle_signature_hs(
     break;
   }
   case D3D10_SB_OPCODE_DCL_OUTPUT_SGV: {
-    assert(0 && "dcl_output_sgv should not happen for now");
-    // only GS PrimitiveID uses this, but we don't support GS for now
+    assert(0 && "dcl_output_sgv should not happen in hs");
     break;
   }
   case D3D10_SB_OPCODE_DCL_OUTPUT_SIV: {
@@ -861,8 +863,7 @@ void handle_signature_ds(
     break;
   }
   case D3D10_SB_OPCODE_DCL_OUTPUT_SGV: {
-    assert(0 && "dcl_output_sgv should not happen for now");
-    // only GS PrimitiveID uses this, but we don't support GS for now
+    assert(0 && "dcl_output_sgv should not happen in ds");
     break;
   }
   case D3D10_SB_OPCODE_DCL_OUTPUT_SIV: {
@@ -1082,6 +1083,7 @@ handle_signature_gs(
       break;
     }
     case microsoft::D3D10_SB_OPERAND_TYPE_INPUT_PRIMITIVEID:
+    case microsoft::D3D11_SB_OPERAND_TYPE_INPUT_GS_INSTANCE_ID:
       break;
     default:
       assert(0 && "unhandled geometry shader input");
@@ -1090,7 +1092,22 @@ handle_signature_gs(
     break;
   }
   case D3D10_SB_OPCODE_DCL_OUTPUT_SGV: {
-    assert(0 && "unhandled geometry shader output sgv");
+    unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+    auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+    auto sgv = Inst.m_OutputDeclSGV.Name;
+    switch (sgv) {
+     case D3D10_SB_NAME_PRIMITIVE_ID: {
+      func_signature.DefineMeshPrimitiveOutput(OutputPrimitiveID{});
+      mesh_output_handlers.push_back([=](MeshOutputContext &output, IOHelper &io) {
+        io.PopulateMeshOutputPrimitiveID(reg, mask, output.primitive_id);
+      });
+      break;
+     }
+     default:
+      assert(0 && "unhandled geometry shader output sgv");
+      break;
+    }
+    max_output_register = std::max(reg + 1, max_output_register);
     break;
   }
   case D3D10_SB_OPCODE_DCL_OUTPUT_SIV: {
@@ -1104,6 +1121,15 @@ handle_signature_gs(
           sm50_shader->clip_distance_scalars.push_back({.component = (uint8_t)(i), .reg = (uint8_t)reg});
         }
       }
+      auto const mesh_vertex_data_index = num_mesh_vertex_data++;
+      func_signature.DefineMeshVertexOutput(OutputMeshData{
+        .user = std::format("SV_ClipDistance{}", reg),
+        .type = msl_float4,
+        .index = mesh_vertex_data_index
+      });
+      mesh_output_handlers.push_back([=](MeshOutputContext &output, IOHelper &io) {
+        io.PopulateMeshOutputVertexData(reg, mask, mesh_vertex_data_index, output.vertex_id, msl_float4);
+      });
       max_output_register = std::max(reg + 1, max_output_register);
       break;
     }
@@ -1113,6 +1139,15 @@ handle_signature_gs(
           sm50_shader->cull_distance_scalars.push_back({.component = (uint8_t)(i), .reg = (uint8_t)reg});
         }
       }
+      auto const mesh_vertex_data_index = num_mesh_vertex_data++;
+      func_signature.DefineMeshVertexOutput(OutputMeshData{
+        .user = std::format("SV_CullDistance{}", reg),
+        .type = msl_float4,
+        .index = mesh_vertex_data_index
+      });
+      mesh_output_handlers.push_back([=](MeshOutputContext &output, IOHelper &io) {
+        io.PopulateMeshOutputVertexData(reg, mask, mesh_vertex_data_index, output.vertex_id, msl_float4);
+      });
       max_output_register = std::max(reg + 1, max_output_register);
       break;
     }

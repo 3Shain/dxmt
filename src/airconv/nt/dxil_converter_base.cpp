@@ -871,6 +871,23 @@ Converter::EmitDxilOp(CallInst &Call) {
                                              : ctx.resource.coverage_mask_arg;
   if (op == "renderTargetGetSampleCount")
     return air.CreateGetNumSamples();
+  if (op == "emitStream") {
+    ctx.resource.call_emit();
+    return nullptr;
+  }
+  if (op == "emitThenCutStream") {
+    ctx.resource.call_emit();
+    ctx.resource.call_cut();
+    return nullptr;
+  }
+  if (op == "cutStream") {
+    ctx.resource.call_cut();
+    return nullptr;
+  }
+  if (op == "gsInstanceID")
+    return ctx.resource.gs_instance_id;
+  if (op == "primitiveID")
+    return ctx.resource.patch_id;
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -1435,6 +1452,11 @@ Converter::EmitLoadInput(const CallInst &Call) {
     return unsupported("dxil: input signature element is not mapped");
   if (!ctx.resource.input.ptr_int4 || !ctx.resource.input.ptr_float4)
     return unsupported("dxil: input register file is not available");
+
+  auto GSVertex = Get(Call.getArgOperand(4));
+  if (!GSVertex)
+    return GSVertex.takeError();
+
   switch (signature.semantic_kind) {
   case SemanticKind::Position:
   case SemanticKind::VertexID:
@@ -1445,6 +1467,7 @@ Converter::EmitLoadInput(const CallInst &Call) {
   case SemanticKind::ViewPortArrayIndex:
   case SemanticKind::ClipDistance:
   case SemanticKind::CullDistance:
+  case SemanticKind::PrimitiveID:
     break;
   default:
     return unsupported("dxil: unsupported loadInput semantic " + std::to_string((uint32_t)signature.semantic_kind));
@@ -1456,10 +1479,16 @@ Converter::EmitLoadInput(const CallInst &Call) {
   if (Lane > 3)
     return unsupported("dxil: loadInput component out of range");
 
+  SmallVector<Value *> RegIdxs;
+  RegIdxs.push_back(ir.getInt32(0));
+  if (!isa<UndefValue>(*GSVertex))
+    RegIdxs.push_back(*GSVertex);
+  RegIdxs.push_back(ir.getInt32(Reg));
+  RegIdxs.push_back(ir.getInt32(Lane));
+
   if (Type->isIntegerTy()) {
     auto *Ptr = ir.CreateGEP(
-        ctx.resource.input.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.input.ptr_int4,
-        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+        ctx.resource.input.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.input.ptr_int4, RegIdxs
     );
     auto *Value = ir.CreateLoad(ir.getInt32Ty(), Ptr);
     if (Type->getIntegerBitWidth() < 32)
@@ -1471,7 +1500,7 @@ Converter::EmitLoadInput(const CallInst &Call) {
   if (Type->isFloatTy()) {
     auto *Ptr = ir.CreateGEP(
         ctx.resource.input.ptr_float4->getType()->getNonOpaquePointerElementType(), ctx.resource.input.ptr_float4,
-        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+        RegIdxs
     );
     return ir.CreateLoad(ir.getFloatTy(), Ptr);
   }
@@ -1479,13 +1508,12 @@ Converter::EmitLoadInput(const CallInst &Call) {
     if (signature.semantic_kind == SemanticKind::Position) {
       auto *Ptr = ir.CreateGEP(
           ctx.resource.input.ptr_float4->getType()->getNonOpaquePointerElementType(), ctx.resource.input.ptr_float4,
-          {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+          RegIdxs
       );
       return air.CreateConvertToHalf(ir.CreateLoad(ir.getFloatTy(), Ptr));
     }
     auto *Ptr = ir.CreateGEP(
-        ctx.resource.input.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.input.ptr_int4,
-        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+        ctx.resource.input.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.input.ptr_int4, RegIdxs
     );
     auto *Value = ir.CreateLoad(ir.getInt32Ty(), Ptr);
     return ir.CreateBitCast(ir.CreateTrunc(Value, ir.getInt16Ty()), ir.getHalfTy());
@@ -1518,6 +1546,7 @@ Converter::EmitStoreOutput(const CallInst &Call) {
   case SemanticKind::ViewPortArrayIndex:
   case SemanticKind::ClipDistance:
   case SemanticKind::CullDistance:
+  case SemanticKind::PrimitiveID:
     break;
   case SemanticKind::Depth:
   case SemanticKind::DepthLessEqual:

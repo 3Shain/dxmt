@@ -448,6 +448,13 @@ initialize_pixel_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
       }
       break;
     }
+    case SemanticKind::PrimitiveID: {
+      shader->signature_handlers.push_back([=](SignatureContext &ctx) {
+        uint32_t arg = ctx.func_signature.DefineInput(air::FunctionInput(air::InputPrimitiveID{}));
+        ctx.prologue.Add([=](IOHelper &io) -> llvm::Error { return io.InitializeInput(arg, reg, mask); });
+      });
+      break;
+    }
     default:
       return unsupported(
           "dxil: unsupported pixel shader input semantic " + std::to_string((uint32_t)element.semantic_kind)
@@ -539,6 +546,126 @@ initialize_pixel_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
 }
 
 llvm::Error
+initialize_geometry_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
+  using namespace dxmt::dxbc;
+
+  const EntryPoint &entry = shader->dxil_entry;
+  auto &mesh_output_handlers = shader->mesh_output_handlers;
+  uint32_t &num_mesh_vertex_data = shader->num_mesh_vertex_data;
+
+  uint32_t input_count = (uint32_t)entry.inputs.size();
+  uint32_t max_input_register = 0;
+  for (uint32_t i = 0; i < input_count; ++i) {
+    const auto &element = entry.inputs[i];
+
+    if (element.semantic_kind == SemanticKind::PrimitiveID)
+      continue; // it has special dx.op.primitiveID instrinsic
+
+    if (element.start_row < 0 || element.start_col < 0)
+      return unsupported("dxil: unsupported geometry shader input layout");
+    uint32_t reg = element.start_row;
+    max_input_register = std::max(max_input_register, reg + element.rows);
+
+    switch (element.semantic_kind) {
+    case SemanticKind::Position:
+    case SemanticKind::Arbitrary:
+      break;
+    default:
+      return unsupported(
+          "dxil: unsupported geometry shader input semantic " + std::to_string((uint32_t)element.semantic_kind)
+      );
+    }
+  }
+  shader->max_input_register = max_input_register;
+
+  uint32_t output_count = (uint32_t)entry.outputs.size();
+  uint32_t max_output_register = 0;
+  for (uint32_t i = 0; i < output_count; ++i) {
+    const auto &element = entry.outputs[i];
+    if (element.start_row < 0 || element.start_col < 0)
+      return unsupported("dxil: unsupported geometry shader output layout");
+    uint32_t reg = element.start_row;
+    uint32_t mask = element_register_mask(element);
+    max_output_register = std::max(max_output_register, reg + element.rows);
+    switch (element.semantic_kind) {
+    case SemanticKind::Position: {
+      shader->func_signature.DefineMeshVertexOutput(air::OutputPosition{.type = air::msl_float4});
+      mesh_output_handlers.push_back([=](MeshOutputContext &output, IOHelper &io) {
+        io.PopulateMeshOutputPosition(reg, mask, output.vertex_id);
+      });
+      break;
+    }
+    case SemanticKind::Arbitrary: {
+      auto msl_type = to_signature_msl_type(element.component_type);
+      if (!msl_type)
+        return unsupported("dxil: unsupported vertex shader output component type");
+      for (unsigned row = 0; row < element.rows; row++) {
+        auto user = element_attribute_name(element, row);
+        if (auto err = user.takeError())
+          return err;
+        auto const mesh_vertex_data_index = num_mesh_vertex_data++;
+        shader->func_signature.DefineMeshVertexOutput(
+            air::OutputMeshData{.user = *user, .type = *msl_type, .index = mesh_vertex_data_index}
+        );
+        mesh_output_handlers.push_back([=, type = *msl_type](MeshOutputContext &output, IOHelper &io) {
+          io.PopulateMeshOutputVertexData(reg, mask, mesh_vertex_data_index, output.vertex_id, type);
+        });
+      }
+      break;
+    }
+    case SemanticKind::RenderTargetArrayIndex: {
+      shader->func_signature.DefineMeshPrimitiveOutput(air::OutputRenderTargetArrayIndex{});
+      mesh_output_handlers.push_back([=](MeshOutputContext &output, IOHelper &io) {
+        io.PopulateMeshOutputRenderTargetArrayIndex(reg, mask, output.primitive_id);
+      });
+      break;
+    }
+    case SemanticKind::ViewPortArrayIndex: {
+      shader->func_signature.DefineMeshPrimitiveOutput(air::OutputViewportArrayIndex{});
+      mesh_output_handlers.push_back([=](MeshOutputContext &output, IOHelper &io) {
+        io.PopulateMeshOutputViewportArrayIndex(reg, mask, output.primitive_id);
+      });
+      break;
+    }
+    case SemanticKind::ClipDistance:
+    case SemanticKind::CullDistance: {
+      bool clip = element.semantic_kind == SemanticKind::ClipDistance;
+      auto &scalars = clip ? shader->clip_distance_scalars : shader->cull_distance_scalars;
+      for (unsigned row = 0; row < element.rows; row++) {
+        auto user = element_attribute_name(element, row);
+        if (auto err = user.takeError())
+          return err;
+        for (uint32_t component = 0; component < element.cols; component++) {
+          scalars.push_back({(uint8_t)(element.start_col + component), (uint8_t)(reg + row)});
+        }
+        auto const mesh_vertex_data_index = num_mesh_vertex_data++;
+        shader->func_signature.DefineMeshVertexOutput(
+            air::OutputMeshData{.user = *user, .type = air::msl_float4, .index = mesh_vertex_data_index}
+        );
+        mesh_output_handlers.push_back([=, reg = reg + row](MeshOutputContext &output, IOHelper &io) {
+          io.PopulateMeshOutputVertexData(reg, mask, mesh_vertex_data_index, output.vertex_id, air::msl_float4);
+        });
+      }
+      break;
+    }
+    case SemanticKind::PrimitiveID: {
+      shader->func_signature.DefineMeshPrimitiveOutput(air::OutputPrimitiveID{});
+      mesh_output_handlers.push_back([=](MeshOutputContext &output, IOHelper &io) {
+        io.PopulateMeshOutputPrimitiveID(reg, mask, output.primitive_id);
+      });
+      break;
+    }
+    default:
+      return unsupported(
+          "dxil: unsupported geometry shader output semantic " + std::to_string((uint32_t)element.semantic_kind)
+      );
+    }
+  }
+  shader->max_output_register = max_output_register;
+  return llvm::Error::success();
+}
+
+llvm::Error
 initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
   using namespace microsoft;
 
@@ -559,6 +686,10 @@ initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
     shader->shader_type = microsoft::D3D10_SB_PIXEL_SHADER;
     if (auto err = initialize_pixel_signature(shader))
       return err;
+  } else if (info.shader_model.stage == "gs") {
+    shader->shader_type = microsoft::D3D10_SB_GEOMETRY_SHADER;
+    if (auto err = initialize_geometry_signature(shader))
+      return err;
   } else {
     return llvm::make_error<UnsupportedFeature>("dxil: unsupported shader stage " + std::string(stage));
   }
@@ -577,6 +708,13 @@ initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
       shader->threadgroup_size[1] = n.y;
       shader->threadgroup_size[2] = n.z;
       func_signature.UseMaxWorkgroupSize(n.x * n.y * n.z);
+      break;
+    }
+    case EntryPropertyTag::GSState: {
+      shader->gs_input_primitive = (microsoft::D3D10_SB_PRIMITIVE)property.gs_state.input_primitive;
+      shader->gs_output_topology = (microsoft::D3D10_SB_PRIMITIVE_TOPOLOGY)property.gs_state.output_topology;
+      shader->gs_instance_count = property.gs_state.instance_count;
+      shader->gs_max_vertex_output = property.gs_state.max_vertex_count;
       break;
     }
     default:
@@ -779,6 +917,10 @@ initialize(
     case microsoft::D3D10_SB_PIXEL_SHADER:
       pRefl->PixelShader.ValidRenderTargets = shader->pso_valid_output_reg_mask;
       pRefl->PixelShader.HasCoverageOutput = shader->ps_has_coverage_output;
+      break;
+    case microsoft::D3D10_SB_GEOMETRY_SHADER:
+      pRefl->GeometryShader.GSPassThrough = ~0u;
+      pRefl->GeometryShader.Primitive = shader->gs_input_primitive;
       break;
     default:
       break;

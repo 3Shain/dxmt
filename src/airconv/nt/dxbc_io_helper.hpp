@@ -75,6 +75,8 @@ public:
 
   void PopulateMeshOutputViewportArrayIndex(uint32_t FromRegister, uint32_t Mask, llvm::Value *PrimitiveId);
 
+  void PopulateMeshOutputPrimitiveID(uint32_t FromRegister, uint32_t Mask, llvm::Value *PrimitiveId);
+
   void PopulateMeshOutputPosition(uint32_t FromRegister, uint32_t Mask, llvm::Value *VertexId);
 
   void PopulateMeshOutputVertexData(

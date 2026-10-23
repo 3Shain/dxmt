@@ -164,11 +164,20 @@ struct NumThreads {
   uint32_t z = 0;
 };
 
+struct GSState {
+  uint32_t input_primitive = 0;
+  uint32_t max_vertex_count = 0;
+  uint32_t active_stream_mask = 0;
+  uint32_t output_topology = 0;
+  uint32_t instance_count = 0;
+};
+
 struct Property {
   EntryPropertyTag tag = EntryPropertyTag::NumThreads;
   union {
     uint64_t shader_flags;
     NumThreads num_threads;
+    GSState gs_state;
   };
 };
 
