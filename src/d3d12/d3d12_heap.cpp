@@ -88,6 +88,8 @@ public:
     info.type = WMTHeapTypePlacement;
 
     heap = device_->GetMTLDevice().newHeap(info);
+    if (!heap)
+      return E_OUTOFMEMORY;
 
     device_->RegisterResidency(heap);
 
