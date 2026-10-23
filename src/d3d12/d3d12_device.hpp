@@ -145,6 +145,7 @@ public:
   float scole_scale;
   float depth_bias_clamp;
   uint32_t forced_sample_count;
+  bool is_geometry = 0;
 
   virtual WMT::DepthStencilState GetDepthStencilState(UINT DSVPlanar, UINT DSVReadonlyFlags) = 0;
 

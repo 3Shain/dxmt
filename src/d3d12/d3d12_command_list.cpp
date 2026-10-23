@@ -34,11 +34,13 @@ enum class DirtyState {
   StencilRef,
   GraphicsPipelineState,
   ComputePipelineState,
+  Topology,
 };
 
 enum class DrawCallStatus {
   Invalid,
   Ordinary,
+  Geometry,
 };
 
 inline bool
@@ -106,6 +108,85 @@ to_metal_primitive_type(D3D12_PRIMITIVE_TOPOLOGY topo, WMTPrimitiveType &primiti
     return false;
   }
   return true;
+}
+
+inline std::pair<uint32_t, uint32_t>
+get_gs_vertex_count(D3D12_PRIMITIVE_TOPOLOGY primitive) {
+  switch (primitive) {
+  case D3D_PRIMITIVE_TOPOLOGY_POINTLIST:
+    return {32, 32};
+  case D3D_PRIMITIVE_TOPOLOGY_LINELIST:
+    return {32, 32};
+  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP:
+    return {32, 31};
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST:
+    return {30, 30};
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
+    return {32, 30};
+  case D3D_PRIMITIVE_TOPOLOGY_LINELIST_ADJ:
+    return {32, 32};
+  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
+    return {32, 29};
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ:
+    return {30, 30};
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
+    return {32, 28};
+  case D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST:
+    return {32, 32};
+  case D3D_PRIMITIVE_TOPOLOGY_2_CONTROL_POINT_PATCHLIST:
+    return {32, 32};
+  case D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST:
+    return {30, 30};
+  case D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST:
+    return {32, 32};
+  case D3D_PRIMITIVE_TOPOLOGY_5_CONTROL_POINT_PATCHLIST:
+    return {30, 30};
+  case D3D_PRIMITIVE_TOPOLOGY_6_CONTROL_POINT_PATCHLIST:
+    return {30, 30};
+  case D3D_PRIMITIVE_TOPOLOGY_7_CONTROL_POINT_PATCHLIST:
+    return {28, 28};
+  case D3D_PRIMITIVE_TOPOLOGY_8_CONTROL_POINT_PATCHLIST:
+    return {32, 32};
+  case D3D_PRIMITIVE_TOPOLOGY_9_CONTROL_POINT_PATCHLIST:
+    return {27, 27};
+  case D3D_PRIMITIVE_TOPOLOGY_10_CONTROL_POINT_PATCHLIST:
+    return {30, 30};
+  case D3D_PRIMITIVE_TOPOLOGY_11_CONTROL_POINT_PATCHLIST:
+    return {22, 22};
+  case D3D_PRIMITIVE_TOPOLOGY_12_CONTROL_POINT_PATCHLIST:
+    return {24, 24};
+  case D3D_PRIMITIVE_TOPOLOGY_13_CONTROL_POINT_PATCHLIST:
+    return {26, 26};
+  case D3D_PRIMITIVE_TOPOLOGY_14_CONTROL_POINT_PATCHLIST:
+    return {28, 28};
+  case D3D_PRIMITIVE_TOPOLOGY_15_CONTROL_POINT_PATCHLIST:
+    return {30, 30};
+  case D3D_PRIMITIVE_TOPOLOGY_16_CONTROL_POINT_PATCHLIST:
+    return {32, 32};
+  case D3D_PRIMITIVE_TOPOLOGY_17_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_18_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_19_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_20_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_21_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_22_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_23_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_24_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_25_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_26_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_27_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_28_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_29_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_30_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_31_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_32_CONTROL_POINT_PATCHLIST:
+    return {
+        uint32_t(primitive) - uint32_t(D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST) + 1,
+        uint32_t(primitive) - uint32_t(D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST) + 1
+    };
+  default:
+    break;
+  }
+  return {}; // unreachable
 }
 
 // `Graphics`CommandList is a really confusing name
@@ -360,17 +441,22 @@ public:
       dirty_state_.set(DirtyState::VertexBuffer, DirtyState::GraphicsRootArguments, DirtyState::GraphicsRootSignature);
       dirty_state_.set(DirtyState::Viewport, DirtyState::ScissorRect);
       dirty_state_.set(DirtyState::BlendFactor, DirtyState::StencilRef);
+      dirty_state_.set(DirtyState::Topology);
       dirty_state_.set(DirtyState::GraphicsPipelineState);
     }
 
     if (!pso_graphics_)
       return DrawCallStatus::Invalid;
 
+    if (pso_graphics_->is_geometry && dirty_state_.test(DirtyState::Topology)) {
+      dirty_state_.set(DirtyState::GraphicsPipelineState);
+      dirty_state_.clr(DirtyState::Topology);
+    }
+
     if (dirty_state_.test(DirtyState::GraphicsPipelineState)) {
       auto &cmd_setpso = allocator_->EncodeRenderCommand<wmtcmd_render_setpso>();
       cmd_setpso.type = WMTRenderCommandSetPSO;
-      /* FIXME: topology should not matter here until gs/ts */
-      cmd_setpso.pso = pso_graphics_->GetRenderPipelineVariant({});
+      cmd_setpso.pso = pso_graphics_->GetRenderPipelineVariant(topology_);
 
       auto &cmd_setdsso = allocator_->EncodeRenderCommand<wmtcmd_render_setdepthstencilstate>();
       cmd_setdsso.type = WMTRenderCommandSetDepthStencilState;
@@ -391,6 +477,9 @@ public:
 
       dirty_state_.clr(DirtyState::GraphicsPipelineState);
     }
+
+    auto status = pso_graphics_->is_geometry ? DrawCallStatus::Geometry : DrawCallStatus::Ordinary;
+
     if (dirty_state_.test(DirtyState::VertexBuffer)) {
       auto [Offset, Stride] = PopulateVertexBufferTable(1);
       if (Stride) {
@@ -399,6 +488,11 @@ public:
         cmd_vsvb.buffer = allocator_->gpu_heap_buffer_;
         cmd_vsvb.offset = Offset;
         cmd_vsvb.index = SM50_BINDING_INDEX_VERTEX_BUFFER;
+        auto &cmd_osvb = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+        cmd_osvb.type = WMTRenderCommandSetObjectBuffer;
+        cmd_osvb.buffer = allocator_->gpu_heap_buffer_;
+        cmd_osvb.offset = Offset;
+        cmd_osvb.index = SM50_BINDING_INDEX_VERTEX_BUFFER;
       }
       dirty_state_.clr(DirtyState::VertexBuffer);
     }
@@ -416,6 +510,16 @@ public:
         cmd_fsargbuf.buffer = allocator_->gpu_heap_buffer_;
         cmd_fsargbuf.offset = Offset;
         cmd_fsargbuf.index = SM50_BINDING_INDEX_ROOT_ARGUMENTS;
+        auto &cmd_osargbuf = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+        cmd_osargbuf.type = WMTRenderCommandSetObjectBuffer;
+        cmd_osargbuf.buffer = allocator_->gpu_heap_buffer_;
+        cmd_osargbuf.offset = Offset;
+        cmd_osargbuf.index = SM50_BINDING_INDEX_ROOT_ARGUMENTS;
+        auto &cmd_msargbuf = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+        cmd_msargbuf.type = WMTRenderCommandSetMeshBuffer;
+        cmd_msargbuf.buffer = allocator_->gpu_heap_buffer_;
+        cmd_msargbuf.offset = Offset;
+        cmd_msargbuf.index = SM50_BINDING_INDEX_ROOT_ARGUMENTS;
       }
       dirty_state_.clr(DirtyState::GraphicsRootArguments);
     }
@@ -433,6 +537,16 @@ public:
         cmd_fsargbuf.buffer = allocator_->gpu_heap_buffer_;
         cmd_fsargbuf.offset = Offset;
         cmd_fsargbuf.index = SM50_BINDING_INDEX_STATIC_SAMPLERS;
+        auto &cmd_osargbuf = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+        cmd_osargbuf.type = WMTRenderCommandSetObjectBuffer;
+        cmd_osargbuf.buffer = allocator_->gpu_heap_buffer_;
+        cmd_osargbuf.offset = Offset;
+        cmd_osargbuf.index = SM50_BINDING_INDEX_STATIC_SAMPLERS;
+        auto &cmd_msargbuf = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+        cmd_msargbuf.type = WMTRenderCommandSetMeshBuffer;
+        cmd_msargbuf.buffer = allocator_->gpu_heap_buffer_;
+        cmd_msargbuf.offset = Offset;
+        cmd_msargbuf.index = SM50_BINDING_INDEX_STATIC_SAMPLERS;
       }
       dirty_state_.clr(DirtyState::GraphicsRootSignature);
     }
@@ -489,8 +603,18 @@ public:
       dirty_state_.clr(DirtyState::StencilRef);
     }
 
-    return DrawCallStatus::Ordinary;
+    return status;
   }
+
+  struct DXMT_DRAW_DYNAMIC_IB_ARGUMENTS {
+    UINT VertexOrIndexCountPerInstance;
+    UINT InstanceCount;
+    UINT StartVertexOrIndexLocation;
+    INT BaseVertexLocation;
+    UINT StartInstanceLocation;
+    DXGI_FORMAT IndexFormat;
+    D3D12_GPU_VIRTUAL_ADDRESS IndexBuffer;
+  };
 
   void STDMETHODCALLTYPE
   DrawInstanced(UINT VertexCountPerInstance, UINT InstanceCount, UINT StartVertexLocation, UINT StartInstanceLocation) {
@@ -501,6 +625,35 @@ public:
     DrawCallStatus status = PreDraw();
     if (status == DrawCallStatus::Invalid)
       return;
+
+    if (status == DrawCallStatus::Geometry) {
+      auto [Ptr, Offset] = allocator_->AllocateGPUHeap(sizeof(DXMT_DRAW_DYNAMIC_IB_ARGUMENTS), 32);
+      DXMT_DRAW_DYNAMIC_IB_ARGUMENTS *draw_argument = reinterpret_cast<DXMT_DRAW_DYNAMIC_IB_ARGUMENTS *>(Ptr);
+      draw_argument->StartVertexOrIndexLocation = StartVertexLocation;
+      draw_argument->VertexOrIndexCountPerInstance = VertexCountPerInstance;
+      draw_argument->InstanceCount = InstanceCount;
+      draw_argument->StartInstanceLocation = StartInstanceLocation;
+      draw_argument->BaseVertexLocation = 0;
+      draw_argument->IndexFormat = DXGI_FORMAT_UNKNOWN;
+      draw_argument->IndexBuffer = 0;
+
+      auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topology_);
+      auto warp_count = (VertexCountPerInstance - 1) / vertex_increment_per_wrap + 1;
+
+      auto &cmd_update_draw_args = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+      cmd_update_draw_args.type = WMTRenderCommandSetObjectBuffer;
+      cmd_update_draw_args.buffer = allocator_->gpu_heap_buffer_;
+      cmd_update_draw_args.offset = Offset;
+      cmd_update_draw_args.index = SM50_BINDING_INDEX_DRAW_ARGUMENTS;
+
+      auto &cmd = allocator_->EncodeRenderCommand<wmtcmd_render_dxmt_geometry_draw>();
+      cmd.type = WMTRenderCommandDXMTGeometryDraw;
+      cmd.draw_arguments_offset = Offset;
+      cmd.instance_count = InstanceCount;
+      cmd.warp_count = warp_count;
+      cmd.vertex_per_warp = vertex_per_warp;
+      return;
+    }
 
     auto &cmd_draw = allocator_->EncodeRenderCommand<wmtcmd_render_draw>();
     cmd_draw.type = WMTRenderCommandDraw;
@@ -523,6 +676,36 @@ public:
     DrawCallStatus status = PreDraw();
     if (status == DrawCallStatus::Invalid)
       return;
+
+    if (status == DrawCallStatus::Geometry) {
+      auto [Ptr, Offset] = allocator_->AllocateGPUHeap(sizeof(DXMT_DRAW_DYNAMIC_IB_ARGUMENTS), 32);
+      DXMT_DRAW_DYNAMIC_IB_ARGUMENTS *draw_argument = reinterpret_cast<DXMT_DRAW_DYNAMIC_IB_ARGUMENTS *>(Ptr);
+      draw_argument->VertexOrIndexCountPerInstance = IndexCountPerInstance;
+      draw_argument->InstanceCount = InstanceCount;
+      draw_argument->StartVertexOrIndexLocation = StartVertexLocation;
+      draw_argument->BaseVertexLocation = BaseVertexLocation;
+      draw_argument->StartInstanceLocation = StartInstanceLocation;
+      draw_argument->IndexFormat = index_type == WMTIndexTypeUInt16 ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT;
+      draw_argument->IndexBuffer = index_buffer_address;
+
+      auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topology_);
+      auto warp_count = (IndexCountPerInstance - 1) / vertex_increment_per_wrap + 1;
+
+      auto &cmd_update_draw_args = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+      cmd_update_draw_args.type = WMTRenderCommandSetObjectBuffer;
+      cmd_update_draw_args.buffer = allocator_->gpu_heap_buffer_;
+      cmd_update_draw_args.offset = Offset;
+      cmd_update_draw_args.index = SM50_BINDING_INDEX_DRAW_ARGUMENTS;
+
+      auto &cmd = allocator_->EncodeRenderCommand<wmtcmd_render_dxmt_geometry_draw>();
+      cmd.type = WMTRenderCommandDXMTGeometryDraw;
+      cmd.draw_arguments_offset = Offset;
+      cmd.instance_count = InstanceCount;
+      cmd.warp_count = warp_count;
+      cmd.vertex_per_warp = vertex_per_warp;
+      return;
+    }
+
     auto &cmd_draw = allocator_->EncodeRenderCommand<wmtcmd_render_draw_indexed>();
     cmd_draw.type = WMTRenderCommandDrawIndexed;
     cmd_draw.primitive_type = primitive_type;
@@ -947,7 +1130,10 @@ public:
 
   void STDMETHODCALLTYPE
   IASetPrimitiveTopology(D3D12_PRIMITIVE_TOPOLOGY Topology) {
-    topology_ = Topology;
+    if (topology_ != Topology) {
+      topology_ = Topology;
+      dirty_state_.set(DirtyState::Topology);
+    }
   };
 
   void STDMETHODCALLTYPE
