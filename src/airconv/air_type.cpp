@@ -92,6 +92,20 @@ AirType::AirType(LLVMContext &context) : context(context) {
     "dxmt_draw_indexed_arguments"
   );
 
+  _dxmt_draw_dyn_ib_arguments = StructType::create(
+    context,
+    {
+      _int, // index/vertex count
+      _int, // instance count
+      _int, // start index/vertex
+      _int, // base vertex
+      _int, // base instance
+      _int, // index format
+      _byte->getPointerTo((uint32_t)AddressSpace::device), // index buffer
+    },
+    "dxmt_draw_dyn_ib_arguments"
+  );
+
   auto tyOpaque = get_or_create_struct(context, "opaque");
   _ptr_device = PointerType::get(tyOpaque, 1);
   _ptr_constant = PointerType::get(tyOpaque, 2);

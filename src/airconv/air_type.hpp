@@ -42,6 +42,7 @@ public:
   llvm::Type *_dxmt_draw_arguments;
   llvm::Type *_dxmt_draw_indexed_arguments;
   llvm::Type *_dxmt_stream_output_buffer_entry;
+  llvm::Type *_dxmt_draw_dyn_ib_arguments;
 
   llvm::Type *_sampler;
 
