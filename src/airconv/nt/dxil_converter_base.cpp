@@ -1448,6 +1448,11 @@ Converter::EmitLoadInput(const CallInst &Call) {
     return unsupported("dxil: input signature element is not mapped");
   if (!ctx.resource.input.ptr_int4 || !ctx.resource.input.ptr_float4)
     return unsupported("dxil: input register file is not available");
+
+  auto GSVertex = Get(Call.getArgOperand(4));
+  if (!GSVertex)
+    return GSVertex.takeError();
+
   switch (signature.semantic_kind) {
   case SemanticKind::Position:
   case SemanticKind::VertexID:
@@ -1469,10 +1474,16 @@ Converter::EmitLoadInput(const CallInst &Call) {
   if (Lane > 3)
     return unsupported("dxil: loadInput component out of range");
 
+  SmallVector<Value *> RegIdxs;
+  RegIdxs.push_back(ir.getInt32(0));
+  if (!isa<UndefValue>(*GSVertex))
+    RegIdxs.push_back(*GSVertex);
+  RegIdxs.push_back(ir.getInt32(Reg));
+  RegIdxs.push_back(ir.getInt32(Lane));
+
   if (Type->isIntegerTy()) {
     auto *Ptr = ir.CreateGEP(
-        ctx.resource.input.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.input.ptr_int4,
-        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+        ctx.resource.input.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.input.ptr_int4, RegIdxs
     );
     auto *Value = ir.CreateLoad(ir.getInt32Ty(), Ptr);
     if (Type->getIntegerBitWidth() < 32)
@@ -1484,7 +1495,7 @@ Converter::EmitLoadInput(const CallInst &Call) {
   if (Type->isFloatTy()) {
     auto *Ptr = ir.CreateGEP(
         ctx.resource.input.ptr_float4->getType()->getNonOpaquePointerElementType(), ctx.resource.input.ptr_float4,
-        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+        RegIdxs
     );
     return ir.CreateLoad(ir.getFloatTy(), Ptr);
   }
@@ -1492,13 +1503,12 @@ Converter::EmitLoadInput(const CallInst &Call) {
     if (signature.semantic_kind == SemanticKind::Position) {
       auto *Ptr = ir.CreateGEP(
           ctx.resource.input.ptr_float4->getType()->getNonOpaquePointerElementType(), ctx.resource.input.ptr_float4,
-          {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+          RegIdxs
       );
       return air.CreateConvertToHalf(ir.CreateLoad(ir.getFloatTy(), Ptr));
     }
     auto *Ptr = ir.CreateGEP(
-        ctx.resource.input.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.input.ptr_int4,
-        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+        ctx.resource.input.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.input.ptr_int4, RegIdxs
     );
     auto *Value = ir.CreateLoad(ir.getInt32Ty(), Ptr);
     return ir.CreateBitCast(ir.CreateTrunc(Value, ir.getInt16Ty()), ir.getHalfTy());
