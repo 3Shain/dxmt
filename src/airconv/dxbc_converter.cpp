@@ -192,9 +192,6 @@ void setup_temp_register(
       ptr_int_vec, ptr_float_vec, (uint32_t)channel_count
     };
   }
-  if (shader_info->use_cmp_exch) {
-    resource_map.cmp_exch_temp = builder.CreateAlloca(types._int);
-  }
 }
 
 void setup_metal_version(llvm::Module &module, SM50_SHADER_METAL_VERSION metal_version) {

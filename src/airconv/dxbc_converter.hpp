@@ -100,7 +100,6 @@ public:
   air::ArgumentBufferBuilder binding_table;
   bool skipOptimization = false;
   bool refactoringAllowed = false;
-  bool use_cmp_exch = false;
   bool no_control_point_phase_passthrough = false;
   bool output_control_point_read = false;
   bool use_msad = false;
@@ -179,8 +178,6 @@ struct io_binding_map {
   llvm::AllocaInst *depth_output_reg = nullptr;
   llvm::AllocaInst *stencil_ref_reg = nullptr;
   llvm::AllocaInst *coverage_mask_reg = nullptr;
-
-  llvm::AllocaInst *cmp_exch_temp = nullptr;
 
   // special buffers for tessellation
   llvm::Type *hull_cp_passthrough_type = nullptr;
