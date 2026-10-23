@@ -369,7 +369,8 @@ public:
     if (dirty_state_.test(DirtyState::GraphicsPipelineState)) {
       auto &cmd_setpso = allocator_->EncodeRenderCommand<wmtcmd_render_setpso>();
       cmd_setpso.type = WMTRenderCommandSetPSO;
-      cmd_setpso.pso = pso_graphics_->pso;
+      /* FIXME: topology should not matter here until gs/ts */
+      cmd_setpso.pso = pso_graphics_->GetRenderPipelineVariant({});
 
       auto &cmd_setdsso = allocator_->EncodeRenderCommand<wmtcmd_render_setdepthstencilstate>();
       cmd_setdsso.type = WMTRenderCommandSetDepthStencilState;

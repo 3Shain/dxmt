@@ -262,6 +262,8 @@ protected:
   WMT::Reference<WMT::DepthStencilState> dsso_no_stencil;
   WMT::Reference<WMT::DepthStencilState> dsso_readonly_no_stencil;
 
+  WMT::Reference<WMT::RenderPipelineState> pso;
+
 public:
   MTLD3D12GraphicsPipelineStateImpl(MTLD3D12Device *pDevice) :
       MTLD3D12Pageable<MTLD3D12GraphicsPipelineState>(pDevice) {
@@ -670,6 +672,11 @@ public:
     default:
       return dsso;
     }
+  }
+
+  virtual WMT::RenderPipelineState
+  GetRenderPipelineVariant(D3D12_PRIMITIVE_TOPOLOGY Topology) {
+    return pso;
   }
 };
 

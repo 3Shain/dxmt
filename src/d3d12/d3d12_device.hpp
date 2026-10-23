@@ -136,7 +136,6 @@ public:
 
 class MTLD3D12GraphicsPipelineState : public MTLD3D12PipelineState {
 public:
-  WMT::Reference<WMT::RenderPipelineState> pso;
   uint32_t slot_mask = 0;
   enum WMTTriangleFillMode fill_mode;
   enum WMTCullMode cull_mode;
@@ -148,6 +147,9 @@ public:
   uint32_t forced_sample_count;
 
   virtual WMT::DepthStencilState GetDepthStencilState(UINT DSVPlanar, UINT DSVReadonlyFlags) = 0;
+
+  virtual WMT::RenderPipelineState
+  GetRenderPipelineVariant(D3D12_PRIMITIVE_TOPOLOGY Topology) = 0;
 
   virtual void AddRefPrivate() = 0;
   virtual void ReleasePrivate() = 0;
