@@ -542,6 +542,7 @@ convert_dxbc_vertex_for_geometry_shader(
 
   bool is_triadj_strip = is_strip && pGeometryStage->gs_input_primitive == D3D10_SB_PRIMITIVE_TRIANGLE_ADJ;
   bool is_indexed_draw = ia_layout && ia_layout->index_buffer_format > 0;
+  bool is_dyanmic_ib = is_indexed_draw && ia_layout->index_buffer_format == SM50_INDEX_BUFFER_FORMAT_DYNAMIC;
 
   Prologues prologue;
   Epilogues epilogue;
@@ -578,14 +579,16 @@ convert_dxbc_vertex_for_geometry_shader(
       .memory_access = air::MemoryAccess::read,
       .address_space = air::AddressSpace::constant,
       .type = is_indexed_draw //
-          ? air::MSLWhateverStruct{"draw_indexed_arguments", types._dxmt_draw_indexed_arguments}
+          ? is_dyanmic_ib
+              ? air::MSLWhateverStruct{"draw_indexed_dynamic_arguments", types._dxmt_draw_dyn_ib_arguments}
+              : air::MSLWhateverStruct{"draw_indexed_arguments", types._dxmt_draw_indexed_arguments}
           : air::MSLWhateverStruct{"draw_arguments", types._dxmt_draw_arguments},
       .arg_name = "draw_arguments",
       .raster_order_group = {}
   });
 
   uint32_t index_buffer_idx = ~0u;
-  if (is_indexed_draw) {
+  if (is_indexed_draw && !is_dyanmic_ib) {
     index_buffer_idx = func_signature.DefineInput(air::ArgumentBindingBuffer{
         .buffer_size = {},
         .location_index = SM50_BINDING_INDEX_INDEX_BUFFER,
@@ -629,7 +632,7 @@ convert_dxbc_vertex_for_geometry_shader(
   auto instance_id = builder.CreateExtractElement(threadgroup_position_in_grid, (uint32_t)1);
 
   auto draw_arguments = builder.CreateLoad(
-    is_indexed_draw ? types._dxmt_draw_indexed_arguments
+    is_indexed_draw ? is_dyanmic_ib ? types._dxmt_draw_dyn_ib_arguments : types._dxmt_draw_indexed_arguments
                     : types._dxmt_draw_arguments,
     function->getArg(draw_argument_idx)
   );
@@ -724,7 +727,68 @@ convert_dxbc_vertex_for_geometry_shader(
   );
   builder.SetInsertPoint(index_check);
 
-  if (index_buffer_idx != ~0u) {
+  if (is_dyanmic_ib) {
+    auto start_index = builder.CreateExtractValue(draw_arguments, 2);
+    auto index_format = builder.CreateExtractValue(draw_arguments, 5);
+    auto index_buffer = builder.CreateExtractValue(draw_arguments, 6);
+
+    auto no_index = llvm::BasicBlock::Create(context, "no_index", function);
+    auto r16_index = llvm::BasicBlock::Create(context, "r16_index", function);
+    auto r32_index = llvm::BasicBlock::Create(context, "r32_index", function);
+    auto finalize_index = llvm::BasicBlock::Create(context, "finalize_index", function);
+
+    auto switch_ = builder.CreateSwitch(index_format, no_index, 2);
+    switch_->addCase(air.getInt(42), r32_index);
+    switch_->addCase(air.getInt(57), r16_index);
+
+    builder.SetInsertPoint(finalize_index);
+    auto vertex_id = builder.CreatePHI(air.getIntTy(), 3);
+    resource_map.vertex_id = vertex_id;
+    builder.CreateCondBr(
+        builder.CreateICmp(llvm::CmpInst::ICMP_NE, builder.getInt32(-1), vertex_id), active, will_dispatch
+    );
+    {
+      builder.SetInsertPoint(no_index);
+      builder.CreateBr(finalize_index);
+      vertex_id->addIncoming(global_index_id, no_index);
+    }
+    {
+      builder.SetInsertPoint(r32_index);
+      auto loaded_r32 = builder.CreateLoad(
+          builder.getInt32Ty(),
+          builder.CreateGEP(
+              builder.getInt32Ty(),
+              builder.CreatePointerCast(
+                  index_buffer, builder.getInt32Ty()->getPointerTo((unsigned)air::AddressSpace::device)
+              ),
+              {builder.CreateAdd(start_index, global_index_id)}
+          )
+      );
+      vertex_id->addIncoming(loaded_r32, r32_index);
+      builder.CreateBr(finalize_index);
+    }
+    {
+      builder.SetInsertPoint(r16_index);
+      auto loaded_r16 = builder.CreateLoad(
+          builder.getInt16Ty(),
+          builder.CreateGEP(
+              builder.getInt16Ty(),
+              builder.CreatePointerCast(
+                  index_buffer, builder.getInt16Ty()->getPointerTo((unsigned)air::AddressSpace::device)
+              ),
+              {builder.CreateAdd(start_index, global_index_id)}
+          )
+      );
+      vertex_id->addIncoming(
+          builder.CreateSub(
+              builder.CreateZExt(builder.CreateAdd(loaded_r16, builder.getInt16(1)), types._int), air.getInt(1)
+          ),
+          r16_index
+      );
+      builder.CreateBr(finalize_index);
+    }
+
+  } else if (index_buffer_idx) {
     auto start_index = builder.CreateExtractValue(draw_arguments, 2);
     auto index_buffer = function->getArg(index_buffer_idx);
     auto index_buffer_element_type = index_buffer->getType()->getNonOpaquePointerElementType();
