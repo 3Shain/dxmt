@@ -208,7 +208,6 @@ HRESULT DXBCGetRootSignature( const void *pBlobContainer, const void **ppBlob, U
         return S_OK;
     }
 
-        assert(0);
     return E_FAIL;
 }
 
