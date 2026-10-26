@@ -16,6 +16,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
  */
 
+#include "config/config.hpp"
 #include "d3d12_device.hpp"
 #include "d3d12_pageable.hpp"
 #include "d3d12_pipeline.hpp"
@@ -930,6 +931,231 @@ public:
   }
 };
 
+class MTLD3D12TessellationGraphicsPipelineStateImpl : public MTLD3D12GraphicsPipelineStateImpl {
+protected:
+  MTL_SHADER_REFLECTION ref_hs;
+  MTL_SHADER_REFLECTION ref_ds;
+
+public:
+  MTLD3D12TessellationGraphicsPipelineStateImpl(MTLD3D12Device *pDevice) : MTLD3D12GraphicsPipelineStateImpl(pDevice) {}
+
+  virtual HRESULT
+  Initialize(const D3D12_GRAPHICS_PIPELINE_STATE_DESC *pDesc) {
+    if (pDesc->StreamOutput.NumEntries) {
+      ERR("CreatePipelineState: SO not supported");
+      return E_NOTIMPL;
+    }
+
+    if (!pDesc->VS.pShaderBytecode || !pDesc->HS.pShaderBytecode || !pDesc->DS.pShaderBytecode) {
+      return E_INVALIDARG;
+    }
+
+    HRESULT hr;
+    SM50Shader shader_vs, shader_ps, shader_hs, shader_ds;
+    SM50Error sm50_err;
+    auto metal = device_->GetMTLDevice();
+    WMT::Reference<WMT::Error> err;
+    WMT::Reference<WMT::Function> vshs_func, ds_func, ps_func;
+
+    SM50_SHADER_COMMON_DATA common;
+    common.flags = {};
+    common.type = SM50_SHADER_COMMON;
+    common.metal_version = SM50_SHADER_METAL_310;
+    common.next = nullptr;
+
+    if (pDesc->VS.pShaderBytecode && pDesc->HS.pShaderBytecode && pDesc->DS.pShaderBytecode) {
+      if (FAILED(hr = InitializeShader(pDesc->VS, &shader_vs, &ref_vs)))
+        return hr;
+      if (FAILED(hr = InitializeShader(pDesc->HS, &shader_hs, &ref_hs)))
+        return hr;
+      if (FAILED(hr = InitializeShader(pDesc->DS, &shader_ds, &ref_ds)))
+        return hr;
+
+      {
+        SM50_SHADER_IA_INPUT_LAYOUT_DATA data_ia_layout;
+        data_ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
+        data_ia_layout.index_buffer_format = SM50_INDEX_BUFFER_FORMAT_DYNAMIC;
+        std::vector<SM50_IA_INPUT_ELEMENT> elements(pDesc->InputLayout.NumElements);
+        if (FAILED(
+                hr = ExtractMTLInputLayoutElements(
+                    device_, pDesc->VS.pShaderBytecode, pDesc->InputLayout.pInputElementDescs,
+                    pDesc->InputLayout.NumElements, elements.data(), &data_ia_layout.num_elements
+                )
+            ))
+          return hr;
+        elements.resize(data_ia_layout.num_elements);
+        data_ia_layout.elements = elements.data();
+        slot_mask = 0;
+        for (auto &element : elements) {
+          slot_mask |= (1 << element.slot);
+        }
+        data_ia_layout.slot_mask = slot_mask;
+        data_ia_layout.next = &common;
+
+        SM50_SHADER_ROOT_SIGNATURE_DATA rootsig, rootsig_vs;
+        rootsig.type = SM50_SHADER_ROOT_SIGNATURE;
+        rootsig_vs.type = SM50_SHADER_ROOT_SIGNATURE2;
+        if (pDesc->pRootSignature) {
+          rootsig.bytecode_length =
+              static_cast<MTLD3D12RootSignature *>(pDesc->pRootSignature)->GetBlob(&rootsig.bytecode);
+          rootsig_vs.bytecode_length =
+              static_cast<MTLD3D12RootSignature *>(pDesc->pRootSignature)->GetBlob(&rootsig_vs.bytecode);
+        } else {
+          rootsig.bytecode = pDesc->HS.pShaderBytecode;
+          rootsig.bytecode_length = pDesc->HS.BytecodeLength;
+          rootsig_vs.bytecode = pDesc->VS.pShaderBytecode;
+          rootsig_vs.bytecode_length = pDesc->VS.BytecodeLength;
+        }
+        rootsig_vs.next = &data_ia_layout;
+        rootsig.next = &rootsig_vs;
+
+        uint32_t max_potential_factor = ref_ds.PostTessellator.MaxPotentialTessFactor;
+        if (!device_->GetMTLDevice().supportsFamily(WMTGPUFamilyApple9)) {
+          // indeed this value might be too conservative
+          max_potential_factor = std::min(8u, max_potential_factor);
+        }
+        auto expected_tess_factor = ref_hs.Tessellator.MaxFactor;
+        if (uint32_t tess_factor_config = Config::getInstance().getOption<int32_t>("d3d12.maxTessFactor", 0u);
+            tess_factor_config >= 4 && tess_factor_config <= 64) {
+          expected_tess_factor = tess_factor_config;
+          max_potential_factor = std::min(tess_factor_config, max_potential_factor);
+        }
+        if ((float)max_potential_factor < expected_tess_factor) {
+          WARN(
+              "maxtessfactor(", expected_tess_factor, ") is too large for a mesh pipeline. Clamping to ",
+              max_potential_factor
+          );
+        }
+
+        SM50_SHADER_PSO_TESSELLATOR_DATA pso_tess;
+        pso_tess.type = SM50_SHADER_PSO_TESSELLATOR;
+        pso_tess.next = &rootsig;
+        pso_tess.max_potential_tess_factor = max_potential_factor;
+
+        {
+          SM50ShaderBitcode vshs_bitcode;
+
+          if (SM50CompileTessellationPipelineHull(
+                  shader_vs, shader_hs, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&pso_tess, "vshs_main", &vshs_bitcode,
+                  &sm50_err
+              )) {
+            ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
+            SM50FreeError(sm50_err);
+            return E_FAIL;
+          }
+
+          SM50_COMPILED_BITCODE vshs_bitcode_compiled;
+          SM50GetCompiledBitcode(vshs_bitcode, &vshs_bitcode_compiled);
+          auto vshs_data = WMT::MakeDispatchData(vshs_bitcode_compiled.Data, vshs_bitcode_compiled.Size);
+          auto vshs_lib = metal.newLibrary(vshs_data, err);
+          vshs_func = vshs_lib.newFunction("vshs_main");
+        }
+
+        {
+          SM50ShaderBitcode ds_bitcode;
+          if (SM50CompileTessellationPipelineDomain(
+                  shader_hs, shader_ds, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&pso_tess, "ds_main", &ds_bitcode,
+                  &sm50_err
+              )) {
+            ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
+            SM50FreeError(sm50_err);
+            return E_FAIL;
+            ;
+          }
+
+          SM50_COMPILED_BITCODE ds_bitcode_compiled;
+          SM50GetCompiledBitcode(ds_bitcode, &ds_bitcode_compiled);
+          auto ds_data = WMT::MakeDispatchData(ds_bitcode_compiled.Data, ds_bitcode_compiled.Size);
+          auto ds_lib = metal.newLibrary(ds_data, err);
+          ds_func = ds_lib.newFunction("ds_main");
+        }
+      }
+    } else {
+      ERR("no vertex/hull/domain shader");
+      return E_INVALIDARG;
+    }
+
+    WMTMeshRenderPipelineInfo info;
+    WMT::InitializeMeshRenderPipelineInfo(info);
+
+    bool dual_source_blending = false;
+
+    if (FAILED(hr = InitializePSO(pDesc, info, dual_source_blending)))
+      return hr;
+
+    if (pDesc->PS.pShaderBytecode) {
+      auto sha1 = Sha1HashState::compute(pDesc->PS.pShaderBytecode, pDesc->PS.BytecodeLength);
+
+      std::string ps_name = "ps_main" + sha1.string().substr(0, 8);
+
+      if (FAILED(hr = InitializeShader(pDesc->PS, &shader_ps, &ref_ps)))
+        return hr;
+      SM50_SHADER_PSO_PIXEL_SHADER_DATA data_ps;
+      data_ps.dual_source_blending = dual_source_blending;
+      data_ps.disable_depth_output = false;
+      data_ps.unorm_output_reg_mask = 0;
+      data_ps.sample_mask = pDesc->SampleMask;
+      data_ps.type = SM50_SHADER_PSO_PIXEL_SHADER;
+      data_ps.next = &common;
+
+      memset(data_ps.pixel_formats, 0, sizeof(data_ps.pixel_formats));
+      for (unsigned i = 0; i < pDesc->NumRenderTargets; i++) {
+        data_ps.pixel_formats[i] = ORIGINAL_FORMAT(info.colors[i].pixel_format);
+      }
+
+      SM50_SHADER_ROOT_SIGNATURE_DATA rootsig;
+      rootsig.type = SM50_SHADER_ROOT_SIGNATURE;
+      if (pDesc->pRootSignature) {
+        rootsig.bytecode_length =
+            static_cast<MTLD3D12RootSignature *>(pDesc->pRootSignature)->GetBlob(&rootsig.bytecode);
+      } else {
+        rootsig.bytecode = pDesc->PS.pShaderBytecode;
+        rootsig.bytecode_length = pDesc->PS.BytecodeLength;
+      }
+      rootsig.next = &data_ps;
+
+      SM50ShaderBitcode ps_bitcode;
+      if (SM50Compile(
+              shader_ps, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&rootsig, ps_name.c_str(), &ps_bitcode, &sm50_err
+          )) {
+        ERR("Failed to compile ps shader");
+        return E_FAIL;
+      }
+      SM50_COMPILED_BITCODE ps_bitcode_compiled;
+      SM50GetCompiledBitcode(ps_bitcode, &ps_bitcode_compiled);
+      auto ps_data = WMT::MakeDispatchData(ps_bitcode_compiled.Data, ps_bitcode_compiled.Size);
+      auto ps_lib = metal.newLibrary(ps_data, err);
+      ps_func = ps_lib.newFunction(ps_name.c_str());
+    }
+
+    // PSO
+    info.object_function = vshs_func.handle;
+    info.mesh_function = ds_func.handle;
+    info.fragment_function = ps_func.handle;
+
+    pso = metal.newRenderPipelineState(info, err);
+
+    if (!pso) {
+      ERR("Failed to create mesh PSO: ", err.description().getUTF8String());
+      return E_FAIL;
+    }
+
+    InitializeDSSO(pDesc);
+
+    InitializeRasterizerState(pDesc);
+
+    is_tess = 1;
+    tess_threads_per_patch = ref_hs.ThreadsPerPatch;
+
+    return S_OK;
+  }
+
+  virtual WMT::RenderPipelineState
+  GetRenderPipelineVariant(D3D12_PRIMITIVE_TOPOLOGY Topology) {
+    return pso;
+  }
+};
+
 HRESULT
 CreateGraphicsPipelineState(
     MTLD3D12Device *pDevice, const D3D12_GRAPHICS_PIPELINE_STATE_DESC *pDesc, REFIID riid, void **ppPipelineState
@@ -938,6 +1164,8 @@ CreateGraphicsPipelineState(
   Com<MTLD3D12GraphicsPipelineStateImpl> pso;
   if (pDesc->GS.pShaderBytecode)
     pso = Com<MTLD3D12GraphicsPipelineStateImpl>(new MTLD3D12GeometryGraphicsPipelineStateImpl(pDevice));
+  else if (pDesc->HS.pShaderBytecode)
+    pso = Com<MTLD3D12GraphicsPipelineStateImpl>(new MTLD3D12TessellationGraphicsPipelineStateImpl(pDevice));
   else
     pso = Com(new MTLD3D12GraphicsPipelineStateImpl(pDevice));
   HRESULT hr = pso->Initialize(pDesc);

@@ -41,6 +41,7 @@ enum class DrawCallStatus {
   Invalid,
   Ordinary,
   Geometry,
+  Tessellation,
 };
 
 inline bool
@@ -478,7 +479,9 @@ public:
       dirty_state_.clr(DirtyState::GraphicsPipelineState);
     }
 
-    auto status = pso_graphics_->is_geometry ? DrawCallStatus::Geometry : DrawCallStatus::Ordinary;
+    auto status = pso_graphics_->is_geometry ? DrawCallStatus::Geometry
+                  : pso_graphics_->is_tess   ? DrawCallStatus::Tessellation
+                                             : DrawCallStatus::Ordinary;
 
     if (dirty_state_.test(DirtyState::VertexBuffer)) {
       auto [Offset, Stride] = PopulateVertexBufferTable(1);
@@ -654,6 +657,36 @@ public:
       return;
     }
 
+    if (status == DrawCallStatus::Tessellation) {
+      auto [Ptr, Offset] = allocator_->AllocateGPUHeap(sizeof(DXMT_DRAW_DYNAMIC_IB_ARGUMENTS), 32);
+      DXMT_DRAW_DYNAMIC_IB_ARGUMENTS *draw_argument = reinterpret_cast<DXMT_DRAW_DYNAMIC_IB_ARGUMENTS *>(Ptr);
+      draw_argument->StartVertexOrIndexLocation = StartVertexLocation;
+      draw_argument->VertexOrIndexCountPerInstance = VertexCountPerInstance;
+      draw_argument->InstanceCount = InstanceCount;
+      draw_argument->StartInstanceLocation = StartInstanceLocation;
+      draw_argument->BaseVertexLocation = 0;
+      draw_argument->IndexFormat = DXGI_FORMAT_UNKNOWN;
+      draw_argument->IndexBuffer = 0;
+
+      auto PatchCountPerInstance = VertexCountPerInstance / cp_count;
+      auto PatchPerGroup = 32 / pso_graphics_->tess_threads_per_patch;
+      auto ThreadsPerPatch = pso_graphics_->tess_threads_per_patch;
+      auto PatchPerObjectInstance = (PatchCountPerInstance - 1) / PatchPerGroup + 1;
+
+      auto &cmd_update_draw_args = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+      cmd_update_draw_args.type = WMTRenderCommandSetObjectBuffer;
+      cmd_update_draw_args.buffer = allocator_->gpu_heap_buffer_;
+      cmd_update_draw_args.offset = Offset;
+      cmd_update_draw_args.index = SM50_BINDING_INDEX_DRAW_ARGUMENTS;
+
+      auto &cmd = allocator_->EncodeRenderCommand<wmtcmd_render_draw_meshthreadgroups>();
+      cmd.type = WMTRenderCommandDrawMeshThreadgroups;
+      cmd.threadgroup_per_grid = {PatchPerObjectInstance, InstanceCount, 1};
+      cmd.object_threadgroup_size = {ThreadsPerPatch, PatchPerGroup, 1};
+      cmd.mesh_threadgroup_size = {32, 1, 1};
+      return;
+    }
+
     auto &cmd_draw = allocator_->EncodeRenderCommand<wmtcmd_render_draw>();
     cmd_draw.type = WMTRenderCommandDraw;
     cmd_draw.primitive_type = primitive_type;
@@ -701,6 +734,36 @@ public:
       cmd.threadgroup_per_grid = {warp_count, InstanceCount, 1};
       cmd.object_threadgroup_size = {vertex_per_warp, 1, 1};
       cmd.mesh_threadgroup_size = {1, 1, 1};
+      return;
+    }
+
+    if (status == DrawCallStatus::Tessellation) {
+      auto [Ptr, Offset] = allocator_->AllocateGPUHeap(sizeof(DXMT_DRAW_DYNAMIC_IB_ARGUMENTS), 64);
+      DXMT_DRAW_DYNAMIC_IB_ARGUMENTS *draw_argument = reinterpret_cast<DXMT_DRAW_DYNAMIC_IB_ARGUMENTS *>(Ptr);
+      draw_argument->VertexOrIndexCountPerInstance = IndexCountPerInstance;
+      draw_argument->InstanceCount = InstanceCount;
+      draw_argument->StartVertexOrIndexLocation = StartVertexLocation;
+      draw_argument->BaseVertexLocation = BaseVertexLocation;
+      draw_argument->StartInstanceLocation = StartInstanceLocation;
+      draw_argument->IndexFormat = index_type == WMTIndexTypeUInt16 ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT;
+      draw_argument->IndexBuffer = index_buffer_address;
+
+      auto PatchCountPerInstance = IndexCountPerInstance / cp_count;
+      auto PatchPerGroup = 32 / pso_graphics_->tess_threads_per_patch;
+      auto ThreadsPerPatch = pso_graphics_->tess_threads_per_patch;
+      auto PatchPerObjectInstance = (PatchCountPerInstance - 1) / PatchPerGroup + 1;
+
+      auto &cmd_update_draw_args = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+      cmd_update_draw_args.type = WMTRenderCommandSetObjectBuffer;
+      cmd_update_draw_args.buffer = allocator_->gpu_heap_buffer_;
+      cmd_update_draw_args.offset = Offset;
+      cmd_update_draw_args.index = SM50_BINDING_INDEX_DRAW_ARGUMENTS;
+
+      auto &cmd = allocator_->EncodeRenderCommand<wmtcmd_render_draw_meshthreadgroups>();
+      cmd.type = WMTRenderCommandDrawMeshThreadgroups;
+      cmd.threadgroup_per_grid = {PatchPerObjectInstance, InstanceCount, 1};
+      cmd.object_threadgroup_size = {ThreadsPerPatch, PatchPerGroup, 1};
+      cmd.mesh_threadgroup_size = {32, 1, 1};
       return;
     }
 

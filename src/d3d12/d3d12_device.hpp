@@ -146,6 +146,8 @@ public:
   float depth_bias_clamp;
   uint32_t forced_sample_count;
   bool is_geometry = 0;
+  bool is_tess = 0;
+  uint32_t tess_threads_per_patch;
 
   virtual WMT::DepthStencilState GetDepthStencilState(UINT DSVPlanar, UINT DSVReadonlyFlags) = 0;
 
