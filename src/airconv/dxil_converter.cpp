@@ -602,6 +602,20 @@ initialize_geometry_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
       }
       break;
     }
+    case SemanticKind::RenderTargetArrayIndex: {
+      shader->func_signature.DefineMeshPrimitiveOutput(air::OutputRenderTargetArrayIndex{});
+      mesh_output_handlers.push_back([=](MeshOutputContext &output, IOHelper &io) {
+        io.PopulateMeshOutputRenderTargetArrayIndex(reg, mask, output.primitive_id);
+      });
+      break;
+    }
+    case SemanticKind::ViewPortArrayIndex: {
+      shader->func_signature.DefineMeshPrimitiveOutput(air::OutputViewportArrayIndex{});
+      mesh_output_handlers.push_back([=](MeshOutputContext &output, IOHelper &io) {
+        io.PopulateMeshOutputViewportArrayIndex(reg, mask, output.primitive_id);
+      });
+      break;
+    }
     default:
       return unsupported(
           "dxil: unsupported geometry shader output semantic " + std::to_string((uint32_t)element.semantic_kind)
