@@ -1104,6 +1104,15 @@ handle_signature_gs(
           sm50_shader->clip_distance_scalars.push_back({.component = (uint8_t)(i), .reg = (uint8_t)reg});
         }
       }
+      auto const mesh_vertex_data_index = num_mesh_vertex_data++;
+      func_signature.DefineMeshVertexOutput(OutputMeshData{
+        .user = std::format("SV_ClipDistance{}", reg),
+        .type = msl_float4,
+        .index = mesh_vertex_data_index
+      });
+      mesh_output_handlers.push_back([=](MeshOutputContext &output, IOHelper &io) {
+        io.PopulateMeshOutputVertexData(reg, mask, mesh_vertex_data_index, output.vertex_id, msl_float4);
+      });
       max_output_register = std::max(reg + 1, max_output_register);
       break;
     }
@@ -1113,6 +1122,15 @@ handle_signature_gs(
           sm50_shader->cull_distance_scalars.push_back({.component = (uint8_t)(i), .reg = (uint8_t)reg});
         }
       }
+      auto const mesh_vertex_data_index = num_mesh_vertex_data++;
+      func_signature.DefineMeshVertexOutput(OutputMeshData{
+        .user = std::format("SV_CullDistance{}", reg),
+        .type = msl_float4,
+        .index = mesh_vertex_data_index
+      });
+      mesh_output_handlers.push_back([=](MeshOutputContext &output, IOHelper &io) {
+        io.PopulateMeshOutputVertexData(reg, mask, mesh_vertex_data_index, output.vertex_id, msl_float4);
+      });
       max_output_register = std::max(reg + 1, max_output_register);
       break;
     }
