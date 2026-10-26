@@ -600,6 +600,10 @@ struct OutputPointSize {
   bool operator==(OutputPointSize const& rhs) const { return true; }
 };
 
+struct OutputPrimitiveID {
+  bool operator==(OutputPrimitiveID const& rhs) const { return true; }
+};
+
 using FunctionInput = template_concat_t<
   FunctionArguments,
   std::variant<
@@ -627,7 +631,8 @@ using FunctionOutput = std::variant<
 
 using MeshVertexOutput = std::variant<OutputMeshData, OutputPosition, OutputClipDistance, OutputPointSize>;
 
-using MeshPrimitiveOutput = std::variant<OutputMeshData, OutputRenderTargetArrayIndex, OutputViewportArrayIndex>;
+using MeshPrimitiveOutput =
+    std::variant<OutputMeshData, OutputRenderTargetArrayIndex, OutputViewportArrayIndex, OutputPrimitiveID>;
 
 class FunctionSignatureBuilder {
 public:

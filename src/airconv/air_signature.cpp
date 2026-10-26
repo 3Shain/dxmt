@@ -627,6 +627,13 @@ auto FunctionSignatureBuilder::CreateFunction(
                   ->string("air.arg_name")
                   ->string("mtl_viewport_array_index");
             },
+            [&](const OutputPrimitiveID) {
+              md.string("air.primitive_id")
+                  ->string("air.arg_type_name")
+                  ->string("uint")
+                  ->string("air.arg_name")
+                  ->string("mtl_primitive_id");
+            },
         },
         output
     );
