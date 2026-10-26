@@ -690,6 +690,7 @@ read_control_flow(
         return cloned;
       };
 
+      auto call_return_point = call->return_point;
       bb->target = BasicBlockUnconditionalBranch{clone(func_entries.at(call->func_id))};
 
       while (!block_to_redirect.empty()) {
@@ -699,8 +700,8 @@ read_control_flow(
         cloned->target = std::visit(
             patterns{
                 [](BasicBlockUndefined) -> BasicBlockTarget { return BasicBlockUndefined{}; },
-                [&](BasicBlockReturn ret) -> BasicBlockTarget {
-                  return BasicBlockUnconditionalBranch{call->return_point};
+                [=](BasicBlockReturn ret) -> BasicBlockTarget {
+                  return BasicBlockUnconditionalBranch{call_return_point};
                 },
                 [&](BasicBlockUnconditionalBranch uncond) -> BasicBlockTarget {
                   return BasicBlockUnconditionalBranch{clone(uncond.target)};
