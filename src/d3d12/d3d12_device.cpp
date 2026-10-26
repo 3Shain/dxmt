@@ -324,7 +324,8 @@ public:
       out->BarycentricsSupported = FALSE;
       out->CopyQueueTimestampQueriesSupported = FALSE;
       out->ViewInstancingTier = D3D12_VIEW_INSTANCING_TIER_NOT_SUPPORTED;
-      out->WriteBufferImmediateSupportFlags = D3D12_COMMAND_LIST_SUPPORT_FLAG_NONE;
+      // DIRECT + BUNDLE + COPY + COMPUTE
+      out->WriteBufferImmediateSupportFlags = (D3D12_COMMAND_LIST_SUPPORT_FLAGS)0xF;
       return S_OK;
     }
     case D3D12_FEATURE_D3D12_OPTIONS1: {

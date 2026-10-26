@@ -1741,7 +1741,29 @@ public:
   WriteBufferImmediate(
       UINT Count, const D3D12_WRITEBUFFERIMMEDIATE_PARAMETER *pParams, const D3D12_WRITEBUFFERIMMEDIATE_MODE *pModes
   ) {
-    IMPLEMENT_ME
+    /**
+    FIXME: mode is deliberately ignored for now
+    TODO(fence): needs guarantee of this blit pass waiting all previous commands
+    */
+    if (!pParams || !PreBlit())
+      return;
+
+    auto [Mapped, Offset] = allocator_->AllocateGPUHeap(Count * sizeof(uint32_t), 16);
+    for (unsigned i = 0; i < Count; i++) {
+      uint64_t DstOffset;
+      auto Dst = device_->LookupBufferByVA(pParams[i].Dest, &DstOffset);
+      if (!Dst)
+        continue;
+
+      reinterpret_cast<uint32_t *>(Mapped)[i] = pParams[i].Value;
+      auto &cmd_cp = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
+      cmd_cp.type = WMTBlitCommandCopyFromBufferToBuffer;
+      cmd_cp.src = allocator_->gpu_heap_buffer_;
+      cmd_cp.dst = Dst->buffer();
+      cmd_cp.src_offset = Offset + i * sizeof(uint32_t);
+      cmd_cp.dst_offset = DstOffset;
+      cmd_cp.copy_length = sizeof(uint32_t);
+    }
   }
 };
 
