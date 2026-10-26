@@ -871,6 +871,19 @@ Converter::EmitDxilOp(CallInst &Call) {
                                              : ctx.resource.coverage_mask_arg;
   if (op == "renderTargetGetSampleCount")
     return air.CreateGetNumSamples();
+  if (op == "emitStream") {
+    ctx.resource.call_emit();
+    return nullptr;
+  }
+  if (op == "emitThenCutStream") {
+    ctx.resource.call_emit();
+    ctx.resource.call_cut();
+    return nullptr;
+  }
+  if (op == "cutStream") {
+    ctx.resource.call_cut();
+    return nullptr;
+  }
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
