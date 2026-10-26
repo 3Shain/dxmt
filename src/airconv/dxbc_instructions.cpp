@@ -1830,7 +1830,6 @@ Instruction readInstruction(
     return inst;
   };
   case microsoft::D3D11_SB_OPCODE_ATOMIC_CMP_STORE: {
-    shader_info.use_cmp_exch = true;
     auto inst = InstAtomicImmCmpExchange{
       .dst = DstOperandSideEffect{._ = {.mask = 0b1111, .write_type = OperandDataType::Integer}},
       .dst_resource = readAtomicDst(Inst.m_Operands[0], phase),
@@ -1888,7 +1887,6 @@ Instruction readInstruction(
   };
 
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_CMP_EXCH: {
-    shader_info.use_cmp_exch = true;
     auto inst = InstAtomicImmCmpExchange{
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Integer),
       .dst_resource = readAtomicDst(Inst.m_Operands[1], phase),
