@@ -315,7 +315,7 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectRenderCommand(
 
     auto &cmd_setpso = EncodeRenderCommand<wmtcmd_render_setpso>();
     cmd_setpso.type = WMTRenderCommandSetPSO;
-    cmd_setpso.pso = pPSO->pso;
+    cmd_setpso.pso = pPSO->GetRenderPipelineVariant({} /* FIXME: value should not matter here until gs/ts */);
   }
 
   auto &cmd = EncodeRenderCommand<wmtcmd_render_executecommands>();
