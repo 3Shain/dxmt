@@ -884,6 +884,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     ctx.resource.call_cut();
     return nullptr;
   }
+  if (op == "gsInstanceID")
+    return ctx.resource.gs_instance_id;
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
