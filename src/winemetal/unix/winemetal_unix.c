@@ -3132,9 +3132,12 @@ _MTLDevice_newLibraryWithSource(void *obj) {
   NSString *source =
       [[NSString alloc] initWithBytes:params->source.ptr length:params->length encoding:NSASCIIStringEncoding];
   NSError *err = NULL;
-  params->ret_library = (obj_handle_t)[device newLibraryWithSource:source options:nil error:&err];
+  MTLCompileOptions * options = [[MTLCompileOptions alloc] init];
+  options.languageVersion = MTLLanguageVersion3_1;
+  params->ret_library = (obj_handle_t)[device newLibraryWithSource:source options:options error:&err];
   params->ret_error = (obj_handle_t)[err retain];
   [source release];
+  [options release];
   return STATUS_SUCCESS;
 }
 
