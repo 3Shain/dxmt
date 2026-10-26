@@ -63,7 +63,7 @@ D3D12CreateDevice(IUnknown *pAdapter, D3D_FEATURE_LEVEL MinimumFeatureLevel, REF
   if (!ppDevice)
     return S_FALSE;
 
-  return dxmt::CreateD3D12Device(dxgi_adapter_mtl.ptr(), riid, ppDevice);
+  return dxmt::CreateD3D12Device(dxgi_adapter_mtl.ptr(), MinimumFeatureLevel, riid, ppDevice);
 }
 
 extern "C" HRESULT WINAPI
