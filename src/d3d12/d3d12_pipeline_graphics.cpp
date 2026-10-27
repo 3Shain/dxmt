@@ -784,7 +784,6 @@ public:
                   &sm50_err
               )) {
             ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
-            SM50FreeError(sm50_err);
             return {};
           }
 
@@ -824,7 +823,6 @@ public:
                   &sm50_err
               )) {
             ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
-            SM50FreeError(sm50_err);
             return {};
           }
 
@@ -1040,7 +1038,6 @@ public:
                   &sm50_err
               )) {
             ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
-            SM50FreeError(sm50_err);
             return E_FAIL;
           }
 
@@ -1058,7 +1055,6 @@ public:
                   &sm50_err
               )) {
             ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
-            SM50FreeError(sm50_err);
             return E_FAIL;
             ;
           }
