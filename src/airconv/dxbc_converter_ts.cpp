@@ -684,6 +684,38 @@ convert_dxbc_vertex_hull_shader(
 
     builder.SetInsertPoint(epilogue_bb);
 
+    if (shader_info.output_control_point_read || !shader_info.no_control_point_phase_passthrough) {
+      // if fork/join phase reads control point phase output, or control point phase is absent
+      // then we need to perform a memcpy from threadgroup memory to payload memory
+      // otherwise output is written to payload memory directly
+      auto active = llvm::BasicBlock::Create(context, "write_control_point", function);
+      auto sync = llvm::BasicBlock::Create(context, "write_control_point_end", function);
+
+      builder.CreateCondBr(
+          ctx.builder.CreateICmp(
+              llvm::CmpInst::ICMP_ULT, ctx.resource.thread_id_in_patch,
+              ctx.builder.getInt32(pHullStage->output_control_point_count)
+          ),
+          active, sync
+      );
+      builder.SetInsertPoint(active);
+
+      auto src = ctx.resource.hull_cp_passthrough_src;
+      if (src->getType()->getNonOpaquePointerElementType() != ctx.resource.hull_cp_passthrough_type) {
+        src = builder.CreateBitCast(
+            src, ctx.resource.hull_cp_passthrough_type->getPointerTo(src->getType()->getPointerAddressSpace())
+        );
+      }
+      assert(src->getType()->getNonOpaquePointerElementType() == ctx.resource.hull_cp_passthrough_type);
+      builder.CreateStore(
+          builder.CreateLoad(ctx.resource.hull_cp_passthrough_type, src), ctx.resource.hull_cp_passthrough_dst
+      );
+
+      builder.CreateBr(sync);
+      builder.SetInsertPoint(sync);
+      ctx.air.CreateBarrier(llvm::air::MemFlags::Threadgroup);
+    }
+
     /* populate patch constant output */
 
     auto write_patch_constant = llvm::BasicBlock::Create(context, "write_patch_constant", function);
