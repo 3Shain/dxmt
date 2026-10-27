@@ -94,6 +94,11 @@ public:
       return S_OK;
     }
 
+    if (riid == __uuidof(ID3D11VideoContext)) {
+      WARN("QueryInterface: ID3D11VideoContext requested, not implemented");
+      return E_NOINTERFACE;
+    }
+
     return ImmediateContextBase::QueryInterface(riid, ppvObject);
   }
 
