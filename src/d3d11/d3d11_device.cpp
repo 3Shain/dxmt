@@ -449,7 +449,8 @@ public:
       ID3D11DeviceContext **ppDeferredContext) override{
     ID3D11DeviceContext3 *ppDeferredContext3;
     HRESULT hr = CreateDeferredContext3(ContextFlags, &ppDeferredContext3);
-    *ppDeferredContext = static_cast<ID3D11DeviceContext *>(ppDeferredContext3);
+    if (hr == S_OK)
+      *ppDeferredContext = static_cast<ID3D11DeviceContext *>(ppDeferredContext3);
     return hr;
   }
 
@@ -721,7 +722,8 @@ public:
       ID3D11DeviceContext1 **ppDeferredContext) override{
     ID3D11DeviceContext3 *ppDeferredContext3;
     HRESULT hr = CreateDeferredContext3(ContextFlags, &ppDeferredContext3);
-    *ppDeferredContext = static_cast<ID3D11DeviceContext1 *>(ppDeferredContext3);
+    if (hr == S_OK)
+      *ppDeferredContext = static_cast<ID3D11DeviceContext1 *>(ppDeferredContext3);
     return hr;
   }
 
@@ -791,7 +793,8 @@ public:
   CreateDeferredContext2(UINT ContextFlags, ID3D11DeviceContext2 **ppDeferredContext) override {
     ID3D11DeviceContext3 *ppDeferredContext3;
     HRESULT hr = CreateDeferredContext3(ContextFlags, &ppDeferredContext3);
-    *ppDeferredContext = static_cast<ID3D11DeviceContext2 *>(ppDeferredContext3);
+    if (hr == S_OK)
+      *ppDeferredContext = static_cast<ID3D11DeviceContext2 *>(ppDeferredContext3);
     return hr;
   }
 
@@ -988,6 +991,8 @@ public:
 
   HRESULT STDMETHODCALLTYPE CreateDeferredContext3(
     UINT ContextFlags, ID3D11DeviceContext3 **ppDeferredContext) override {
+    if (feature_flags_ & D3D11_CREATE_DEVICE_SINGLETHREADED)
+      return DXGI_ERROR_INVALID_CALL;
     *ppDeferredContext = std::move(dxmt::CreateDeferredContext(this, ContextFlags));
     return S_OK;
   }
