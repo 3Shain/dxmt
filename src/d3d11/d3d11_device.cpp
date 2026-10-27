@@ -1182,6 +1182,9 @@ public:
     }
 
     if (riid == __uuidof(ID3D10Device) || riid == __uuidof(ID3D10Device1)) {
+      if (!(d3d11_device_.feature_flags_ & 0x80000000)) {
+        return E_NOINTERFACE;
+      }
       *ppvObject = ref_and_cast<ID3D10Device>(d3d11_device_.d3d10_.get());
       return S_OK;
     }
