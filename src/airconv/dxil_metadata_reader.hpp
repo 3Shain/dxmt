@@ -127,10 +127,23 @@ template <> struct MetadataValue<std::vector<uint32_t>> {
 template <> struct MetadataValue<const llvm::Function *> {
   static llvm::Expected<const llvm::Function *>
   get(const llvm::Metadata *md) {
+    if (md == nullptr)
+      return nullptr; // null is valid for function pointer
     if (const auto *m = llvm::dyn_cast_or_null<llvm::ConstantAsMetadata>(md))
       if (const auto *f = llvm::dyn_cast<llvm::Function>(m->getValue()))
         return f;
     return metadata_error("expected function metadata");
+  }
+};
+
+template <> struct MetadataValue<float> {
+  static llvm::Expected<float> get(const llvm::Metadata *md) {
+    if (const auto *m =
+            llvm::dyn_cast_or_null<llvm::ConstantAsMetadata>(md)) {
+      if (const auto *c = llvm::dyn_cast<llvm::ConstantFP>(m->getValue()))
+        return c->getValueAPF().convertToFloat();
+    }
+    return metadata_error("expected float metadata");
   }
 };
 
