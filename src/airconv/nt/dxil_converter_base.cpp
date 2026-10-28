@@ -945,6 +945,14 @@ Converter::EmitDxilOp(CallInst &Call) {
       return Operand.takeError();
     return ir.CreateBitCast(*Operand, MapType(Call.getType()));
   }
+  if (op == "outputControlPointID")
+    return ctx.resource.thread_id_in_patch;
+  if (op == "domainLocation") {
+    auto Component = asU32(Call.getOperand(1));
+    if (!Component)
+      return unsupported("dxil: non-constant domainLocation component");
+    return ir.CreateExtractElement(ctx.resource.domain, *Component);
+  }
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
