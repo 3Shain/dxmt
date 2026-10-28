@@ -1449,10 +1449,12 @@ Converter::EmitBarrier(CallInst &Call) {
 llvm::Expected<llvm::Value *>
 Converter::EmitLoadInput(const CallInst &Call) {
   auto Element = asU32(Call.getArgOperand(1));
-  auto Row = asU32(Call.getArgOperand(2));
   auto Component = asU32(Call.getArgOperand(3));
-  if (!Element || !Row || !Component)
+  if (!Element || !Component)
     return unsupported("dxil: non-constant loadInput index");
+  auto Row = Get(Call.getArgOperand(2));
+  if (!Row)
+    return Row.takeError();
   if (*Element >= entry.inputs.size())
     return unsupported("dxil: loadInput element index out of range");
   const auto &signature = entry.inputs[*Element];
@@ -1482,7 +1484,6 @@ Converter::EmitLoadInput(const CallInst &Call) {
   }
 
   auto *Type = Call.getType();
-  uint32_t Reg = (uint32_t)signature.start_row + *Row;
   uint32_t Lane = (uint32_t)signature.start_col + *Component;
   if (Lane > 3)
     return unsupported("dxil: loadInput component out of range");
@@ -1491,7 +1492,7 @@ Converter::EmitLoadInput(const CallInst &Call) {
   RegIdxs.push_back(ir.getInt32(0));
   if (!isa<UndefValue>(*GSVertex))
     RegIdxs.push_back(*GSVertex);
-  RegIdxs.push_back(ir.getInt32(Reg));
+  RegIdxs.push_back(ir.CreateAdd(*Row, ir.getInt32(signature.start_row)));
   RegIdxs.push_back(ir.getInt32(Lane));
 
   if (Type->isIntegerTy()) {
