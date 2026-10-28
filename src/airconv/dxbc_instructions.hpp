@@ -146,14 +146,14 @@ struct SrcOperandInputOCP {
   static constexpr std::string_view debug_name = "input_vocp";
   SrcOperandCommon _;
   OperandIndex cpid;
-  uint32_t regid;
+  OperandIndex regid;
 };
 
 struct SrcOperandInputICP {
   static constexpr std::string_view debug_name = "input_vicp";
   SrcOperandCommon _;
   OperandIndex cpid;
-  uint32_t regid;
+  OperandIndex regid;
 };
 
 struct SrcOperandInputPC {

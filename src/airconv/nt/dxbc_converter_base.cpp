@@ -342,7 +342,7 @@ Converter::LoadOperand(const SrcOperandInputICP &SrcOp, mask_t Mask) {
   auto TyHandle = GetArrayType(Handle);
 
   auto CPId = LoadOperandIndex(SrcOp.cpid);
-  auto RegId = ir.getInt32(SrcOp.regid);
+  auto RegId = LoadOperandIndex(SrcOp.regid);
 
   if (auto Comp = ComponentFromScalarMask(Mask, SrcOp._.swizzle); Comp >= 0) {
     auto TyInt = air.getIntTy();
@@ -383,7 +383,7 @@ Converter::LoadOperand(const SrcOperandInputOCP &SrcOp, mask_t Mask) {
   auto TyHandle = GetArrayType(Handle);
 
   auto CPId = LoadOperandIndex(SrcOp.cpid);
-  auto RegId = ir.getInt32(SrcOp.regid);
+  auto RegId = LoadOperandIndex(SrcOp.regid);
 
   if (auto Comp = ComponentFromScalarMask(Mask, SrcOp._.swizzle); Comp >= 0) {
     auto TyInt = air.getIntTy();
