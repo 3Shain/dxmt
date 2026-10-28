@@ -110,6 +110,7 @@ private:
   llvm::Expected<llvm::Value *> EmitQuadOp(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitBinaryWithTwoOutputs(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitStorePatchConstant(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitLoadOutputControlPoint(const llvm::CallInst &Call);
 };
 
 } // namespace dxmt::dxil
