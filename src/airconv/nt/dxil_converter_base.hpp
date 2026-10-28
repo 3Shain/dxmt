@@ -109,6 +109,7 @@ private:
   llvm::Expected<llvm::Value *> EmitReadLaneAt(const llvm::CallInst &Call, bool Quad);
   llvm::Expected<llvm::Value *> EmitQuadOp(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitBinaryWithTwoOutputs(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitStorePatchConstant(const llvm::CallInst &Call);
 };
 
 } // namespace dxmt::dxil
