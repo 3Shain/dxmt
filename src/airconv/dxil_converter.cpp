@@ -378,11 +378,10 @@ initialize_pixel_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
 
     switch (element.semantic_kind) {
     case SemanticKind::Position: {
-      auto interpolation = to_air_interpolation(element.interpolation);
-      if (!interpolation)
-        return unsupported("dxil: unsupported interpolation mode");
       shader->signature_handlers.push_back([=](SignatureContext &ctx) {
-        uint32_t arg = ctx.func_signature.DefineInput(air::InputPosition{.interpolation = *interpolation});
+        uint32_t arg = ctx.func_signature.DefineInput(
+            air::InputPosition{.interpolation = air::Interpolation::center_no_perspective}
+        );
         ctx.prologue.Add([=](IOHelper &io) -> llvm::Error { return io.InitializeInput(arg, reg, mask, true); });
       });
       break;
