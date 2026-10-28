@@ -264,6 +264,33 @@ parse_property(EntryPropertyTag tag, MetadataReader r) {
     property.gs_state = *state;
     break;
   }
+  case EntryPropertyTag::HSState: {
+    auto state =
+        r.slice(0, 7).asMappedTuple<const llvm::Function *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, float>(
+            [](const llvm::Function *patch_constant_function, uint32_t input_control_point_count,
+               uint32_t output_control_point_count, uint32_t domain, uint32_t partitioning, uint32_t output_primitive,
+               float max_tessellation_factor) {
+              return HSState{
+                  patch_constant_function, input_control_point_count, output_control_point_count, domain, partitioning,
+                  output_primitive,        max_tessellation_factor
+              };
+            }
+        );
+    if (!state)
+      return state.takeError();
+    property.hs_state = *state;
+    break;
+  }
+  case EntryPropertyTag::DSState: {
+    auto state =
+        r.slice(0, 2).asMappedTuple<uint32_t, uint32_t>([](uint32_t domain, uint32_t input_control_point_count) {
+          return DSState{domain, input_control_point_count};
+        });
+    if (!state)
+      return state.takeError();
+    property.ds_state = *state;
+    break;
+  }
   default:
     break;
   }
@@ -301,6 +328,9 @@ parse_entry_point(MetadataReader r) {
 
   MetadataReader signatures = r.operand(2);
   if (!signatures.isNull()) {
+    auto count = signatures.operandCount();
+    if (!count)
+      return count.takeError();
     auto inputs = parse_signature(signatures.operand(0));
     if (!inputs)
       return inputs.takeError();
@@ -309,6 +339,12 @@ parse_entry_point(MetadataReader r) {
     if (!outputs)
       return outputs.takeError();
     ep.outputs = std::move(*outputs);
+    if (*count > 2) {
+      auto inputs_pc = parse_signature(signatures.operand(2));
+      if (!inputs_pc)
+        return inputs_pc.takeError();
+      ep.patch_constants = std::move(*inputs_pc);
+    }
   }
 
   auto resources = parse_resource_group(r.operand(3));

@@ -172,12 +172,29 @@ struct GSState {
   uint32_t instance_count = 0;
 };
 
+struct DSState {
+  uint32_t domain = 0;
+  uint32_t input_control_point_count = 0;
+};
+
+struct HSState {
+  const llvm::Function *patch_constant_function = nullptr;
+  uint32_t input_control_point_count = 0;
+  uint32_t output_control_point_count = 0;
+  uint32_t domain = 0;
+  uint32_t partitioning = 0;
+  uint32_t output_primitive = 0;
+  float max_tessellation_factor = 0.0;
+};
+
 struct Property {
   EntryPropertyTag tag = EntryPropertyTag::NumThreads;
   union {
     uint64_t shader_flags;
     NumThreads num_threads;
     GSState gs_state;
+    HSState hs_state;
+    DSState ds_state;
   };
 };
 
@@ -199,8 +216,10 @@ struct Resource {
 
 struct EntryPoint {
   const llvm::Function *function = nullptr;
+  const llvm::Function *function_pc = nullptr;
   std::vector<SignatureElement> inputs;
   std::vector<SignatureElement> outputs;
+  std::vector<SignatureElement> patch_constants;
   std::vector<Resource> resources;
   std::vector<Property> properties;
 };
