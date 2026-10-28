@@ -1,6 +1,7 @@
 #include "air_signature.hpp"
 #include "airconv_error.hpp"
 #include "dxbc_converter.hpp"
+#include "dxil_converter.hpp"
 #include "nt/air_builder.hpp"
 #include "nt/dxbc_converter_base.hpp"
 #include "llvm/IR/Constants.h"
@@ -528,7 +529,9 @@ convert_dxbc_vertex_hull_shader(
     if (auto err = prologue.Run(io)) {
       return err;
     }
-    auto real_entry = convert_basicblocks(pVertexStage->entry(), ctx, epilogue_bb);
+    llvm::Expected<llvm::BasicBlock *> real_entry =
+        pVertexStage->dxil ? dxil::convert_basicblocks(pVertexStage->dxil_entry, ctx, epilogue_bb)
+                           : convert_basicblocks(pVertexStage->entry(), ctx, epilogue_bb);
     if (auto err = real_entry.takeError()) {
       return err;
     }
@@ -671,7 +674,9 @@ convert_dxbc_vertex_hull_shader(
     if (auto err = prologue.Run(io)) {
       return err;
     }
-    auto real_entry = convert_basicblocks(pHullStage->entry(), ctx, epilogue_bb);
+    llvm::Expected<llvm::BasicBlock *> real_entry =
+        pHullStage->dxil ? dxil::convert_basicblocks(pHullStage->dxil_entry, ctx, epilogue_bb)
+                         : convert_basicblocks(pHullStage->entry(), ctx, epilogue_bb);
     if (auto err = real_entry.takeError()) {
       return err;
     }
@@ -1072,7 +1077,9 @@ convert_dxbc_tesselator_domain_shader(
     resource_map.domain = domain_bary;
   }
 
-  auto real_entry = convert_basicblocks(pShaderInternal->entry(), ctx, vertex_emit);
+  llvm::Expected<llvm::BasicBlock *> real_entry =
+      pShaderInternal->dxil ? dxil::convert_basicblocks(pShaderInternal->dxil_entry, ctx, vertex_emit)
+                            : convert_basicblocks(pShaderInternal->entry(), ctx, vertex_emit);
   if (auto err = real_entry.takeError()) {
     return err;
   }

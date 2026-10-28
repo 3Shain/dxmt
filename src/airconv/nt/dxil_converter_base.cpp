@@ -46,14 +46,20 @@ Converter::Converter(EntryPoint const &entry, dxmt::dxbc::context &ctx) :
     ctx(ctx),
     ir(ctx.builder),
     air(ctx.air),
-    entry(entry) {}
+    entry(entry) {
+  for (const auto &property : entry.properties) {
+    if (property.tag == EntryPropertyTag::HSState)
+      pcf_ = property.hs_state.patch_constant_function;
+  }
+}
 
 llvm::Expected<llvm::BasicBlock *>
 Converter::Run(llvm::BasicBlock *ReturnBB) {
-  if (!entry.function)
-    return unsupported("dxil: entry point is missing");
 
-  {
+  auto PCFStart = pcf_ ? llvm::BasicBlock::Create(air.getContext(), "pcf_start", ctx.function) : nullptr;
+  auto PCFEnd = pcf_ ? llvm::BasicBlock::Create(air.getContext(), "pcf_end", ctx.function) : nullptr;
+
+  if (entry.function) {
     for (auto &BB : *entry.function) {
       auto *NewBB = llvm::BasicBlock::Create(air.getContext(), "", ctx.function);
       block_map_[&BB] = NewBB;
@@ -73,7 +79,7 @@ Converter::Run(llvm::BasicBlock *ReturnBB) {
         if (isa<PHINode>(&Inst))
           continue;
         if (Inst.isTerminator()) {
-          if (auto err = TranslateTerminator(&Inst, ReturnBB))
+          if (auto err = TranslateTerminator(&Inst, pcf_ ? PCFStart : ReturnBB))
             return err;
           break;
         }
@@ -84,6 +90,49 @@ Converter::Run(llvm::BasicBlock *ReturnBB) {
           value_map_[&Inst] = *Result;
       }
     }
+  }
+
+  if (pcf_) {
+    for (auto &BB : *pcf_) {
+      auto *NewBB = llvm::BasicBlock::Create(air.getContext(), "", ctx.function);
+      block_map_[&BB] = NewBB;
+      ir.SetInsertPoint(NewBB);
+      for (auto &Inst : BB) {
+        auto *PHI = dyn_cast<PHINode>(&Inst);
+        if (!PHI)
+          break;
+        value_map_[PHI] = ir.CreatePHI(MapType(PHI->getType()), 0);
+      }
+    }
+
+    // FIXME: remove const_cast
+    for (auto &BB : *const_cast<llvm::Function *>(pcf_)) {
+      ir.SetInsertPoint(block_map_[&BB]);
+      for (auto &Inst : BB) {
+        if (isa<PHINode>(&Inst))
+          continue;
+        if (Inst.isTerminator()) {
+          if (auto err = TranslateTerminator(&Inst, PCFEnd))
+            return err;
+          break;
+        }
+        auto Result = TranslateInstruction(&Inst);
+        if (!Result)
+          return Result.takeError();
+        if (*Result && !(*Result)->getType()->isVoidTy())
+          value_map_[&Inst] = *Result;
+      }
+    }
+    ir.SetInsertPoint(PCFStart);
+    ir.CreateCondBr(
+        ir.CreateICmp(llvm::CmpInst::ICMP_EQ, ctx.resource.thread_id_in_patch, ir.getInt32(0)),
+        block_map_[&pcf_->getEntryBlock()], PCFEnd
+    );
+    ir.SetInsertPoint(PCFEnd);
+    air.CreateBarrier(llvm::air::MemFlags::Threadgroup);
+    ir.CreateBr(ReturnBB);
+    if (!entry.function)
+      return PCFStart;
   }
 
   return block_map_[&entry.function->getEntryBlock()];
@@ -310,7 +359,7 @@ llvm::Error
 Converter::TranslateTerminator(llvm::Instruction *Inst, llvm::BasicBlock *ReturnBB) {
   if (auto *Return = dyn_cast<ReturnInst>(Inst)) {
     if (Return->getNumOperands())
-      return unsupported("dxil: non-void return in a compute shader");
+      return unsupported("dxil: non-void return");
     ir.CreateBr(ReturnBB);
   } else if (auto *Branch = dyn_cast<BranchInst>(Inst)) {
     if (Branch->isConditional()) {
