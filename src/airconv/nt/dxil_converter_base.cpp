@@ -828,139 +828,191 @@ Converter::TranslateCall(llvm::CallInst &Call) {
 
 llvm::Expected<llvm::Value *>
 Converter::EmitDxilOp(CallInst &Call) {
-  auto *callee = Call.getCalledFunction();
-  StringRef op = callee->getName().drop_front(strlen("dx.op."));
-  auto dot = op.rfind('.');
-  if (dot != StringRef::npos)
-    op = op.take_front(dot);
+  auto Op = asU32(Call.getArgOperand(0));
+  if (!Op)
+    return unsupported("dxil: non-constant dxil op");
 
-  if (op == "createHandle")
+  switch (auto OpId = *Op) {
+  case kOpCreateHandle:
     return EmitCreateHandle(Call);
-  if (op == "cbufferLoadLegacy")
+  case kOpCBufferLoadLegacy:
     return EmitCbufferLoadLegacy(Call);
-  if (op == "threadId")
+  case kOpThreadId:
     return EmitThreadId(Call, ThreadBuiltin::kGlobalId);
-  if (op == "groupId")
+  case kOpGroupId:
     return EmitThreadId(Call, ThreadBuiltin::kGroupId);
-  if (op == "threadIdInGroup")
+  case kOpThreadIdInGroup:
     return EmitThreadId(Call, ThreadBuiltin::kLocalId);
-  if (op == "flattenedThreadIdInGroup")
+  case kOpFlattenedThreadIdInGroup:
     return EmitThreadId(Call, ThreadBuiltin::kLocalLinearId);
-  if (op == "bufferStore")
+  case kOpBufferStore:
     return EmitBufferStore(Call);
-  if (op == "bufferLoad")
+  case kOpBufferLoad:
     return EmitBufferLoad(Call);
-  if (op == "textureStore")
+  case kOpTextureStore:
     return EmitTextureStore(Call);
-  if (op == "textureLoad")
+  case kOpTextureLoad:
     return EmitTextureLoad(Call);
-  if (op == "bufferUpdateCounter")
+  case kOpBufferUpdateCounter:
     return EmitBufferUpdateCounter(Call);
-  if (op == "getDimensions")
+  case kOpGetDimensions:
     return EmitGetDimensions(Call);
-  if (op == "rawBufferStore")
+  case kOpRawBufferStore:
     return EmitRawBufferStore(Call);
-  if (op == "rawBufferLoad")
+  case kOpRawBufferLoad:
     return EmitRawBufferLoad(Call);
-  if (op == "legacyF16ToF32")
+  case kOpLegacyF16ToF32:
     return EmitLegacyF16ToF32(Call);
-  if (op == "legacyF32ToF16")
+  case kOpLegacyF32ToF16:
     return EmitLegacyF32ToF16(Call);
-  if (op == "unaryBits")
-    return EmitUnaryBits(Call);
-  if (op == "barrier")
+  case kOpCountbits:
+  case kOpFirstbitLo:
+  case kOpFirstbitHi:
+  case kOpFirstbitSHi:
+    return EmitUnaryBits(Call, OpId);
+  case kOpBarrier:
     return EmitBarrier(Call);
-  if (op == "loadInput")
+  case kOpLoadInput:
     return EmitLoadInput(Call);
-  if (op == "storeOutput")
+  case kOpStoreOutput:
     return EmitStoreOutput(Call);
-  if (op == "sample" || op == "sampleLevel" || op == "sampleBias" || op == "sampleCmp" || op == "sampleCmpLevelZero" ||
-      op == "sampleGrad")
-    return EmitSample(Call, op);
-  if (op == "textureGather" || op == "textureGatherCmp")
-    return EmitGather(Call, op);
-  if (op == "unary")
-    return EmitUnary(Call);
-  if (op == "binary")
-    return EmitBinary(Call);
-  if (op == "tertiary")
-    return EmitTertiary(Call);
-  if (op == "dot2")
+  case kOpSample:
+  case kOpSampleLevel:
+  case kOpSampleBias:
+  case kOpSampleCmp:
+  case kOpSampleCmpLevelZero:
+  case kOpSampleGrad:
+    return EmitSample(Call, OpId);
+  case kOpTextureGather:
+  case kOpTextureGatherCmp:
+    return EmitGather(Call, OpId);
+  case kOpBfrev:
+  case kOpDerivCoarseX:
+  case kOpDerivCoarseY:
+  case kOpDerivFineX:
+  case kOpDerivFineY:
+  case kOpFAbs:
+  case kOpSaturate:
+  case kOpCos:
+  case kOpSin:
+  case kOpTan:
+  case kOpAcos:
+  case kOpAsin:
+  case kOpAtan:
+  case kOpHcos:
+  case kOpHsin:
+  case kOpHtan:
+  case kOpExp:
+  case kOpFrc:
+  case kOpLog:
+  case kOpSqrt:
+  case kOpRsqrt:
+  case kOpRound_ne:
+  case kOpRound_ni:
+  case kOpRound_pi:
+  case kOpRound_z:
+    return EmitUnary(Call, OpId);
+  case kOpFMax:
+  case kOpFMin:
+  case kOpIMax:
+  case kOpIMin:
+  case kOpUMax:
+  case kOpUMin:
+    return EmitBinary(Call, OpId);
+  case kOpFMad:
+  case kOpFma:
+  case kOpIMad:
+  case kOpUMad:
+    return EmitTertiary(Call, OpId);
+  case kOpDot2:
     return EmitDotProduct(Call, 2);
-  if (op == "dot3")
+  case kOpDot3:
     return EmitDotProduct(Call, 3);
-  if (op == "dot4")
+  case kOpDot4:
     return EmitDotProduct(Call, 4);
-  if (op == "isSpecialFloat")
-    return EmitIsSpecialFloat(Call);
-  if (op == "atomicBinOp")
+  case kOpIsNaN:
+  case kOpIsInf:
+  case kOpIsFinite:
+  case kOpIsNormal:
+    return EmitIsSpecialFloat(Call, OpId);
+  case kOpAtomicBinOp:
     return EmitAtomicRMW(Call);
-  if (op == "atomicCompareExchange")
+  case kOpAtomicCmpXchg:
     return EmitAtomicCmpXchg(Call);
-  if (op == "discard")
+  case kOpDiscard:
     return EmitDiscard(Call);
-  if (op == "calculateLOD")
+  case kOpCalculateLOD:
     return EmitCalculateLOD(Call);
-  if (op == "texture2DMSGetSamplePosition")
+  case kOpTexture2DMSGetSamplePosition:
     return EmitGetTextureSamplePos(Call);
-  if (op == "waveGetLaneIndex")
+  case kOpWaveGetLaneIndex:
     return air.CreateGetBuiltinID("get_thread_index_in_simdgroup");
-  if (op == "waveGetLaneCount")
+  case kOpWaveGetLaneCount:
     return air.CreateGetBuiltinID("get_simdgroup_size");
-  if (op == "quadReadLaneAt")
+  case kOpQuadReadLaneAt:
     return EmitReadLaneAt(Call, true);
-  if (op == "waveReadLaneAt")
+  case kOpWaveReadLaneAt:
     return EmitReadLaneAt(Call, false);
-  if (op == "quadOp")
+  case kOpQuadOp:
     return EmitQuadOp(Call);
-  if (op == "sampleIndex")
+  case kOpSampleIndex:
     return ctx.resource.sample_index_arg;
-  if (op == "coverage")
+  case kOpCoverage:
     return ctx.pso_sample_mask != 0xffffffff ? ir.CreateAnd(ctx.resource.coverage_mask_arg, ctx.pso_sample_mask)
                                              : ctx.resource.coverage_mask_arg;
-  if (op == "renderTargetGetSampleCount")
+  case kOpRenderTargetGetSampleCount:
     return air.CreateGetNumSamples();
-  if (op == "emitStream") {
+  case kOpEmitStream: {
     ctx.resource.call_emit();
     return nullptr;
   }
-  if (op == "emitThenCutStream") {
+  case kOpEmitThenCutStream: {
     ctx.resource.call_emit();
     ctx.resource.call_cut();
     return nullptr;
   }
-  if (op == "cutStream") {
+  case kOpCutStream: {
     ctx.resource.call_cut();
     return nullptr;
   }
-  if (op == "gsInstanceID")
+  case kOpGSInstanceID:
     return ctx.resource.gs_instance_id;
-  if (op == "primitiveID")
+  case kOpPrimitiveID:
     return ctx.resource.patch_id;
-  if (op == "binaryWithTwoOuts" || op == "binaryWithCarryOrBorrow")
-    return EmitBinaryWithTwoOutputs(Call);
-  if (op == "bitcastI32toF32" || op == "bitcastF32toI32" || op == "bitcastI16toF16" || op == "bitcastF16toI16") {
+  case kOpUDiv:
+  case kOpUMul:
+  case kOpIMul:
+  case kOpUAddc:
+  case kOpUSubb:
+    return EmitBinaryWithTwoOutputs(Call, OpId);
+  case kOpBitcastF16toI16:
+  case kOpBitcastF32toI32:
+  case kOpBitcastI16toF16:
+  case kOpBitcastI32toF32: {
     auto Operand = Get(Call.getOperand(1));
     if (!Operand)
       return Operand.takeError();
     return ir.CreateBitCast(*Operand, MapType(Call.getType()));
   }
-  if (op == "outputControlPointID")
+  case kOpOutputControlPointID:
     return ctx.resource.thread_id_in_patch;
-  if (op == "domainLocation") {
+  case kOpDomainLocation: {
     auto Component = asU32(Call.getOperand(1));
     if (!Component)
       return unsupported("dxil: non-constant domainLocation component");
     return ir.CreateExtractElement(ctx.resource.domain, *Component);
   }
-  if (op == "storePatchConstant")
+  case kOpStorePatchConstant:
     return EmitStorePatchConstant(Call);
-  if (op == "loadOutputControlPoint")
+  case kOpLoadOutputControlPoint:
     return EmitLoadOutputControlPoint(Call);
-  if (op == "loadPatchConstant")
+  case kOpLoadPatchConstant:
     return EmitLoadPatchConstant(Call);
-
-  return unsupported("dxil: unsupported operation dx.op." + op.str());
+  default:
+    break;
+  }
+  auto *callee = Call.getCalledFunction();
+  return unsupported("dxil: unsupported operation " + callee->getName().str() + "(" + std::to_string(*Op) + ")");
 }
 
 llvm::Expected<llvm::Value *>
@@ -1451,14 +1503,10 @@ Converter::EmitLegacyF32ToF16(CallInst &Call) {
 }
 
 llvm::Expected<llvm::Value *>
-Converter::EmitUnaryBits(CallInst &Call) {
+Converter::EmitUnaryBits(const CallInst &Call, uint32_t OpId) {
   auto Bits = Get(Call.getArgOperand(1));
   if (!Bits)
     return Bits.takeError();
-
-  auto Op = asU32(Call.getArgOperand(0));
-  if (!Op)
-    return unsupported("dxil: non-constant unaryBits op");
 
   auto NormalizeOverflow = [this](llvm::Value *Value) {
     llvm::Value *Max = llvm::ConstantInt::getAllOnesValue(Value->getType());
@@ -1468,7 +1516,7 @@ Converter::EmitUnaryBits(CallInst &Call) {
     );
   };
 
-  switch (*Op) {
+  switch (OpId) {
   case kOpCountbits:
     return ir.CreateSExtOrTrunc(air.CreateIntUnOp(AIRBuilder::popcount, *Bits), ir.getInt32Ty());
   case kOpFirstbitLo:
@@ -1484,7 +1532,7 @@ Converter::EmitUnaryBits(CallInst &Call) {
         )
     ));
   default:
-    return unsupported("dxil: unsupported unaryBits op " + std::to_string(*Op));
+    return unsupported("dxil: unsupported unaryBits op " + std::to_string(OpId));
   }
 }
 
@@ -1697,7 +1745,7 @@ Converter::EmitStoreOutput(const CallInst &Call) {
 }
 
 llvm::Expected<llvm::Value *>
-Converter::EmitSample(const CallInst &Call, StringRef Op) {
+Converter::EmitSample(const CallInst &Call, uint32_t OpId) {
   auto TextureHandle = ResolveHandleOperand(Call.getArgOperand(1));
   if (!TextureHandle)
     return TextureHandle.takeError();
@@ -1774,20 +1822,20 @@ Converter::EmitSample(const CallInst &Call, StringRef Op) {
   }
 
   llvm::Value *Value = nullptr, *Residency = nullptr;
-  if (Op == "sampleLevel") {
+  if (OpId == kOpSampleLevel) {
     auto Level = Get(Call.getArgOperand(10));
     if (!Level)
       return Level.takeError();
     std::tie(Value, Residency) = air.CreateSample(
         Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, Offset, sample_level{*Level}
     );
-  } else if (Op == "sampleBias") {
+  } else if (OpId == kOpSampleBias) {
     auto Bias = Get(Call.getArgOperand(10));
     if (!Bias)
       return Bias.takeError();
     std::tie(Value, Residency) =
         air.CreateSample(Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, Offset, sample_bias{*Bias});
-  } else if (Op == "sampleCmpLevelZero") {
+  } else if (OpId == kOpSampleCmpLevelZero) {
     auto Reference = Get(Call.getArgOperand(10));
     if (!Reference)
       return Reference.takeError();
@@ -1795,7 +1843,7 @@ Converter::EmitSample(const CallInst &Call, StringRef Op) {
         Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, *Reference, Offset,
         sample_level{air.getFloat(0)}
     );
-  } else if (Op == "sampleCmp") {
+  } else if (OpId == kOpSampleCmp) {
     auto Reference = Get(Call.getArgOperand(10));
     if (!Reference)
       return Reference.takeError();
@@ -1806,7 +1854,7 @@ Converter::EmitSample(const CallInst &Call, StringRef Op) {
         Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, *Reference, Offset,
         sample_bias{air.getFloat(0)}, sample_min_lod_clamp{*Clamp}
     );
-  } else if (Op == "sampleGrad") {
+  } else if (OpId == kOpSampleGrad) {
     auto DDX0 = Get(Call.getArgOperand(10));
     if (!DDX0)
       return DDX0.takeError();
@@ -1868,7 +1916,7 @@ Converter::EmitSample(const CallInst &Call, StringRef Op) {
 }
 
 llvm::Expected<llvm::Value *>
-Converter::EmitGather(const CallInst &Call, StringRef Op) {
+Converter::EmitGather(const CallInst &Call, uint32_t OpId) {
   auto TextureHandle = ResolveHandleOperand(Call.getArgOperand(1));
   if (!TextureHandle)
     return TextureHandle.takeError();
@@ -1945,7 +1993,7 @@ Converter::EmitGather(const CallInst &Call, StringRef Op) {
   }
 
   llvm::Value *Value = nullptr, *Residency = nullptr;
-  if (Op == "textureGatherCmp") {
+  if (OpId == kOpTextureGatherCmp) {
     auto Reference = Get(Call.getArgOperand(10));
     if (!Reference)
       return Reference.takeError();
@@ -1964,10 +2012,7 @@ Converter::EmitGather(const CallInst &Call, StringRef Op) {
 }
 
 llvm::Expected<llvm::Value *>
-Converter::EmitUnary(const CallInst &Call) {
-  auto Op = asU32(Call.getArgOperand(0));
-  if (!Op)
-    return unsupported("dxil: non-constant unary op");
+Converter::EmitUnary(const CallInst &Call, uint32_t OpId) {
   if (Call.arg_size() != 2)
     return unsupported("dxil: unexpected unary signature");
   auto Operand = Get(Call.getArgOperand(1));
@@ -1975,7 +2020,7 @@ Converter::EmitUnary(const CallInst &Call) {
     return Operand.takeError();
 
   AIRBuilder::FPUnOp FPUnOp;
-  switch (auto OpId = *Op) {
+  switch (OpId) {
   case kOpBfrev:
     if (!(*Operand)->getType()->isIntegerTy())
       return unsupported("dxil: bfrev on a non-integer operand");
@@ -2056,10 +2101,7 @@ Converter::EmitUnary(const CallInst &Call) {
 }
 
 llvm::Expected<llvm::Value *>
-Converter::EmitBinary(const CallInst &Call) {
-  auto Op = asU32(Call.getArgOperand(0));
-  if (!Op)
-    return unsupported("dxil: non-constant binary op");
+Converter::EmitBinary(const CallInst &Call, uint32_t OpId) {
   if (Call.arg_size() != 3)
     return unsupported("dxil: unexpected binary signature");
   auto LHS = Get(Call.getArgOperand(1));
@@ -2069,7 +2111,7 @@ Converter::EmitBinary(const CallInst &Call) {
   if (!RHS)
     return RHS.takeError();
 
-  switch (auto OpId = *Op) {
+  switch (OpId) {
   case kOpFMax:
   case kOpFMin:
     if (!(*LHS)->getType()->isFloatingPointTy())
@@ -2091,10 +2133,7 @@ Converter::EmitBinary(const CallInst &Call) {
 }
 
 llvm::Expected<llvm::Value *>
-Converter::EmitTertiary(const CallInst &Call) {
-  auto Op = asU32(Call.getArgOperand(0));
-  if (!Op)
-    return unsupported("dxil: non-constant binary op");
+Converter::EmitTertiary(const CallInst &Call, uint32_t OpId) {
   if (Call.arg_size() != 4)
     return unsupported("dxil: unexpected tertiary signature");
   auto A = Get(Call.getArgOperand(1));
@@ -2107,7 +2146,7 @@ Converter::EmitTertiary(const CallInst &Call) {
   if (!C)
     return C.takeError();
 
-  switch (auto OpId = *Op) {
+  switch (OpId) {
   case kOpFMad:
     return ir.CreateFAdd(ir.CreateFMul(*A, *B), *C);
   case kOpFma:
@@ -2140,15 +2179,12 @@ Converter::EmitDotProduct(const CallInst &Call, unsigned Dimension) {
 }
 
 llvm::Expected<llvm::Value *>
-Converter::EmitIsSpecialFloat(const CallInst &Call) {
-  auto Op = asU32(Call.getArgOperand(0));
-  if (!Op)
-    return unsupported("dxil: non-constant binary op");
+Converter::EmitIsSpecialFloat(const CallInst &Call, uint32_t OpId) {
   auto Operand = Get(Call.getArgOperand(1));
   if (!Operand)
     return Operand.takeError();
 
-  switch (auto OpId = *Op) {
+  switch (OpId) {
   case kOpIsNaN:
     return air.CreateIsNaN(*Operand);
   case kOpIsInf:
@@ -2447,10 +2483,7 @@ Converter::EmitQuadOp(const CallInst &Call) {
 }
 
 llvm::Expected<llvm::Value *>
-Converter::EmitBinaryWithTwoOutputs(const CallInst &Call) {
-  auto Op = asU32(Call.getArgOperand(0));
-  if (!Op)
-    return unsupported("dxil: non-constant binary op");
+Converter::EmitBinaryWithTwoOutputs(const CallInst &Call, uint32_t OpId) {
   if (Call.arg_size() != 3)
     return unsupported("dxil: unexpected binary signature");
   auto LHS = Get(Call.getArgOperand(1));
@@ -2460,7 +2493,7 @@ Converter::EmitBinaryWithTwoOutputs(const CallInst &Call) {
   if (!RHS)
     return RHS.takeError();
 
-  switch (auto OpId = *Op) {
+  switch (OpId) {
   case kOpUDiv: {
     return ir.CreateInsertValue(
         ir.CreateInsertValue(llvm::PoisonValue::get(MapType(Call.getType())), ir.CreateUDiv(*LHS, *RHS), {0ull}),
