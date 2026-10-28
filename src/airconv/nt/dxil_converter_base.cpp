@@ -957,6 +957,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitStorePatchConstant(Call);
   if (op == "loadOutputControlPoint")
     return EmitLoadOutputControlPoint(Call);
+  if (op == "loadPatchConstant")
+    return EmitLoadPatchConstant(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -2641,6 +2643,57 @@ Converter::EmitLoadOutputControlPoint(const CallInst &Call) {
     return ir.CreateBitCast(ir.CreateTrunc(Value, ir.getInt16Ty()), ir.getHalfTy());
   }
   return unsupported("dxil: unsupported loadOutputControlPoint type");
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitLoadPatchConstant(const CallInst &Call) {
+  auto Element = asU32(Call.getArgOperand(1));
+  auto Row = asU32(Call.getArgOperand(2));
+  auto Component = asU32(Call.getArgOperand(3));
+  if (!Element || !Row || !Component)
+    return unsupported("dxil: non-constant loadPatchConstant index");
+  if (*Element >= entry.patch_constants.size())
+    return unsupported("dxil: loadInput element index out of range");
+  const auto &signature = entry.patch_constants[*Element];
+  if (signature.start_row < 0 || signature.start_col < 0)
+    return unsupported("dxil: input signature element is not mapped");
+  auto &registers = ctx.resource.patch_constant_output;
+  if (!registers.ptr_int4 || !registers.ptr_float4)
+    return unsupported("dxil: input register file is not available");
+
+  auto *Type = Call.getType();
+  uint32_t Reg = (uint32_t)signature.start_row + *Row;
+  uint32_t Lane = (uint32_t)signature.start_col + *Component;
+  if (Lane > 3)
+    return unsupported("dxil: loadPatchConstant component out of range");
+
+  SmallVector<Value *> RegIdxs;
+  RegIdxs.push_back(ir.getInt32(0));
+  RegIdxs.push_back(ir.getInt32(Reg));
+  RegIdxs.push_back(ir.getInt32(Lane));
+
+  if (Type->isIntegerTy()) {
+    auto *Ptr =
+        ir.CreateGEP(registers.ptr_int4->getType()->getNonOpaquePointerElementType(), registers.ptr_int4, RegIdxs);
+    auto *Value = ir.CreateLoad(ir.getInt32Ty(), Ptr);
+    if (Type->getIntegerBitWidth() < 32)
+      return ir.CreateTrunc(Value, Type);
+    if (Type->getIntegerBitWidth() == 32)
+      return Value;
+    return unsupported("dxil: unsupported loadPatchConstant integer width");
+  }
+  if (Type->isFloatTy()) {
+    auto *Ptr =
+        ir.CreateGEP(registers.ptr_float4->getType()->getNonOpaquePointerElementType(), registers.ptr_float4, RegIdxs);
+    return ir.CreateLoad(ir.getFloatTy(), Ptr);
+  }
+  if (Type->isHalfTy()) {
+    auto *Ptr =
+        ir.CreateGEP(registers.ptr_int4->getType()->getNonOpaquePointerElementType(), registers.ptr_int4, RegIdxs);
+    auto *Value = ir.CreateLoad(ir.getInt32Ty(), Ptr);
+    return ir.CreateBitCast(ir.CreateTrunc(Value, ir.getInt16Ty()), ir.getHalfTy());
+  }
+  return unsupported("dxil: unsupported loadPatchConstant type");
 }
 
 } // namespace dxmt::dxil
