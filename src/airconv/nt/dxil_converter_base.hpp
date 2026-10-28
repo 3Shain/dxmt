@@ -41,6 +41,7 @@ private:
   llvm::air::AIRBuilder &air;
   const EntryPoint &entry;
 
+  const llvm::Function *pcf_ = nullptr;
   llvm::DenseMap<const llvm::Value *, llvm::Value *> value_map_;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::BasicBlock *> block_map_;
   llvm::DenseMap<llvm::Type *, llvm::Type *> type_map_;
