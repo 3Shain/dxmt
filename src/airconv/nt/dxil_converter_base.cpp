@@ -888,6 +888,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return ctx.resource.gs_instance_id;
   if (op == "primitiveID")
     return ctx.resource.patch_id;
+  if (op == "binaryWithTwoOuts" || op == "binaryWithCarryOrBorrow")
+    return EmitBinaryWithTwoOutputs(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -2367,6 +2369,82 @@ Converter::EmitQuadOp(const CallInst &Call) {
     return unsupported("dxil: non-constant quadOp kind");
 
   return air.CreateQuadShuffleXor(*Value, *Kind + 1);
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitBinaryWithTwoOutputs(const CallInst &Call) {
+  auto Op = asU32(Call.getArgOperand(0));
+  if (!Op)
+    return unsupported("dxil: non-constant binary op");
+  if (Call.arg_size() != 3)
+    return unsupported("dxil: unexpected binary signature");
+  auto LHS = Get(Call.getArgOperand(1));
+  if (!LHS)
+    return LHS.takeError();
+  auto RHS = Get(Call.getArgOperand(2));
+  if (!RHS)
+    return RHS.takeError();
+
+  switch (auto OpId = *Op) {
+  case kOpUDiv: {
+    return ir.CreateInsertValue(
+        ir.CreateInsertValue(llvm::PoisonValue::get(MapType(Call.getType())), ir.CreateUDiv(*LHS, *RHS), {0ull}),
+        ir.CreateURem(*LHS, *RHS), {1ull}
+    );
+  }
+  case kOpUMul: {
+    auto Result = ir.CreateMul(
+        ir.CreateZExt(*LHS, (*LHS)->getType()->getExtendedType()),
+        ir.CreateZExt(*RHS, (*RHS)->getType()->getExtendedType())
+    );
+    return ir.CreateInsertValue(
+        ir.CreateInsertValue(
+            llvm::PoisonValue::get(MapType(Call.getType())),
+            ir.CreateTrunc(ir.CreateLShr(Result, 32u), (*LHS)->getType()), {0ull}
+        ),
+        ir.CreateTrunc(Result, (*RHS)->getType()), {1ull}
+    );
+  }
+  case kOpIMul: {
+    auto Result = ir.CreateMul(
+        ir.CreateSExt(*LHS, (*LHS)->getType()->getExtendedType()),
+        ir.CreateSExt(*RHS, (*RHS)->getType()->getExtendedType())
+    );
+    return ir.CreateInsertValue(
+        ir.CreateInsertValue(
+            llvm::PoisonValue::get(MapType(Call.getType())),
+            ir.CreateTrunc(ir.CreateLShr(Result, 32u), (*LHS)->getType()), {0ull}
+        ),
+        ir.CreateTrunc(Result, (*RHS)->getType()), {1ull}
+    );
+  }
+  case kOpUAddc: {
+    auto Result = ir.CreateAdd(
+        ir.CreateZExt(*LHS, (*LHS)->getType()->getExtendedType()),
+        ir.CreateZExt(*RHS, (*RHS)->getType()->getExtendedType())
+    );
+    return ir.CreateInsertValue(
+        ir.CreateInsertValue(
+            llvm::PoisonValue::get(MapType(Call.getType())), ir.CreateTrunc(Result, (*LHS)->getType()), {0ull}
+        ),
+        ir.CreateTrunc(ir.CreateLShr(Result, 32u), Result->getType()->getWithNewBitWidth(1)), {1ull}
+    );
+  }
+  case kOpUSubb: {
+    auto Result = ir.CreateSub(
+        ir.CreateZExt(*LHS, (*LHS)->getType()->getExtendedType()),
+        ir.CreateZExt(*RHS, (*RHS)->getType()->getExtendedType())
+    );
+    return ir.CreateInsertValue(
+        ir.CreateInsertValue(
+            llvm::PoisonValue::get(MapType(Call.getType())), ir.CreateTrunc(Result, (*LHS)->getType()), {0ull}
+        ),
+        ir.CreateTrunc(ir.CreateLShr(Result, 32u), Result->getType()->getWithNewBitWidth(1)), {1ull}
+    );
+  }
+  default:
+    return unsupported("dxil: unsupported binaryWithTwoOutputs operation: " + std::to_string(OpId));
+  }
 }
 
 } // namespace dxmt::dxil
