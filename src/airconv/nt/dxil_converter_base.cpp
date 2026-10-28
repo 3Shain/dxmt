@@ -890,6 +890,12 @@ Converter::EmitDxilOp(CallInst &Call) {
     return ctx.resource.patch_id;
   if (op == "binaryWithTwoOuts" || op == "binaryWithCarryOrBorrow")
     return EmitBinaryWithTwoOutputs(Call);
+  if (op == "bitcastI32toF32" || op == "bitcastF32toI32" || op == "bitcastI16toF16" || op == "bitcastF16toI16") {
+    auto Operand = Get(Call.getOperand(1));
+    if (!Operand)
+      return Operand.takeError();
+    return ir.CreateBitCast(*Operand, MapType(Call.getType()));
+  }
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
