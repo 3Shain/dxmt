@@ -278,14 +278,14 @@ SrcOperand readSrcOperand(
     return SrcOperandInputICP{
       ._ = readSrcOperandCommon(O, read_type),
       .cpid = readOperandIndex(O.m_Index[0], O.m_IndexType[0], phase),
-      .regid = O.m_Index[1].m_RegIndex,
+      .regid = readOperandIndex(O.m_Index[1], O.m_IndexType[1], phase),
     };
   }
   case D3D11_SB_OPERAND_TYPE_OUTPUT_CONTROL_POINT: {
     return SrcOperandInputOCP{
       ._ = readSrcOperandCommon(O, read_type),
       .cpid = readOperandIndex(O.m_Index[0], O.m_IndexType[0], phase),
-      .regid = O.m_Index[1].m_RegIndex,
+      .regid = readOperandIndex(O.m_Index[1], O.m_IndexType[1], phase),
     };
   }
   case D3D11_SB_OPERAND_TYPE_INPUT_PATCH_CONSTANT: {
