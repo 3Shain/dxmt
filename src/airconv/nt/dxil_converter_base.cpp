@@ -953,6 +953,8 @@ Converter::EmitDxilOp(CallInst &Call) {
       return unsupported("dxil: non-constant domainLocation component");
     return ir.CreateExtractElement(ctx.resource.domain, *Component);
   }
+  if (op == "storePatchConstant")
+    return EmitStorePatchConstant(Call);
 
   return unsupported("dxil: unsupported operation dx.op." + op.str());
 }
@@ -2514,6 +2516,66 @@ Converter::EmitBinaryWithTwoOutputs(const CallInst &Call) {
   default:
     return unsupported("dxil: unsupported binaryWithTwoOutputs operation: " + std::to_string(OpId));
   }
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitStorePatchConstant(const CallInst &Call) {
+  auto Element = asU32(Call.getArgOperand(1));
+  auto Component = asU32(Call.getArgOperand(3));
+  if (!Element || !Component)
+    return unsupported("dxil: non-constant storePatchConstant index");
+  if (*Element >= entry.patch_constants.size())
+    return unsupported("dxil: storePatchConstant element index out of range");
+  auto Row = Get(Call.getArgOperand(2));
+  if (!Row)
+    return Row.takeError();
+  auto Value = Get(Call.getArgOperand(4));
+  if (!Value)
+    return Value.takeError();
+  if (!*Value)
+    return unsupported("dxil: missing storePatchConstant value");
+  const auto &signature = entry.patch_constants[*Element];
+  auto *Stored = *Value;
+
+  uint32_t Lane = (uint32_t)signature.start_col + *Component;
+  if (Lane > 3)
+    return unsupported("dxil: storePatchConstant component out of range");
+
+  if (signature.start_row < 0 || signature.start_col < 0)
+    return unsupported("dxil: output signature element is not mapped");
+  auto &registers = ctx.resource.patch_constant_output;
+  if (!registers.ptr_int4 || !ctx.resource.output.ptr_float4)
+    return unsupported("dxil: output register file is not available");
+
+  SmallVector<llvm::Value *> RegIdxs;
+  RegIdxs.push_back(ir.getInt32(0));
+  RegIdxs.push_back(ir.CreateAdd(*Row, ir.getInt32(signature.start_row)));
+  RegIdxs.push_back(ir.getInt32(Lane));
+
+  if (Stored->getType()->isFloatTy()) {
+    auto *Ptr =
+        ir.CreateGEP(registers.ptr_float4->getType()->getNonOpaquePointerElementType(), registers.ptr_float4, RegIdxs);
+    ir.CreateStore(Stored, Ptr);
+    return (llvm::Value *)nullptr;
+  }
+  if (Stored->getType()->isHalfTy()) {
+    Stored = ir.CreateZExt(ir.CreateBitCast(Stored, ir.getInt16Ty()), ir.getInt32Ty());
+    auto *Ptr =
+        ir.CreateGEP(registers.ptr_int4->getType()->getNonOpaquePointerElementType(), registers.ptr_int4, RegIdxs);
+    ir.CreateStore(Stored, Ptr);
+    return (llvm::Value *)nullptr;
+  }
+  if (Stored->getType()->isIntegerTy()) {
+    if (Stored->getType()->getIntegerBitWidth() < 32)
+      Stored = ir.CreateZExt(Stored, ir.getInt32Ty());
+    else if (Stored->getType()->getIntegerBitWidth() > 32)
+      return unsupported("dxil: unsupported storeOutput integer width");
+    auto *Ptr =
+        ir.CreateGEP(registers.ptr_int4->getType()->getNonOpaquePointerElementType(), registers.ptr_int4, RegIdxs);
+    ir.CreateStore(Stored, Ptr);
+    return (llvm::Value *)nullptr;
+  }
+  return unsupported("dxil: unsupported storePatchConstant type");
 }
 
 } // namespace dxmt::dxil
