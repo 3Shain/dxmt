@@ -1645,10 +1645,17 @@ Converter::EmitStoreOutput(const CallInst &Call) {
   if (Lane > 3)
     return unsupported("dxil: storeOutput component out of range");
 
+  SmallVector<llvm::Value *> RegIdxs;
+  RegIdxs.push_back(ir.getInt32(0));
+  if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER)
+    RegIdxs.push_back(ctx.resource.thread_id_in_patch);
+  RegIdxs.push_back(ir.getInt32(Reg));
+  RegIdxs.push_back(ir.getInt32(Lane));
+
   if (Stored->getType()->isFloatTy()) {
     auto *Ptr = ir.CreateGEP(
         ctx.resource.output.ptr_float4->getType()->getNonOpaquePointerElementType(), ctx.resource.output.ptr_float4,
-        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+        RegIdxs
     );
     ir.CreateStore(Stored, Ptr);
     return (llvm::Value *)nullptr;
@@ -1657,15 +1664,14 @@ Converter::EmitStoreOutput(const CallInst &Call) {
     if (signature.semantic_kind == SemanticKind::Position) {
       auto *Ptr = ir.CreateGEP(
           ctx.resource.output.ptr_float4->getType()->getNonOpaquePointerElementType(), ctx.resource.output.ptr_float4,
-          {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+          RegIdxs
       );
       ir.CreateStore(air.CreateConvertToFloat(Stored), Ptr);
       return (llvm::Value *)nullptr;
     }
     Stored = ir.CreateZExt(ir.CreateBitCast(Stored, ir.getInt16Ty()), ir.getInt32Ty());
     auto *Ptr = ir.CreateGEP(
-        ctx.resource.output.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.output.ptr_int4,
-        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+        ctx.resource.output.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.output.ptr_int4, RegIdxs
     );
     ir.CreateStore(Stored, Ptr);
     return (llvm::Value *)nullptr;
@@ -1676,8 +1682,7 @@ Converter::EmitStoreOutput(const CallInst &Call) {
     else if (Stored->getType()->getIntegerBitWidth() > 32)
       return unsupported("dxil: unsupported storeOutput integer width");
     auto *Ptr = ir.CreateGEP(
-        ctx.resource.output.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.output.ptr_int4,
-        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+        ctx.resource.output.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.output.ptr_int4, RegIdxs
     );
     ir.CreateStore(Stored, Ptr);
     return (llvm::Value *)nullptr;
