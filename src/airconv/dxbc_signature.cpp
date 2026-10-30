@@ -879,6 +879,15 @@ void handle_signature_ds(
           );
         }
       }
+      auto const mesh_vertex_data_index = num_mesh_vertex_data++;
+      func_signature.DefineMeshVertexOutput(OutputMeshData{
+        .user = std::format("SV_ClipDistance{}", reg),
+        .type = msl_float4,
+        .index = mesh_vertex_data_index
+      });
+      mesh_output_handlers.push_back([=](MeshOutputContext &output, IOHelper &io) {
+        io.PopulateMeshOutputVertexData(reg, mask, mesh_vertex_data_index, output.vertex_id, msl_float4);
+      });
       max_output_register = std::max(reg + 1, max_output_register);
       break;
     }
@@ -890,6 +899,15 @@ void handle_signature_ds(
           );
         }
       }
+      auto const mesh_vertex_data_index = num_mesh_vertex_data++;
+      func_signature.DefineMeshVertexOutput(OutputMeshData{
+        .user = std::format("SV_CullDistance{}", reg),
+        .type = msl_float4,
+        .index = mesh_vertex_data_index
+      });
+      mesh_output_handlers.push_back([=](MeshOutputContext &output, IOHelper &io) {
+        io.PopulateMeshOutputVertexData(reg, mask, mesh_vertex_data_index, output.vertex_id, msl_float4);
+      });
       max_output_register = std::max(reg + 1, max_output_register);
       break;
     }
