@@ -535,6 +535,16 @@ initialize_pixel_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
       shader->ps_has_coverage_output = 1;
       break;
     }
+    case SemanticKind::StencilRef: {
+      shader->signature_handlers.push_back([](SignatureContext &ctx) {
+        ctx.prologue.Add([](IOHelper &io) -> llvm::Error { return io.CreateStencilRefOutputRegister(); });
+        auto out = ctx.func_signature.DefineOutput(air::OutputStencilRef{});
+        ctx.epilogue.Add([=](llvm::Value *ret, IOHelper &io) -> llvm::Expected<llvm::Value *> {
+          return io.PopulateOutputStencilRef(ret, out);
+        });
+      });
+      break;
+    }
     default:
       return unsupported(
           "dxil: unsupported pixel shader output semantic " + std::to_string((uint32_t)element.semantic_kind)
