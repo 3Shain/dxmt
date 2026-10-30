@@ -923,6 +923,8 @@ Converter::EmitDxilOp(CallInst &Call) {
   case kOpFma:
   case kOpIMad:
   case kOpUMad:
+  case kOpIbfe:
+  case kOpUbfe:
     return EmitTertiary(Call, OpId);
   case kOpDot2:
     return EmitDotProduct(Call, 2);
@@ -2154,6 +2156,30 @@ Converter::EmitTertiary(const CallInst &Call, uint32_t OpId) {
   case kOpIMad:
   case kOpUMad:
     return ir.CreateAdd(ir.CreateMul(*A, *B), *C);
+  case kOpIbfe:
+  case kOpUbfe: {
+    auto Width = ir.CreateAnd(*A, 0x1F);
+    auto Offset = ir.CreateAnd(*B, 0X1F);
+    auto WidthAddOffset = ir.CreateAdd(Width, Offset);
+    auto Constant_32 = llvm::ConstantInt::get(Width->getType(), 32);
+    auto ClampedC = ir.CreateShl(*C, ir.CreateSub(Constant_32, WidthAddOffset));
+
+    llvm::Value *NeedClamp, *NoClamp, *Clamped;
+
+    if (OpId == kOpIbfe) {
+      NeedClamp = ir.CreateICmpSLT(WidthAddOffset, Constant_32);
+      NoClamp = ir.CreateAShr(*C, Offset);
+      Clamped = ir.CreateAShr(ClampedC, ir.CreateSub(Constant_32, Width));
+    } else {
+      NeedClamp = ir.CreateICmpULT(WidthAddOffset, Constant_32);
+      NoClamp = ir.CreateLShr(*C, Offset);
+      Clamped = ir.CreateLShr(ClampedC, ir.CreateSub(Constant_32, Width));
+    }
+    return ir.CreateSelect(
+        ir.CreateIsNull(Width), llvm::ConstantInt::get(Width->getType(), 0),
+        ir.CreateSelect(NeedClamp, Clamped, NoClamp)
+    );
+  }
   default:
     return unsupported("dxil: unsupported tertiary operation: " + std::to_string(OpId));
   }
