@@ -46,14 +46,20 @@ Converter::Converter(EntryPoint const &entry, dxmt::dxbc::context &ctx) :
     ctx(ctx),
     ir(ctx.builder),
     air(ctx.air),
-    entry(entry) {}
+    entry(entry) {
+  for (const auto &property : entry.properties) {
+    if (property.tag == EntryPropertyTag::HSState)
+      pcf_ = property.hs_state.patch_constant_function;
+  }
+}
 
 llvm::Expected<llvm::BasicBlock *>
 Converter::Run(llvm::BasicBlock *ReturnBB) {
-  if (!entry.function)
-    return unsupported("dxil: entry point is missing");
 
-  {
+  auto PCFStart = pcf_ ? llvm::BasicBlock::Create(air.getContext(), "pcf_start", ctx.function) : nullptr;
+  auto PCFEnd = pcf_ ? llvm::BasicBlock::Create(air.getContext(), "pcf_end", ctx.function) : nullptr;
+
+  if (entry.function) {
     for (auto &BB : *entry.function) {
       auto *NewBB = llvm::BasicBlock::Create(air.getContext(), "", ctx.function);
       block_map_[&BB] = NewBB;
@@ -73,7 +79,7 @@ Converter::Run(llvm::BasicBlock *ReturnBB) {
         if (isa<PHINode>(&Inst))
           continue;
         if (Inst.isTerminator()) {
-          if (auto err = TranslateTerminator(&Inst, ReturnBB))
+          if (auto err = TranslateTerminator(&Inst, pcf_ ? PCFStart : ReturnBB))
             return err;
           break;
         }
@@ -84,6 +90,49 @@ Converter::Run(llvm::BasicBlock *ReturnBB) {
           value_map_[&Inst] = *Result;
       }
     }
+  }
+
+  if (pcf_) {
+    for (auto &BB : *pcf_) {
+      auto *NewBB = llvm::BasicBlock::Create(air.getContext(), "", ctx.function);
+      block_map_[&BB] = NewBB;
+      ir.SetInsertPoint(NewBB);
+      for (auto &Inst : BB) {
+        auto *PHI = dyn_cast<PHINode>(&Inst);
+        if (!PHI)
+          break;
+        value_map_[PHI] = ir.CreatePHI(MapType(PHI->getType()), 0);
+      }
+    }
+
+    // FIXME: remove const_cast
+    for (auto &BB : *const_cast<llvm::Function *>(pcf_)) {
+      ir.SetInsertPoint(block_map_[&BB]);
+      for (auto &Inst : BB) {
+        if (isa<PHINode>(&Inst))
+          continue;
+        if (Inst.isTerminator()) {
+          if (auto err = TranslateTerminator(&Inst, PCFEnd))
+            return err;
+          break;
+        }
+        auto Result = TranslateInstruction(&Inst);
+        if (!Result)
+          return Result.takeError();
+        if (*Result && !(*Result)->getType()->isVoidTy())
+          value_map_[&Inst] = *Result;
+      }
+    }
+    ir.SetInsertPoint(PCFStart);
+    ir.CreateCondBr(
+        ir.CreateICmp(llvm::CmpInst::ICMP_EQ, ctx.resource.thread_id_in_patch, ir.getInt32(0)),
+        block_map_[&pcf_->getEntryBlock()], PCFEnd
+    );
+    ir.SetInsertPoint(PCFEnd);
+    air.CreateBarrier(llvm::air::MemFlags::Threadgroup);
+    ir.CreateBr(ReturnBB);
+    if (!entry.function)
+      return PCFStart;
   }
 
   return block_map_[&entry.function->getEntryBlock()];
@@ -310,7 +359,7 @@ llvm::Error
 Converter::TranslateTerminator(llvm::Instruction *Inst, llvm::BasicBlock *ReturnBB) {
   if (auto *Return = dyn_cast<ReturnInst>(Inst)) {
     if (Return->getNumOperands())
-      return unsupported("dxil: non-void return in a compute shader");
+      return unsupported("dxil: non-void return");
     ir.CreateBr(ReturnBB);
   } else if (auto *Branch = dyn_cast<BranchInst>(Inst)) {
     if (Branch->isConditional()) {
@@ -779,117 +828,193 @@ Converter::TranslateCall(llvm::CallInst &Call) {
 
 llvm::Expected<llvm::Value *>
 Converter::EmitDxilOp(CallInst &Call) {
-  auto *callee = Call.getCalledFunction();
-  StringRef op = callee->getName().drop_front(strlen("dx.op."));
-  auto dot = op.rfind('.');
-  if (dot != StringRef::npos)
-    op = op.take_front(dot);
+  auto Op = asU32(Call.getArgOperand(0));
+  if (!Op)
+    return unsupported("dxil: non-constant dxil op");
 
-  if (op == "createHandle")
+  switch (auto OpId = *Op) {
+  case kOpCreateHandle:
     return EmitCreateHandle(Call);
-  if (op == "cbufferLoadLegacy")
+  case kOpCBufferLoadLegacy:
     return EmitCbufferLoadLegacy(Call);
-  if (op == "threadId")
+  case kOpThreadId:
     return EmitThreadId(Call, ThreadBuiltin::kGlobalId);
-  if (op == "groupId")
+  case kOpGroupId:
     return EmitThreadId(Call, ThreadBuiltin::kGroupId);
-  if (op == "threadIdInGroup")
+  case kOpThreadIdInGroup:
     return EmitThreadId(Call, ThreadBuiltin::kLocalId);
-  if (op == "flattenedThreadIdInGroup")
+  case kOpFlattenedThreadIdInGroup:
     return EmitThreadId(Call, ThreadBuiltin::kLocalLinearId);
-  if (op == "bufferStore")
+  case kOpBufferStore:
     return EmitBufferStore(Call);
-  if (op == "bufferLoad")
+  case kOpBufferLoad:
     return EmitBufferLoad(Call);
-  if (op == "textureStore")
+  case kOpTextureStore:
     return EmitTextureStore(Call);
-  if (op == "textureLoad")
+  case kOpTextureLoad:
     return EmitTextureLoad(Call);
-  if (op == "bufferUpdateCounter")
+  case kOpBufferUpdateCounter:
     return EmitBufferUpdateCounter(Call);
-  if (op == "getDimensions")
+  case kOpGetDimensions:
     return EmitGetDimensions(Call);
-  if (op == "rawBufferStore")
+  case kOpRawBufferStore:
     return EmitRawBufferStore(Call);
-  if (op == "rawBufferLoad")
+  case kOpRawBufferLoad:
     return EmitRawBufferLoad(Call);
-  if (op == "legacyF16ToF32")
+  case kOpLegacyF16ToF32:
     return EmitLegacyF16ToF32(Call);
-  if (op == "legacyF32ToF16")
+  case kOpLegacyF32ToF16:
     return EmitLegacyF32ToF16(Call);
-  if (op == "unaryBits")
-    return EmitUnaryBits(Call);
-  if (op == "barrier")
+  case kOpCountbits:
+  case kOpFirstbitLo:
+  case kOpFirstbitHi:
+  case kOpFirstbitSHi:
+    return EmitUnaryBits(Call, OpId);
+  case kOpBarrier:
     return EmitBarrier(Call);
-  if (op == "loadInput")
+  case kOpLoadInput:
     return EmitLoadInput(Call);
-  if (op == "storeOutput")
+  case kOpStoreOutput:
     return EmitStoreOutput(Call);
-  if (op == "sample" || op == "sampleLevel" || op == "sampleBias" || op == "sampleCmp" || op == "sampleCmpLevelZero" ||
-      op == "sampleGrad")
-    return EmitSample(Call, op);
-  if (op == "textureGather" || op == "textureGatherCmp")
-    return EmitGather(Call, op);
-  if (op == "unary")
-    return EmitUnary(Call);
-  if (op == "binary")
-    return EmitBinary(Call);
-  if (op == "tertiary")
-    return EmitTertiary(Call);
-  if (op == "dot2")
+  case kOpSample:
+  case kOpSampleLevel:
+  case kOpSampleBias:
+  case kOpSampleCmp:
+  case kOpSampleCmpLevelZero:
+  case kOpSampleGrad:
+    return EmitSample(Call, OpId);
+  case kOpTextureGather:
+  case kOpTextureGatherCmp:
+    return EmitGather(Call, OpId);
+  case kOpBfrev:
+  case kOpDerivCoarseX:
+  case kOpDerivCoarseY:
+  case kOpDerivFineX:
+  case kOpDerivFineY:
+  case kOpFAbs:
+  case kOpSaturate:
+  case kOpCos:
+  case kOpSin:
+  case kOpTan:
+  case kOpAcos:
+  case kOpAsin:
+  case kOpAtan:
+  case kOpHcos:
+  case kOpHsin:
+  case kOpHtan:
+  case kOpExp:
+  case kOpFrc:
+  case kOpLog:
+  case kOpSqrt:
+  case kOpRsqrt:
+  case kOpRound_ne:
+  case kOpRound_ni:
+  case kOpRound_pi:
+  case kOpRound_z:
+    return EmitUnary(Call, OpId);
+  case kOpFMax:
+  case kOpFMin:
+  case kOpIMax:
+  case kOpIMin:
+  case kOpUMax:
+  case kOpUMin:
+    return EmitBinary(Call, OpId);
+  case kOpFMad:
+  case kOpFma:
+  case kOpIMad:
+  case kOpUMad:
+  case kOpIbfe:
+  case kOpUbfe:
+    return EmitTertiary(Call, OpId);
+  case kOpDot2:
     return EmitDotProduct(Call, 2);
-  if (op == "dot3")
+  case kOpDot3:
     return EmitDotProduct(Call, 3);
-  if (op == "dot4")
+  case kOpDot4:
     return EmitDotProduct(Call, 4);
-  if (op == "isSpecialFloat")
-    return EmitIsSpecialFloat(Call);
-  if (op == "atomicBinOp")
+  case kOpIsNaN:
+  case kOpIsInf:
+  case kOpIsFinite:
+  case kOpIsNormal:
+    return EmitIsSpecialFloat(Call, OpId);
+  case kOpAtomicBinOp:
     return EmitAtomicRMW(Call);
-  if (op == "atomicCompareExchange")
+  case kOpAtomicCmpXchg:
     return EmitAtomicCmpXchg(Call);
-  if (op == "discard")
+  case kOpDiscard:
     return EmitDiscard(Call);
-  if (op == "calculateLOD")
+  case kOpCalculateLOD:
     return EmitCalculateLOD(Call);
-  if (op == "texture2DMSGetSamplePosition")
+  case kOpTexture2DMSGetSamplePosition:
     return EmitGetTextureSamplePos(Call);
-  if (op == "waveGetLaneIndex")
+  case kOpWaveGetLaneIndex:
     return air.CreateGetBuiltinID("get_thread_index_in_simdgroup");
-  if (op == "waveGetLaneCount")
+  case kOpWaveGetLaneCount:
     return air.CreateGetBuiltinID("get_simdgroup_size");
-  if (op == "quadReadLaneAt")
+  case kOpQuadReadLaneAt:
     return EmitReadLaneAt(Call, true);
-  if (op == "waveReadLaneAt")
+  case kOpWaveReadLaneAt:
     return EmitReadLaneAt(Call, false);
-  if (op == "quadOp")
+  case kOpQuadOp:
     return EmitQuadOp(Call);
-  if (op == "sampleIndex")
+  case kOpSampleIndex:
     return ctx.resource.sample_index_arg;
-  if (op == "coverage")
+  case kOpCoverage:
     return ctx.pso_sample_mask != 0xffffffff ? ir.CreateAnd(ctx.resource.coverage_mask_arg, ctx.pso_sample_mask)
                                              : ctx.resource.coverage_mask_arg;
-  if (op == "renderTargetGetSampleCount")
+  case kOpRenderTargetGetSampleCount:
     return air.CreateGetNumSamples();
-  if (op == "emitStream") {
+  case kOpEmitStream: {
     ctx.resource.call_emit();
     return nullptr;
   }
-  if (op == "emitThenCutStream") {
+  case kOpEmitThenCutStream: {
     ctx.resource.call_emit();
     ctx.resource.call_cut();
     return nullptr;
   }
-  if (op == "cutStream") {
+  case kOpCutStream: {
     ctx.resource.call_cut();
     return nullptr;
   }
-  if (op == "gsInstanceID")
+  case kOpGSInstanceID:
     return ctx.resource.gs_instance_id;
-  if (op == "primitiveID")
+  case kOpPrimitiveID:
     return ctx.resource.patch_id;
-
-  return unsupported("dxil: unsupported operation dx.op." + op.str());
+  case kOpUDiv:
+  case kOpUMul:
+  case kOpIMul:
+  case kOpUAddc:
+  case kOpUSubb:
+    return EmitBinaryWithTwoOutputs(Call, OpId);
+  case kOpBitcastF16toI16:
+  case kOpBitcastF32toI32:
+  case kOpBitcastI16toF16:
+  case kOpBitcastI32toF32: {
+    auto Operand = Get(Call.getOperand(1));
+    if (!Operand)
+      return Operand.takeError();
+    return ir.CreateBitCast(*Operand, MapType(Call.getType()));
+  }
+  case kOpOutputControlPointID:
+    return ctx.resource.thread_id_in_patch;
+  case kOpDomainLocation: {
+    auto Component = asU32(Call.getOperand(1));
+    if (!Component)
+      return unsupported("dxil: non-constant domainLocation component");
+    return ir.CreateExtractElement(ctx.resource.domain, *Component);
+  }
+  case kOpStorePatchConstant:
+    return EmitStorePatchConstant(Call);
+  case kOpLoadOutputControlPoint:
+    return EmitLoadOutputControlPoint(Call);
+  case kOpLoadPatchConstant:
+    return EmitLoadPatchConstant(Call);
+  default:
+    break;
+  }
+  auto *callee = Call.getCalledFunction();
+  return unsupported("dxil: unsupported operation " + callee->getName().str() + "(" + std::to_string(*Op) + ")");
 }
 
 llvm::Expected<llvm::Value *>
@@ -1380,14 +1505,10 @@ Converter::EmitLegacyF32ToF16(CallInst &Call) {
 }
 
 llvm::Expected<llvm::Value *>
-Converter::EmitUnaryBits(CallInst &Call) {
+Converter::EmitUnaryBits(const CallInst &Call, uint32_t OpId) {
   auto Bits = Get(Call.getArgOperand(1));
   if (!Bits)
     return Bits.takeError();
-
-  auto Op = asU32(Call.getArgOperand(0));
-  if (!Op)
-    return unsupported("dxil: non-constant unaryBits op");
 
   auto NormalizeOverflow = [this](llvm::Value *Value) {
     llvm::Value *Max = llvm::ConstantInt::getAllOnesValue(Value->getType());
@@ -1397,7 +1518,7 @@ Converter::EmitUnaryBits(CallInst &Call) {
     );
   };
 
-  switch (*Op) {
+  switch (OpId) {
   case kOpCountbits:
     return ir.CreateSExtOrTrunc(air.CreateIntUnOp(AIRBuilder::popcount, *Bits), ir.getInt32Ty());
   case kOpFirstbitLo:
@@ -1413,7 +1534,7 @@ Converter::EmitUnaryBits(CallInst &Call) {
         )
     ));
   default:
-    return unsupported("dxil: unsupported unaryBits op " + std::to_string(*Op));
+    return unsupported("dxil: unsupported unaryBits op " + std::to_string(OpId));
   }
 }
 
@@ -1441,10 +1562,12 @@ Converter::EmitBarrier(CallInst &Call) {
 llvm::Expected<llvm::Value *>
 Converter::EmitLoadInput(const CallInst &Call) {
   auto Element = asU32(Call.getArgOperand(1));
-  auto Row = asU32(Call.getArgOperand(2));
   auto Component = asU32(Call.getArgOperand(3));
-  if (!Element || !Row || !Component)
+  if (!Element || !Component)
     return unsupported("dxil: non-constant loadInput index");
+  auto Row = Get(Call.getArgOperand(2));
+  if (!Row)
+    return Row.takeError();
   if (*Element >= entry.inputs.size())
     return unsupported("dxil: loadInput element index out of range");
   const auto &signature = entry.inputs[*Element];
@@ -1474,7 +1597,6 @@ Converter::EmitLoadInput(const CallInst &Call) {
   }
 
   auto *Type = Call.getType();
-  uint32_t Reg = (uint32_t)signature.start_row + *Row;
   uint32_t Lane = (uint32_t)signature.start_col + *Component;
   if (Lane > 3)
     return unsupported("dxil: loadInput component out of range");
@@ -1483,7 +1605,7 @@ Converter::EmitLoadInput(const CallInst &Call) {
   RegIdxs.push_back(ir.getInt32(0));
   if (!isa<UndefValue>(*GSVertex))
     RegIdxs.push_back(*GSVertex);
-  RegIdxs.push_back(ir.getInt32(Reg));
+  RegIdxs.push_back(ir.CreateAdd(*Row, ir.getInt32(signature.start_row)));
   RegIdxs.push_back(ir.getInt32(Lane));
 
   if (Type->isIntegerTy()) {
@@ -1566,6 +1688,14 @@ Converter::EmitStoreOutput(const CallInst &Call) {
     ir.CreateStore(Stored, ir.CreateConstInBoundsGEP1_32(ir.getInt32Ty(), ctx.resource.coverage_mask_reg, 0));
     return (llvm::Value *)nullptr;
   }
+  case SemanticKind::StencilRef: {
+    if (!ctx.resource.stencil_ref_reg)
+      return unsupported("dxil: stencil_ref output is not available");
+    if (!Stored->getType()->isIntegerTy(32))
+      return unsupported("dxil: unsupported stencil output type");
+    ir.CreateStore(Stored, ir.CreateConstInBoundsGEP1_32(ir.getInt32Ty(), ctx.resource.stencil_ref_reg, 0));
+    return (llvm::Value *)nullptr;
+  }
   default:
     return unsupported("dxil: unsupported storeOutput semantic " + std::to_string((uint32_t)signature.semantic_kind));
   }
@@ -1579,10 +1709,17 @@ Converter::EmitStoreOutput(const CallInst &Call) {
   if (Lane > 3)
     return unsupported("dxil: storeOutput component out of range");
 
+  SmallVector<llvm::Value *> RegIdxs;
+  RegIdxs.push_back(ir.getInt32(0));
+  if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER)
+    RegIdxs.push_back(ctx.resource.thread_id_in_patch);
+  RegIdxs.push_back(ir.getInt32(Reg));
+  RegIdxs.push_back(ir.getInt32(Lane));
+
   if (Stored->getType()->isFloatTy()) {
     auto *Ptr = ir.CreateGEP(
         ctx.resource.output.ptr_float4->getType()->getNonOpaquePointerElementType(), ctx.resource.output.ptr_float4,
-        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+        RegIdxs
     );
     ir.CreateStore(Stored, Ptr);
     return (llvm::Value *)nullptr;
@@ -1591,15 +1728,14 @@ Converter::EmitStoreOutput(const CallInst &Call) {
     if (signature.semantic_kind == SemanticKind::Position) {
       auto *Ptr = ir.CreateGEP(
           ctx.resource.output.ptr_float4->getType()->getNonOpaquePointerElementType(), ctx.resource.output.ptr_float4,
-          {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+          RegIdxs
       );
       ir.CreateStore(air.CreateConvertToFloat(Stored), Ptr);
       return (llvm::Value *)nullptr;
     }
     Stored = ir.CreateZExt(ir.CreateBitCast(Stored, ir.getInt16Ty()), ir.getInt32Ty());
     auto *Ptr = ir.CreateGEP(
-        ctx.resource.output.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.output.ptr_int4,
-        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+        ctx.resource.output.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.output.ptr_int4, RegIdxs
     );
     ir.CreateStore(Stored, Ptr);
     return (llvm::Value *)nullptr;
@@ -1610,8 +1746,7 @@ Converter::EmitStoreOutput(const CallInst &Call) {
     else if (Stored->getType()->getIntegerBitWidth() > 32)
       return unsupported("dxil: unsupported storeOutput integer width");
     auto *Ptr = ir.CreateGEP(
-        ctx.resource.output.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.output.ptr_int4,
-        {ir.getInt32(0), ir.getInt32(Reg), ir.getInt32(Lane)}
+        ctx.resource.output.ptr_int4->getType()->getNonOpaquePointerElementType(), ctx.resource.output.ptr_int4, RegIdxs
     );
     ir.CreateStore(Stored, Ptr);
     return (llvm::Value *)nullptr;
@@ -1620,7 +1755,7 @@ Converter::EmitStoreOutput(const CallInst &Call) {
 }
 
 llvm::Expected<llvm::Value *>
-Converter::EmitSample(const CallInst &Call, StringRef Op) {
+Converter::EmitSample(const CallInst &Call, uint32_t OpId) {
   auto TextureHandle = ResolveHandleOperand(Call.getArgOperand(1));
   if (!TextureHandle)
     return TextureHandle.takeError();
@@ -1697,20 +1832,20 @@ Converter::EmitSample(const CallInst &Call, StringRef Op) {
   }
 
   llvm::Value *Value = nullptr, *Residency = nullptr;
-  if (Op == "sampleLevel") {
+  if (OpId == kOpSampleLevel) {
     auto Level = Get(Call.getArgOperand(10));
     if (!Level)
       return Level.takeError();
     std::tie(Value, Residency) = air.CreateSample(
         Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, Offset, sample_level{*Level}
     );
-  } else if (Op == "sampleBias") {
+  } else if (OpId == kOpSampleBias) {
     auto Bias = Get(Call.getArgOperand(10));
     if (!Bias)
       return Bias.takeError();
     std::tie(Value, Residency) =
         air.CreateSample(Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, Offset, sample_bias{*Bias});
-  } else if (Op == "sampleCmpLevelZero") {
+  } else if (OpId == kOpSampleCmpLevelZero) {
     auto Reference = Get(Call.getArgOperand(10));
     if (!Reference)
       return Reference.takeError();
@@ -1718,7 +1853,7 @@ Converter::EmitSample(const CallInst &Call, StringRef Op) {
         Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, *Reference, Offset,
         sample_level{air.getFloat(0)}
     );
-  } else if (Op == "sampleCmp") {
+  } else if (OpId == kOpSampleCmp) {
     auto Reference = Get(Call.getArgOperand(10));
     if (!Reference)
       return Reference.takeError();
@@ -1729,7 +1864,7 @@ Converter::EmitSample(const CallInst &Call, StringRef Op) {
         Texture, TextureDescriptor->ResourceHandle, Sampler, Coord, Array, *Reference, Offset,
         sample_bias{air.getFloat(0)}, sample_min_lod_clamp{*Clamp}
     );
-  } else if (Op == "sampleGrad") {
+  } else if (OpId == kOpSampleGrad) {
     auto DDX0 = Get(Call.getArgOperand(10));
     if (!DDX0)
       return DDX0.takeError();
@@ -1791,7 +1926,7 @@ Converter::EmitSample(const CallInst &Call, StringRef Op) {
 }
 
 llvm::Expected<llvm::Value *>
-Converter::EmitGather(const CallInst &Call, StringRef Op) {
+Converter::EmitGather(const CallInst &Call, uint32_t OpId) {
   auto TextureHandle = ResolveHandleOperand(Call.getArgOperand(1));
   if (!TextureHandle)
     return TextureHandle.takeError();
@@ -1868,7 +2003,7 @@ Converter::EmitGather(const CallInst &Call, StringRef Op) {
   }
 
   llvm::Value *Value = nullptr, *Residency = nullptr;
-  if (Op == "textureGatherCmp") {
+  if (OpId == kOpTextureGatherCmp) {
     auto Reference = Get(Call.getArgOperand(10));
     if (!Reference)
       return Reference.takeError();
@@ -1887,10 +2022,7 @@ Converter::EmitGather(const CallInst &Call, StringRef Op) {
 }
 
 llvm::Expected<llvm::Value *>
-Converter::EmitUnary(const CallInst &Call) {
-  auto Op = asU32(Call.getArgOperand(0));
-  if (!Op)
-    return unsupported("dxil: non-constant unary op");
+Converter::EmitUnary(const CallInst &Call, uint32_t OpId) {
   if (Call.arg_size() != 2)
     return unsupported("dxil: unexpected unary signature");
   auto Operand = Get(Call.getArgOperand(1));
@@ -1898,7 +2030,7 @@ Converter::EmitUnary(const CallInst &Call) {
     return Operand.takeError();
 
   AIRBuilder::FPUnOp FPUnOp;
-  switch (auto OpId = *Op) {
+  switch (OpId) {
   case kOpBfrev:
     if (!(*Operand)->getType()->isIntegerTy())
       return unsupported("dxil: bfrev on a non-integer operand");
@@ -1979,10 +2111,7 @@ Converter::EmitUnary(const CallInst &Call) {
 }
 
 llvm::Expected<llvm::Value *>
-Converter::EmitBinary(const CallInst &Call) {
-  auto Op = asU32(Call.getArgOperand(0));
-  if (!Op)
-    return unsupported("dxil: non-constant binary op");
+Converter::EmitBinary(const CallInst &Call, uint32_t OpId) {
   if (Call.arg_size() != 3)
     return unsupported("dxil: unexpected binary signature");
   auto LHS = Get(Call.getArgOperand(1));
@@ -1992,7 +2121,7 @@ Converter::EmitBinary(const CallInst &Call) {
   if (!RHS)
     return RHS.takeError();
 
-  switch (auto OpId = *Op) {
+  switch (OpId) {
   case kOpFMax:
   case kOpFMin:
     if (!(*LHS)->getType()->isFloatingPointTy())
@@ -2014,10 +2143,7 @@ Converter::EmitBinary(const CallInst &Call) {
 }
 
 llvm::Expected<llvm::Value *>
-Converter::EmitTertiary(const CallInst &Call) {
-  auto Op = asU32(Call.getArgOperand(0));
-  if (!Op)
-    return unsupported("dxil: non-constant binary op");
+Converter::EmitTertiary(const CallInst &Call, uint32_t OpId) {
   if (Call.arg_size() != 4)
     return unsupported("dxil: unexpected tertiary signature");
   auto A = Get(Call.getArgOperand(1));
@@ -2030,7 +2156,7 @@ Converter::EmitTertiary(const CallInst &Call) {
   if (!C)
     return C.takeError();
 
-  switch (auto OpId = *Op) {
+  switch (OpId) {
   case kOpFMad:
     return ir.CreateFAdd(ir.CreateFMul(*A, *B), *C);
   case kOpFma:
@@ -2038,6 +2164,30 @@ Converter::EmitTertiary(const CallInst &Call) {
   case kOpIMad:
   case kOpUMad:
     return ir.CreateAdd(ir.CreateMul(*A, *B), *C);
+  case kOpIbfe:
+  case kOpUbfe: {
+    auto Width = ir.CreateAnd(*A, 0x1F);
+    auto Offset = ir.CreateAnd(*B, 0X1F);
+    auto WidthAddOffset = ir.CreateAdd(Width, Offset);
+    auto Constant_32 = llvm::ConstantInt::get(Width->getType(), 32);
+    auto ClampedC = ir.CreateShl(*C, ir.CreateSub(Constant_32, WidthAddOffset));
+
+    llvm::Value *NeedClamp, *NoClamp, *Clamped;
+
+    if (OpId == kOpIbfe) {
+      NeedClamp = ir.CreateICmpSLT(WidthAddOffset, Constant_32);
+      NoClamp = ir.CreateAShr(*C, Offset);
+      Clamped = ir.CreateAShr(ClampedC, ir.CreateSub(Constant_32, Width));
+    } else {
+      NeedClamp = ir.CreateICmpULT(WidthAddOffset, Constant_32);
+      NoClamp = ir.CreateLShr(*C, Offset);
+      Clamped = ir.CreateLShr(ClampedC, ir.CreateSub(Constant_32, Width));
+    }
+    return ir.CreateSelect(
+        ir.CreateIsNull(Width), llvm::ConstantInt::get(Width->getType(), 0),
+        ir.CreateSelect(NeedClamp, Clamped, NoClamp)
+    );
+  }
   default:
     return unsupported("dxil: unsupported tertiary operation: " + std::to_string(OpId));
   }
@@ -2063,15 +2213,12 @@ Converter::EmitDotProduct(const CallInst &Call, unsigned Dimension) {
 }
 
 llvm::Expected<llvm::Value *>
-Converter::EmitIsSpecialFloat(const CallInst &Call) {
-  auto Op = asU32(Call.getArgOperand(0));
-  if (!Op)
-    return unsupported("dxil: non-constant binary op");
+Converter::EmitIsSpecialFloat(const CallInst &Call, uint32_t OpId) {
   auto Operand = Get(Call.getArgOperand(1));
   if (!Operand)
     return Operand.takeError();
 
-  switch (auto OpId = *Op) {
+  switch (OpId) {
   case kOpIsNaN:
     return air.CreateIsNaN(*Operand);
   case kOpIsInf:
@@ -2367,6 +2514,253 @@ Converter::EmitQuadOp(const CallInst &Call) {
     return unsupported("dxil: non-constant quadOp kind");
 
   return air.CreateQuadShuffleXor(*Value, *Kind + 1);
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitBinaryWithTwoOutputs(const CallInst &Call, uint32_t OpId) {
+  if (Call.arg_size() != 3)
+    return unsupported("dxil: unexpected binary signature");
+  auto LHS = Get(Call.getArgOperand(1));
+  if (!LHS)
+    return LHS.takeError();
+  auto RHS = Get(Call.getArgOperand(2));
+  if (!RHS)
+    return RHS.takeError();
+
+  switch (OpId) {
+  case kOpUDiv: {
+    return ir.CreateInsertValue(
+        ir.CreateInsertValue(llvm::PoisonValue::get(MapType(Call.getType())), ir.CreateUDiv(*LHS, *RHS), {0ull}),
+        ir.CreateURem(*LHS, *RHS), {1ull}
+    );
+  }
+  case kOpUMul: {
+    auto Result = ir.CreateMul(
+        ir.CreateZExt(*LHS, (*LHS)->getType()->getExtendedType()),
+        ir.CreateZExt(*RHS, (*RHS)->getType()->getExtendedType())
+    );
+    return ir.CreateInsertValue(
+        ir.CreateInsertValue(
+            llvm::PoisonValue::get(MapType(Call.getType())),
+            ir.CreateTrunc(ir.CreateLShr(Result, 32u), (*LHS)->getType()), {0ull}
+        ),
+        ir.CreateTrunc(Result, (*RHS)->getType()), {1ull}
+    );
+  }
+  case kOpIMul: {
+    auto Result = ir.CreateMul(
+        ir.CreateSExt(*LHS, (*LHS)->getType()->getExtendedType()),
+        ir.CreateSExt(*RHS, (*RHS)->getType()->getExtendedType())
+    );
+    return ir.CreateInsertValue(
+        ir.CreateInsertValue(
+            llvm::PoisonValue::get(MapType(Call.getType())),
+            ir.CreateTrunc(ir.CreateLShr(Result, 32u), (*LHS)->getType()), {0ull}
+        ),
+        ir.CreateTrunc(Result, (*RHS)->getType()), {1ull}
+    );
+  }
+  case kOpUAddc: {
+    auto Result = ir.CreateAdd(
+        ir.CreateZExt(*LHS, (*LHS)->getType()->getExtendedType()),
+        ir.CreateZExt(*RHS, (*RHS)->getType()->getExtendedType())
+    );
+    return ir.CreateInsertValue(
+        ir.CreateInsertValue(
+            llvm::PoisonValue::get(MapType(Call.getType())), ir.CreateTrunc(Result, (*LHS)->getType()), {0ull}
+        ),
+        ir.CreateTrunc(ir.CreateLShr(Result, 32u), Result->getType()->getWithNewBitWidth(1)), {1ull}
+    );
+  }
+  case kOpUSubb: {
+    auto Result = ir.CreateSub(
+        ir.CreateZExt(*LHS, (*LHS)->getType()->getExtendedType()),
+        ir.CreateZExt(*RHS, (*RHS)->getType()->getExtendedType())
+    );
+    return ir.CreateInsertValue(
+        ir.CreateInsertValue(
+            llvm::PoisonValue::get(MapType(Call.getType())), ir.CreateTrunc(Result, (*LHS)->getType()), {0ull}
+        ),
+        ir.CreateTrunc(ir.CreateLShr(Result, 32u), Result->getType()->getWithNewBitWidth(1)), {1ull}
+    );
+  }
+  default:
+    return unsupported("dxil: unsupported binaryWithTwoOutputs operation: " + std::to_string(OpId));
+  }
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitStorePatchConstant(const CallInst &Call) {
+  auto Element = asU32(Call.getArgOperand(1));
+  auto Component = asU32(Call.getArgOperand(3));
+  if (!Element || !Component)
+    return unsupported("dxil: non-constant storePatchConstant index");
+  if (*Element >= entry.patch_constants.size())
+    return unsupported("dxil: storePatchConstant element index out of range");
+  auto Row = Get(Call.getArgOperand(2));
+  if (!Row)
+    return Row.takeError();
+  auto Value = Get(Call.getArgOperand(4));
+  if (!Value)
+    return Value.takeError();
+  if (!*Value)
+    return unsupported("dxil: missing storePatchConstant value");
+  const auto &signature = entry.patch_constants[*Element];
+  auto *Stored = *Value;
+
+  uint32_t Lane = (uint32_t)signature.start_col + *Component;
+  if (Lane > 3)
+    return unsupported("dxil: storePatchConstant component out of range");
+
+  if (signature.start_row < 0 || signature.start_col < 0)
+    return unsupported("dxil: output signature element is not mapped");
+  auto &registers = ctx.resource.patch_constant_output;
+  if (!registers.ptr_int4 || !ctx.resource.output.ptr_float4)
+    return unsupported("dxil: output register file is not available");
+
+  SmallVector<llvm::Value *> RegIdxs;
+  RegIdxs.push_back(ir.getInt32(0));
+  RegIdxs.push_back(ir.CreateAdd(*Row, ir.getInt32(signature.start_row)));
+  RegIdxs.push_back(ir.getInt32(Lane));
+
+  if (Stored->getType()->isFloatTy()) {
+    auto *Ptr =
+        ir.CreateGEP(registers.ptr_float4->getType()->getNonOpaquePointerElementType(), registers.ptr_float4, RegIdxs);
+    ir.CreateStore(Stored, Ptr);
+    return (llvm::Value *)nullptr;
+  }
+  if (Stored->getType()->isHalfTy()) {
+    Stored = ir.CreateZExt(ir.CreateBitCast(Stored, ir.getInt16Ty()), ir.getInt32Ty());
+    auto *Ptr =
+        ir.CreateGEP(registers.ptr_int4->getType()->getNonOpaquePointerElementType(), registers.ptr_int4, RegIdxs);
+    ir.CreateStore(Stored, Ptr);
+    return (llvm::Value *)nullptr;
+  }
+  if (Stored->getType()->isIntegerTy()) {
+    if (Stored->getType()->getIntegerBitWidth() < 32)
+      Stored = ir.CreateZExt(Stored, ir.getInt32Ty());
+    else if (Stored->getType()->getIntegerBitWidth() > 32)
+      return unsupported("dxil: unsupported storeOutput integer width");
+    auto *Ptr =
+        ir.CreateGEP(registers.ptr_int4->getType()->getNonOpaquePointerElementType(), registers.ptr_int4, RegIdxs);
+    ir.CreateStore(Stored, Ptr);
+    return (llvm::Value *)nullptr;
+  }
+  return unsupported("dxil: unsupported storePatchConstant type");
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitLoadOutputControlPoint(const CallInst &Call) {
+  auto Element = asU32(Call.getArgOperand(1));
+  auto Component = asU32(Call.getArgOperand(3));
+  if (!Element || !Component)
+    return unsupported("dxil: non-constant loadOutputControlPoint index");
+  auto Row = Get(Call.getArgOperand(2));
+  if (!Row)
+    return Row.takeError();
+  if (*Element >= entry.outputs.size())
+    return unsupported("dxil: loadInput element index out of range");
+  const auto &signature = entry.outputs[*Element];
+  if (signature.start_row < 0 || signature.start_col < 0)
+    return unsupported("dxil: input signature element is not mapped");
+  auto &registers = ctx.resource.output;
+  if (!registers.ptr_int4 || !registers.ptr_float4)
+    return unsupported("dxil: input register file is not available");
+
+  auto CPId = Get(Call.getArgOperand(4));
+  if (!CPId)
+    return CPId.takeError();
+
+  auto *Type = Call.getType();
+  uint32_t Lane = (uint32_t)signature.start_col + *Component;
+  if (Lane > 3)
+    return unsupported("dxil: loadOutputControlPoint component out of range");
+
+  SmallVector<Value *> RegIdxs;
+  RegIdxs.push_back(ir.getInt32(0));
+  RegIdxs.push_back(*CPId);
+  RegIdxs.push_back(ir.CreateAdd(*Row, ir.getInt32(signature.start_row)));
+  RegIdxs.push_back(ir.getInt32(Lane));
+
+  if (Type->isIntegerTy()) {
+    auto *Ptr =
+        ir.CreateGEP(registers.ptr_int4->getType()->getNonOpaquePointerElementType(), registers.ptr_int4, RegIdxs);
+    auto *Value = ir.CreateLoad(ir.getInt32Ty(), Ptr);
+    if (Type->getIntegerBitWidth() < 32)
+      return ir.CreateTrunc(Value, Type);
+    if (Type->getIntegerBitWidth() == 32)
+      return Value;
+    return unsupported("dxil: unsupported loadInput integer width");
+  }
+  if (Type->isFloatTy()) {
+    auto *Ptr =
+        ir.CreateGEP(registers.ptr_float4->getType()->getNonOpaquePointerElementType(), registers.ptr_float4, RegIdxs);
+    return ir.CreateLoad(ir.getFloatTy(), Ptr);
+  }
+  if (Type->isHalfTy()) {
+    if (signature.semantic_kind == SemanticKind::Position) {
+      auto *Ptr = ir.CreateGEP(
+          registers.ptr_float4->getType()->getNonOpaquePointerElementType(), registers.ptr_float4, RegIdxs
+      );
+      return air.CreateConvertToHalf(ir.CreateLoad(ir.getFloatTy(), Ptr));
+    }
+    auto *Ptr =
+        ir.CreateGEP(registers.ptr_int4->getType()->getNonOpaquePointerElementType(), registers.ptr_int4, RegIdxs);
+    auto *Value = ir.CreateLoad(ir.getInt32Ty(), Ptr);
+    return ir.CreateBitCast(ir.CreateTrunc(Value, ir.getInt16Ty()), ir.getHalfTy());
+  }
+  return unsupported("dxil: unsupported loadOutputControlPoint type");
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitLoadPatchConstant(const CallInst &Call) {
+  auto Element = asU32(Call.getArgOperand(1));
+  auto Row = asU32(Call.getArgOperand(2));
+  auto Component = asU32(Call.getArgOperand(3));
+  if (!Element || !Row || !Component)
+    return unsupported("dxil: non-constant loadPatchConstant index");
+  if (*Element >= entry.patch_constants.size())
+    return unsupported("dxil: loadInput element index out of range");
+  const auto &signature = entry.patch_constants[*Element];
+  if (signature.start_row < 0 || signature.start_col < 0)
+    return unsupported("dxil: input signature element is not mapped");
+  auto &registers = ctx.resource.patch_constant_output;
+  if (!registers.ptr_int4 || !registers.ptr_float4)
+    return unsupported("dxil: input register file is not available");
+
+  auto *Type = Call.getType();
+  uint32_t Reg = (uint32_t)signature.start_row + *Row;
+  uint32_t Lane = (uint32_t)signature.start_col + *Component;
+  if (Lane > 3)
+    return unsupported("dxil: loadPatchConstant component out of range");
+
+  SmallVector<Value *> RegIdxs;
+  RegIdxs.push_back(ir.getInt32(0));
+  RegIdxs.push_back(ir.getInt32(Reg));
+  RegIdxs.push_back(ir.getInt32(Lane));
+
+  if (Type->isIntegerTy()) {
+    auto *Ptr =
+        ir.CreateGEP(registers.ptr_int4->getType()->getNonOpaquePointerElementType(), registers.ptr_int4, RegIdxs);
+    auto *Value = ir.CreateLoad(ir.getInt32Ty(), Ptr);
+    if (Type->getIntegerBitWidth() < 32)
+      return ir.CreateTrunc(Value, Type);
+    if (Type->getIntegerBitWidth() == 32)
+      return Value;
+    return unsupported("dxil: unsupported loadPatchConstant integer width");
+  }
+  if (Type->isFloatTy()) {
+    auto *Ptr =
+        ir.CreateGEP(registers.ptr_float4->getType()->getNonOpaquePointerElementType(), registers.ptr_float4, RegIdxs);
+    return ir.CreateLoad(ir.getFloatTy(), Ptr);
+  }
+  if (Type->isHalfTy()) {
+    auto *Ptr =
+        ir.CreateGEP(registers.ptr_int4->getType()->getNonOpaquePointerElementType(), registers.ptr_int4, RegIdxs);
+    auto *Value = ir.CreateLoad(ir.getInt32Ty(), Ptr);
+    return ir.CreateBitCast(ir.CreateTrunc(Value, ir.getInt16Ty()), ir.getHalfTy());
+  }
+  return unsupported("dxil: unsupported loadPatchConstant type");
 }
 
 } // namespace dxmt::dxil

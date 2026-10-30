@@ -74,9 +74,6 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
           block_to_visit.push(instance.active);
           block_to_visit.push(instance.sync);
         },
-        [&](BasicBlockHullShaderWriteOutput hull_end)  {
-          block_to_visit.push(hull_end.epilogue);
-        },
         [&](BasicBlockCall call) {
           block_to_visit.push(call.return_point);
         },
@@ -148,43 +145,6 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 ),
                 target_true_bb, target_false_bb
               );
-              return llvm::Error::success();
-            },
-            [&](BasicBlockHullShaderWriteOutput hull_end) -> llvm::Error {
-              auto active = llvm::BasicBlock::Create(
-                context, "write_control_point", function
-              );
-              auto sync = llvm::BasicBlock::Create(
-                context, "write_control_point_end", function
-              );
-
-              builder.CreateCondBr(
-                ctx.builder.CreateICmp(
-                  llvm::CmpInst::ICMP_ULT,
-                  ctx.resource.thread_id_in_patch,
-                  ctx.builder.getInt32(hull_end.instance_count)
-                ),
-                active, sync
-              );
-              builder.SetInsertPoint(active);
-
-              auto src = ctx.resource.hull_cp_passthrough_src;
-              if (src->getType()->getNonOpaquePointerElementType() != ctx.resource.hull_cp_passthrough_type) {
-                src = builder.CreateBitCast(
-                    src, ctx.resource.hull_cp_passthrough_type->getPointerTo(src->getType()->getPointerAddressSpace())
-                );
-              }
-              assert(src->getType()->getNonOpaquePointerElementType() == ctx.resource.hull_cp_passthrough_type);
-              builder.CreateStore(
-                  builder.CreateLoad(ctx.resource.hull_cp_passthrough_type, src), ctx.resource.hull_cp_passthrough_dst
-              );
-
-              builder.CreateBr(sync);
-              builder.SetInsertPoint(sync);
-              ctx.air.CreateBarrier(llvm::air::MemFlags::Threadgroup);
-
-              auto target_bb = visited[hull_end.epilogue];
-              builder.CreateBr(target_bb);
               return llvm::Error::success();
             },
             [](BasicBlockCall) -> llvm::Error {

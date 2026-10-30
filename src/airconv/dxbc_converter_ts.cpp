@@ -1,6 +1,7 @@
 #include "air_signature.hpp"
 #include "airconv_error.hpp"
 #include "dxbc_converter.hpp"
+#include "dxil_converter.hpp"
 #include "nt/air_builder.hpp"
 #include "nt/dxbc_converter_base.hpp"
 #include "llvm/IR/Constants.h"
@@ -191,7 +192,8 @@ convert_dxbc_vertex_hull_shader(
   auto &hull_shader_info = pHullStage->shader_info;
 
   uint32_t max_vs_input_register = pVertexStage->max_input_register;
-  uint32_t max_vs_output_register = 0;
+  uint32_t max_vs_output_register = pVertexStage->max_output_register;
+  // TODO: below is for DXBC D3D11 quirks, should get rid of it
   for (auto &out : pVertexStage->output_signature) {
     max_vs_output_register = std::max(max_vs_output_register, out.reg() + 1);
   }
@@ -365,12 +367,9 @@ convert_dxbc_vertex_hull_shader(
 
   {
     /* Vertex Shader Zone */
-    auto shader_info = vertex_shader_info;
     auto &resource_map = resource_map_vs;
     auto &prologue = prologue_vs;
     auto &epilogue = epilogue_vs;
-    auto max_input_register = max_vs_input_register;
-    auto max_output_register = max_vs_output_register;
 
     auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue_vertex", function);
     setup_metal_version(module, metal_version);
@@ -399,11 +398,11 @@ convert_dxbc_vertex_hull_shader(
         builder.CreateExtractValue(draw_arguments, 0), builder.getInt32(pHullStage->input_control_point_count)
     );
 
-    resource_map.input.ptr_int4 = builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
+    resource_map.input.ptr_int4 = builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_vs_input_register));
     resource_map.input.ptr_float4 = builder.CreateBitCast(
-        resource_map.input.ptr_int4, llvm::ArrayType::get(types._float4, max_input_register)->getPointerTo()
+        resource_map.input.ptr_int4, llvm::ArrayType::get(types._float4, max_vs_input_register)->getPointerTo()
     );
-    resource_map.input_element_count = max_input_register;
+    resource_map.input_element_count = max_vs_input_register;
 
     // of type "output_reg_per_point_type"
     resource_map.output.ptr_int4 = builder.CreateGEP(
@@ -413,7 +412,7 @@ convert_dxbc_vertex_hull_shader(
         resource_map.output.ptr_int4, output_reg_per_point_type_float->getPointerTo(vertex_out->getAddressSpace())
     );
 
-    resource_map.output_element_count = max_output_register;
+    resource_map.output_element_count = max_vs_output_register;
 
     struct context ctx {
         .builder = builder,
@@ -530,7 +529,9 @@ convert_dxbc_vertex_hull_shader(
     if (auto err = prologue.Run(io)) {
       return err;
     }
-    auto real_entry = convert_basicblocks(pVertexStage->entry(), ctx, epilogue_bb);
+    llvm::Expected<llvm::BasicBlock *> real_entry =
+        pVertexStage->dxil ? dxil::convert_basicblocks(pVertexStage->dxil_entry, ctx, epilogue_bb)
+                           : convert_basicblocks(pVertexStage->entry(), ctx, epilogue_bb);
     if (auto err = real_entry.takeError()) {
       return err;
     }
@@ -551,14 +552,11 @@ convert_dxbc_vertex_hull_shader(
   {
 
     /* Hull Shader Zone */
-    auto shader_info = hull_shader_info;
     auto &resource_map = resource_map_hs;
     auto &prologue = prologue_hs;
     auto &epilogue = epilogue_hs;
 
     auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue_hull", function);
-
-    uint32_t vertex_max_output_register = max_vs_output_register;
 
     auto payload = builder.CreateBitCast(function->getArg(payload_idx), payload_struct_type->getPointerTo(6));
 
@@ -569,7 +567,7 @@ convert_dxbc_vertex_hull_shader(
     resource_map.input.ptr_float4 = builder.CreateBitCast(
         resource_map.input.ptr_int4, output_reg_per_patch_type_float->getPointerTo(vertex_out->getAddressSpace())
     );
-    resource_map.input_element_count = vertex_max_output_register;
+    resource_map.input_element_count = max_vs_output_register;
 
     resource_map.instance_id = instance_id;
 
@@ -580,11 +578,11 @@ convert_dxbc_vertex_hull_shader(
         builder.getInt32(32) // so all phases are effectively skipped
     );
 
-    if (shader_info.no_control_point_phase_passthrough) {
+    if (hull_shader_info.no_control_point_phase_passthrough) {
       // TODO: check this out carefully......
       assert(pHullStage->output_control_point_count != ~0u);
 
-      if (shader_info.output_control_point_read) {
+      if (hull_shader_info.output_control_point_read) {
         llvm::GlobalVariable *control_point_phase_out = new llvm::GlobalVariable(
             module, hs_output_per_group_type, false, llvm::GlobalValue::InternalLinkage,
             llvm::UndefValue::get(hs_output_per_group_type), "hull_control_point_phase_out", nullptr,
@@ -619,7 +617,7 @@ convert_dxbc_vertex_hull_shader(
       resource_map.output_element_count = max_hs_output_register;
     } else {
       /* since no control point phase */
-      if (vertex_max_output_register < max_hs_output_register) {
+      if (max_vs_output_register < max_hs_output_register) {
         return llvm::make_error<UnsupportedFeature>(
             "Hull shader has control point phase pass-through, but vertex shader "
             "output signature doesn't match hull shader input signature."
@@ -676,13 +674,47 @@ convert_dxbc_vertex_hull_shader(
     if (auto err = prologue.Run(io)) {
       return err;
     }
-    auto real_entry = convert_basicblocks(pHullStage->entry(), ctx, epilogue_bb);
+    llvm::Expected<llvm::BasicBlock *> real_entry =
+        pHullStage->dxil ? dxil::convert_basicblocks(pHullStage->dxil_entry, ctx, epilogue_bb)
+                         : convert_basicblocks(pHullStage->entry(), ctx, epilogue_bb);
     if (auto err = real_entry.takeError()) {
       return err;
     }
     builder.CreateBr(real_entry.get());
 
     builder.SetInsertPoint(epilogue_bb);
+
+    if (hull_shader_info.output_control_point_read || !hull_shader_info.no_control_point_phase_passthrough) {
+      // if fork/join phase reads control point phase output, or control point phase is absent
+      // then we need to perform a memcpy from threadgroup memory to payload memory
+      // otherwise output is written to payload memory directly
+      auto active = llvm::BasicBlock::Create(context, "write_control_point", function);
+      auto sync = llvm::BasicBlock::Create(context, "write_control_point_end", function);
+
+      builder.CreateCondBr(
+          ctx.builder.CreateICmp(
+              llvm::CmpInst::ICMP_ULT, ctx.resource.thread_id_in_patch,
+              ctx.builder.getInt32(pHullStage->output_control_point_count)
+          ),
+          active, sync
+      );
+      builder.SetInsertPoint(active);
+
+      auto src = ctx.resource.hull_cp_passthrough_src;
+      if (src->getType()->getNonOpaquePointerElementType() != ctx.resource.hull_cp_passthrough_type) {
+        src = builder.CreateBitCast(
+            src, ctx.resource.hull_cp_passthrough_type->getPointerTo(src->getType()->getPointerAddressSpace())
+        );
+      }
+      assert(src->getType()->getNonOpaquePointerElementType() == ctx.resource.hull_cp_passthrough_type);
+      builder.CreateStore(
+          builder.CreateLoad(ctx.resource.hull_cp_passthrough_type, src), ctx.resource.hull_cp_passthrough_dst
+      );
+
+      builder.CreateBr(sync);
+      builder.SetInsertPoint(sync);
+      ctx.air.CreateBarrier(llvm::air::MemFlags::Threadgroup);
+    }
 
     /* populate patch constant output */
 
@@ -1045,7 +1077,9 @@ convert_dxbc_tesselator_domain_shader(
     resource_map.domain = domain_bary;
   }
 
-  auto real_entry = convert_basicblocks(pShaderInternal->entry(), ctx, vertex_emit);
+  llvm::Expected<llvm::BasicBlock *> real_entry =
+      pShaderInternal->dxil ? dxil::convert_basicblocks(pShaderInternal->dxil_entry, ctx, vertex_emit)
+                            : convert_basicblocks(pShaderInternal->entry(), ctx, vertex_emit);
   if (auto err = real_entry.takeError()) {
     return err;
   }

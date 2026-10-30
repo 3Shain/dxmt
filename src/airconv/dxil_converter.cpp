@@ -2,6 +2,7 @@
 #include "dxbc_converter.hpp"
 #include "dxil_metadata.hpp"
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
@@ -378,11 +379,10 @@ initialize_pixel_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
 
     switch (element.semantic_kind) {
     case SemanticKind::Position: {
-      auto interpolation = to_air_interpolation(element.interpolation);
-      if (!interpolation)
-        return unsupported("dxil: unsupported interpolation mode");
       shader->signature_handlers.push_back([=](SignatureContext &ctx) {
-        uint32_t arg = ctx.func_signature.DefineInput(air::InputPosition{.interpolation = *interpolation});
+        uint32_t arg = ctx.func_signature.DefineInput(
+            air::InputPosition{.interpolation = air::Interpolation::center_no_perspective}
+        );
         ctx.prologue.Add([=](IOHelper &io) -> llvm::Error { return io.InitializeInput(arg, reg, mask, true); });
       });
       break;
@@ -535,6 +535,16 @@ initialize_pixel_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
       shader->ps_has_coverage_output = 1;
       break;
     }
+    case SemanticKind::StencilRef: {
+      shader->signature_handlers.push_back([](SignatureContext &ctx) {
+        ctx.prologue.Add([](IOHelper &io) -> llvm::Error { return io.CreateStencilRefOutputRegister(); });
+        auto out = ctx.func_signature.DefineOutput(air::OutputStencilRef{});
+        ctx.epilogue.Add([=](llvm::Value *ret, IOHelper &io) -> llvm::Expected<llvm::Value *> {
+          return io.PopulateOutputStencilRef(ret, out);
+        });
+      });
+      break;
+    }
     default:
       return unsupported(
           "dxil: unsupported pixel shader output semantic " + std::to_string((uint32_t)element.semantic_kind)
@@ -666,6 +676,175 @@ initialize_geometry_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
 }
 
 llvm::Error
+initialize_hull_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
+  using namespace dxmt::dxbc;
+
+  const EntryPoint &entry = shader->dxil_entry;
+  uint32_t max_input_register = 0;
+  for (const auto &element : entry.inputs) {
+    if (element.start_row < 0 || element.start_col < 0)
+      return unsupported("dxil: unsupported hull shader input layout");
+    uint32_t reg = element.start_row;
+    max_input_register = std::max(max_input_register, reg + element.rows);
+  }
+  shader->max_input_register = max_input_register;
+
+  uint32_t max_output_register = 0;
+  for (const auto &element : entry.outputs) {
+    if (element.start_row < 0 || element.start_col < 0)
+      return unsupported("dxil: unsupported hull shader output layout");
+    uint32_t reg = element.start_row;
+    max_output_register = std::max(max_output_register, reg + element.rows);
+  }
+  shader->max_output_register = max_output_register;
+
+  uint32_t max_patch_constant_output_register = 0;
+  for (const auto &element : entry.patch_constants) {
+    if (element.start_row < 0 || element.start_col < 0)
+      return unsupported("dxil: unsupported hull shader output layout");
+    uint32_t reg = element.start_row;
+    max_patch_constant_output_register = std::max(max_patch_constant_output_register, reg + element.rows);
+    switch (element.semantic_kind) {
+    case SemanticKind::TessFactor:
+    case SemanticKind::InsideTessFactor: {
+      for (unsigned row = 0; row < element.rows; row++) {
+        auto tess_factor_index = element.semantic_indices[row];
+        if (element.semantic_kind == SemanticKind::InsideTessFactor) {
+          tess_factor_index += element.semantic_indices.size() == 1 ? 3 : 4;
+        }
+        shader->patch_constant_scalars.push_back(
+            {.component = static_cast<uint8_t>(element.start_col),
+             .reg = static_cast<uint8_t>(row + element.start_row),
+             .tess_factor_index = static_cast<int8_t>(tess_factor_index)}
+        );
+      }
+      break;
+    }
+    case SemanticKind::Arbitrary: {
+      for (unsigned row = 0; row < element.rows; row++) {
+        for (unsigned col = 0; col < element.cols; col++) {
+          shader->patch_constant_scalars.push_back(
+              {.component = static_cast<uint8_t>(col + element.start_col),
+               .reg = static_cast<uint8_t>(row + element.start_row),
+               .tess_factor_index = -1}
+          );
+        }
+      }
+      break;
+    }
+    default:
+      return unsupported(
+          "dxil: unsupported hull shader patch constant semantic " + std::to_string((uint32_t)element.semantic_kind)
+      );
+    }
+  }
+  shader->max_patch_constant_output_register = max_patch_constant_output_register;
+
+  return llvm::Error::success();
+}
+
+llvm::Error
+initialize_domain_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
+  using namespace dxmt::dxbc;
+
+  const EntryPoint &entry = shader->dxil_entry;
+  auto &mesh_output_handlers = shader->mesh_output_handlers;
+  uint32_t &num_mesh_vertex_data = shader->num_mesh_vertex_data;
+
+  for (const auto &element : entry.inputs) {
+    if (element.start_row < 0 || element.start_col < 0)
+      return unsupported("dxil: unsupported domain shader input layout");
+  }
+
+  uint32_t max_pc_input_register = 0;
+  for (const auto &element : entry.patch_constants) {
+    if (element.start_row < 0 || element.start_col < 0)
+      return unsupported("dxil: unsupported domain shader input layout");
+    uint32_t reg = element.start_row;
+    max_pc_input_register = std::max(max_pc_input_register, reg + element.rows);
+  }
+  shader->max_input_register = max_pc_input_register;
+
+  uint32_t max_output_register = 0;
+  for (const auto &element : entry.outputs) {
+    if (element.start_row < 0 || element.start_col < 0)
+      return unsupported("dxil: unsupported domain shader output layout");
+    uint32_t reg = element.start_row;
+    uint32_t mask = element_register_mask(element);
+    max_output_register = std::max(max_output_register, reg + element.rows);
+
+    switch (element.semantic_kind) {
+    case SemanticKind::Position: {
+      shader->func_signature.DefineMeshVertexOutput(air::OutputPosition{.type = air::msl_float4});
+      mesh_output_handlers.push_back([=](MeshOutputContext &output, IOHelper &io) {
+        io.PopulateMeshOutputPosition(reg, mask, output.vertex_id);
+      });
+      break;
+    }
+    case SemanticKind::Arbitrary: {
+      auto msl_type = to_signature_msl_type(element.component_type);
+      if (!msl_type)
+        return unsupported("dxil: unsupported domain shader output component type");
+      for (unsigned row = 0; row < element.rows; row++) {
+        auto user = element_attribute_name(element, row);
+        if (auto err = user.takeError())
+          return err;
+        auto const mesh_vertex_data_index = num_mesh_vertex_data++;
+        shader->func_signature.DefineMeshVertexOutput(
+            air::OutputMeshData{.user = *user, .type = *msl_type, .index = mesh_vertex_data_index}
+        );
+        mesh_output_handlers.push_back([=, type = *msl_type](MeshOutputContext &output, IOHelper &io) {
+          io.PopulateMeshOutputVertexData(reg, mask, mesh_vertex_data_index, output.vertex_id, type);
+        });
+      }
+      break;
+    }
+    case SemanticKind::RenderTargetArrayIndex: {
+      shader->func_signature.DefineMeshPrimitiveOutput(air::OutputRenderTargetArrayIndex{});
+      mesh_output_handlers.push_back([=](MeshOutputContext &output, IOHelper &io) {
+        io.PopulateMeshOutputRenderTargetArrayIndex(reg, mask, output.primitive_id);
+      });
+      break;
+    }
+    case SemanticKind::ViewPortArrayIndex: {
+      shader->func_signature.DefineMeshPrimitiveOutput(air::OutputViewportArrayIndex{});
+      mesh_output_handlers.push_back([=](MeshOutputContext &output, IOHelper &io) {
+        io.PopulateMeshOutputViewportArrayIndex(reg, mask, output.primitive_id);
+      });
+      break;
+    }
+    case SemanticKind::ClipDistance:
+    case SemanticKind::CullDistance: {
+      bool clip = element.semantic_kind == SemanticKind::ClipDistance;
+      auto &scalars = clip ? shader->clip_distance_scalars : shader->cull_distance_scalars;
+      for (unsigned row = 0; row < element.rows; row++) {
+        auto user = element_attribute_name(element, row);
+        if (auto err = user.takeError())
+          return err;
+        for (uint32_t component = 0; component < element.cols; component++) {
+          scalars.push_back({(uint8_t)(element.start_col + component), (uint8_t)(reg + row)});
+        }
+        auto const mesh_vertex_data_index = num_mesh_vertex_data++;
+        shader->func_signature.DefineMeshVertexOutput(
+            air::OutputMeshData{.user = *user, .type = air::msl_float4, .index = mesh_vertex_data_index}
+        );
+        mesh_output_handlers.push_back([=, reg = reg + row](MeshOutputContext &output, IOHelper &io) {
+          io.PopulateMeshOutputVertexData(reg, mask, mesh_vertex_data_index, output.vertex_id, air::msl_float4);
+        });
+      }
+      break;
+    }
+    default:
+      return unsupported(
+          "dxil: unsupported domain shader output semantic " + std::to_string((uint32_t)element.semantic_kind)
+      );
+    }
+  }
+  shader->max_output_register = max_output_register;
+  return llvm::Error::success();
+}
+
+llvm::Error
 initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
   using namespace microsoft;
 
@@ -690,9 +869,23 @@ initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
     shader->shader_type = microsoft::D3D10_SB_GEOMETRY_SHADER;
     if (auto err = initialize_geometry_signature(shader))
       return err;
+  } else if (info.shader_model.stage == "hs") {
+    shader->shader_type = microsoft::D3D11_SB_HULL_SHADER;
+    if (auto err = initialize_hull_signature(shader))
+      return err;
+  } else if (info.shader_model.stage == "ds") {
+    shader->shader_type = microsoft::D3D11_SB_DOMAIN_SHADER;
+    if (auto err = initialize_domain_signature(shader))
+      return err;
   } else {
     return llvm::make_error<UnsupportedFeature>("dxil: unsupported shader stage " + std::string(stage));
   }
+
+  llvm::SmallVector<const llvm::Function *, 2> functions;
+  if (entry.function)
+    functions.push_back(entry.function);
+  else if (shader->shader_type != microsoft::D3D11_SB_HULL_SHADER)
+    return llvm::make_error<UnsupportedFeature>("dxil: entry point is null for stage " + std::string(stage));
 
   auto &func_signature = shader->func_signature;
   for (auto &property : entry.properties) {
@@ -715,6 +908,25 @@ initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
       shader->gs_output_topology = (microsoft::D3D10_SB_PRIMITIVE_TOPOLOGY)property.gs_state.output_topology;
       shader->gs_instance_count = property.gs_state.instance_count;
       shader->gs_max_vertex_output = property.gs_state.max_vertex_count;
+      break;
+    }
+    case EntryPropertyTag::HSState: {
+      shader->tessellation_domain = (microsoft::D3D11_SB_TESSELLATOR_DOMAIN)property.hs_state.domain;
+      shader->max_tesselation_factor = std::clamp(property.hs_state.max_tessellation_factor, 1.0f, 64.0f);
+      shader->input_control_point_count = property.hs_state.input_control_point_count;
+      shader->output_control_point_count = property.hs_state.output_control_point_count;
+      shader->hull_maximum_threads_per_patch =
+          std::max(shader->input_control_point_count, shader->output_control_point_count);
+      shader->tessellation_partition = (microsoft::D3D11_SB_TESSELLATOR_PARTITIONING)property.hs_state.partitioning;
+      shader->tessellator_output_primitive =
+          (microsoft::D3D11_SB_TESSELLATOR_OUTPUT_PRIMITIVE)property.hs_state.output_primitive;
+      functions.push_back(property.hs_state.patch_constant_function);
+      shader->shader_info.no_control_point_phase_passthrough = !!entry.function;
+      break;
+    }
+    case EntryPropertyTag::DSState: {
+      shader->tessellation_domain = (microsoft::D3D11_SB_TESSELLATOR_DOMAIN)property.ds_state.domain;
+      // shader->input_control_point_count = property.ds_state.input_control_point_count; // not used
       break;
     }
     default:
@@ -782,7 +994,8 @@ initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
     }
   }
 
-  for (auto &bb : *entry.function) {
+  // clang-format off
+  for (auto func : functions) { for (auto &bb : *func) {
     for (auto &inst : bb) {
       auto *ci = dyn_cast<CallInst>(&inst);
       if (!ci)
@@ -872,13 +1085,22 @@ initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
         });
         break;
       }
+      case kOpLoadOutputControlPoint:
+        shader_info.output_control_point_read = true;
+        break;
       default:
         break;
       }
     }
-  }
+  }}
+  // clang-format on
 
   return llvm::Error::success();
+}
+
+uint32_t
+next_pow2(uint32_t x) {
+  return x == 1 ? 1 : 1 << (32 - __builtin_clz(x - 1));
 }
 
 int
@@ -922,6 +1144,50 @@ initialize(
       pRefl->GeometryShader.GSPassThrough = ~0u;
       pRefl->GeometryShader.Primitive = shader->gs_input_primitive;
       break;
+    case microsoft::D3D11_SB_HULL_SHADER: {
+      auto threads_per_patch = next_pow2(shader->hull_maximum_threads_per_patch);
+      if (threads_per_patch > 32) {
+        errorOut << "Threadgroup size of tessellation pipeline is too large.";
+        SM50_RETURN_ERROR(errorObj, ppError, 1);
+      }
+      auto patch_per_group = 32 / threads_per_patch;
+      float max_tesselation_factor = shader->max_tesselation_factor;
+
+      while (estimate_payload_size(shader.get(), max_tesselation_factor, patch_per_group) > 16384) {
+        if (patch_per_group == 1) {
+          if (max_tesselation_factor > 1.0f) {
+            max_tesselation_factor = std::max(max_tesselation_factor - 2.0f, 1.0f);
+          } else {
+            errorOut << "Payload size of tessellation pipeline is too large.";
+            SM50_RETURN_ERROR(errorObj, ppError, 1);
+          }
+        } else {
+          patch_per_group = patch_per_group >> 1;
+        }
+      }
+      shader->hull_maximum_threads_per_patch = 32 / patch_per_group;
+      shader->max_tesselation_factor = max_tesselation_factor;
+      pRefl->ThreadsPerPatch = shader->hull_maximum_threads_per_patch;
+      pRefl->Tessellator = {
+          .Partition = shader->tessellation_partition,
+          .MaxFactor = shader->max_tesselation_factor,
+          .OutputPrimitive = (MTL_TESSELLATOR_OUTPUT_PRIMITIVE)shader->tessellator_output_primitive,
+      };
+      break;
+    }
+    case microsoft::D3D11_SB_DOMAIN_SHADER: {
+      uint32_t max_potential_tess_factor = 1;
+
+      for (int tess_factor = 1; tess_factor <= 64; tess_factor++) {
+        auto x = estimate_mesh_size(shader.get(), tess_factor);
+        if (x > 32768)
+          break;
+        max_potential_tess_factor = tess_factor;
+      }
+
+      pRefl->PostTessellator = {.MaxPotentialTessFactor = max_potential_tess_factor};
+      break;
+    }
     default:
       break;
     }

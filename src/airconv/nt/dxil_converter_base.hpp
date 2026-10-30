@@ -41,6 +41,7 @@ private:
   llvm::air::AIRBuilder &air;
   const EntryPoint &entry;
 
+  const llvm::Function *pcf_ = nullptr;
   llvm::DenseMap<const llvm::Value *, llvm::Value *> value_map_;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::BasicBlock *> block_map_;
   llvm::DenseMap<llvm::Type *, llvm::Type *> type_map_;
@@ -89,17 +90,17 @@ private:
   llvm::Expected<llvm::Value *> EmitRawBufferLoad(llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitLegacyF16ToF32(llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitLegacyF32ToF16(llvm::CallInst &Call);
-  llvm::Expected<llvm::Value *> EmitUnaryBits(llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitUnaryBits(const llvm::CallInst &Call, uint32_t OpId);
   llvm::Expected<llvm::Value *> EmitBarrier(llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitLoadInput(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitStoreOutput(const llvm::CallInst &Call);
-  llvm::Expected<llvm::Value *> EmitSample(const llvm::CallInst &Call, llvm::StringRef Op);
-  llvm::Expected<llvm::Value *> EmitGather(const llvm::CallInst &Call, llvm::StringRef Op);
-  llvm::Expected<llvm::Value *> EmitUnary(const llvm::CallInst &Call);
-  llvm::Expected<llvm::Value *> EmitBinary(const llvm::CallInst &Call);
-  llvm::Expected<llvm::Value *> EmitTertiary(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitSample(const llvm::CallInst &Call, uint32_t OpId);
+  llvm::Expected<llvm::Value *> EmitGather(const llvm::CallInst &Call, uint32_t OpId);
+  llvm::Expected<llvm::Value *> EmitUnary(const llvm::CallInst &Call, uint32_t OpId);
+  llvm::Expected<llvm::Value *> EmitBinary(const llvm::CallInst &Call, uint32_t OpId);
+  llvm::Expected<llvm::Value *> EmitTertiary(const llvm::CallInst &Call, uint32_t OpId);
   llvm::Expected<llvm::Value *> EmitDotProduct(const llvm::CallInst &Call, unsigned Dimension);
-  llvm::Expected<llvm::Value *> EmitIsSpecialFloat(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitIsSpecialFloat(const llvm::CallInst &Call, uint32_t OpId);
   llvm::Expected<llvm::Value *> EmitAtomicRMW(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitAtomicCmpXchg(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitDiscard(const llvm::CallInst &Call);
@@ -107,6 +108,10 @@ private:
   llvm::Expected<llvm::Value *> EmitGetTextureSamplePos(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitReadLaneAt(const llvm::CallInst &Call, bool Quad);
   llvm::Expected<llvm::Value *> EmitQuadOp(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitBinaryWithTwoOutputs(const llvm::CallInst &Call, uint32_t OpId);
+  llvm::Expected<llvm::Value *> EmitStorePatchConstant(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitLoadOutputControlPoint(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitLoadPatchConstant(const llvm::CallInst &Call);
 };
 
 } // namespace dxmt::dxil
