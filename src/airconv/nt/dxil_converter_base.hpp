@@ -112,6 +112,7 @@ private:
   llvm::Expected<llvm::Value *> EmitStorePatchConstant(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitLoadOutputControlPoint(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitLoadPatchConstant(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitEval(const llvm::CallInst &Call, uint32_t OpId);
 };
 
 } // namespace dxmt::dxil
