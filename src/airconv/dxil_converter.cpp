@@ -1072,6 +1072,7 @@ initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
           return err;
         break;
       case kOpTexture2DMSGetSamplePosition:
+      case kOpRenderTargetGetSamplePosition:
         shader_info.use_samplepos = true;
         break;
       case kOpCoverage: {
