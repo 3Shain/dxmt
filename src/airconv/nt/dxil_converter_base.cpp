@@ -964,6 +964,18 @@ Converter::EmitDxilOp(CallInst &Call) {
                                              : ctx.resource.coverage_mask_arg;
   case kOpRenderTargetGetSampleCount:
     return air.CreateGetNumSamples();
+  case kOpRenderTargetGetSamplePosition: {
+    auto Index = Get(Call.getOperand(1));
+    if (!Index)
+      return Index.takeError();
+    auto Position = GetSamplePos(air.CreateGetNumSamples(), *Index);
+    return ir.CreateInsertValue(
+        ir.CreateInsertValue(
+            llvm::PoisonValue::get(MapType(Call.getType())), ir.CreateExtractElement(Position, 0ull), {0ull}
+        ),
+        ir.CreateExtractElement(Position, 1ull), {1ull}
+    );
+  }
   case kOpEmitStream: {
     ctx.resource.call_emit();
     return nullptr;
