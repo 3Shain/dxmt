@@ -398,13 +398,35 @@ initialize_pixel_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
         auto user = element_attribute_name(element, row);
         if (auto err = user.takeError())
           return err;
-        shader->signature_handlers.push_back([=, user = *user, reg = reg + row](SignatureContext &ctx) {
+        shader->signature_handlers.push_back([=, user = *user, reg = reg + row,
+                                              interpolation = *interpolation](SignatureContext &ctx) {
+          bool pull_mode = bool(ctx.pull_mode_reg_mask & (1 << i)) && interpolation != air::Interpolation::flat;
           uint32_t arg = ctx.func_signature.DefineInput(
               air::InputFragmentStageIn{
-                  .user = user, .type = *msl_type, .interpolation = *interpolation, .pull_mode = false
+                  .user = user, .type = *msl_type, .interpolation = interpolation, .pull_mode = pull_mode
               }
           );
-          ctx.prologue.Add([=](IOHelper &io) -> llvm::Error { return io.InitializeInput(arg, reg, mask); });
+          if (pull_mode) {
+            ctx.resource.interpolant_map[reg] = interpolant_descriptor{
+                arg, (interpolation == air::Interpolation::sample_perspective ||
+                      interpolation == air::Interpolation::center_perspective ||
+                      interpolation == air::Interpolation::centroid_perspective)
+            };
+            uint32_t sampleidx_at = ~0u;
+            switch (interpolation) {
+            case Interpolation::sample_perspective:
+            case Interpolation::sample_no_perspective:
+              sampleidx_at = ctx.func_signature.DefineInput(air::InputSampleIndex{});
+              break;
+            default:
+              break;
+            }
+            ctx.prologue.Add([=](IOHelper &io) -> llvm::Error {
+              return io.InitializeInterpolatedInput(arg, reg, mask, interpolation, sampleidx_at);
+            });
+          } else {
+            ctx.prologue.Add([=](IOHelper &io) -> llvm::Error { return io.InitializeInput(arg, reg, mask); });
+          }
         });
       }
       break;
@@ -1089,6 +1111,17 @@ initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
       case kOpLoadOutputControlPoint:
         shader_info.output_control_point_read = true;
         break;
+      case kOpEvalSnapped:
+      case kOpEvalCentroid:
+      case kOpEvalSampleIndex: {
+        auto reg_index = asU32(ci->getArgOperand(1));
+        if (!reg_index)
+          return unsupported("dxil: non-constant eval index");
+        if (reg_index.value() > 31)
+          return unsupported("dxil: eval index larger than 31");
+        shader_info.pull_mode_reg_mask |= (1 << reg_index.value());
+        break;
+      }
       default:
         break;
       }

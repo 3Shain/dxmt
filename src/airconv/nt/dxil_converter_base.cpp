@@ -1024,6 +1024,10 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitLoadPatchConstant(Call);
   case kOpViewID:
     return Constant::getNullValue(MapType(Call.getType()));
+  case kOpEvalCentroid:
+  case kOpEvalSampleIndex:
+  case kOpEvalSnapped:
+    return EmitEval(Call, OpId);
   default:
     break;
   }
@@ -2775,6 +2779,66 @@ Converter::EmitLoadPatchConstant(const CallInst &Call) {
     return ir.CreateBitCast(ir.CreateTrunc(Value, ir.getInt16Ty()), ir.getHalfTy());
   }
   return unsupported("dxil: unsupported loadPatchConstant type");
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitEval(const CallInst &Call, uint32_t OpId) {
+  auto Element = asU32(Call.getArgOperand(1));
+  auto Row = asU32(Call.getArgOperand(2));
+  auto Component = asU32(Call.getArgOperand(3));
+  if (!Element || !Row || !Component)
+    return unsupported("dxil: non-constant eval index");
+  if (*Element >= entry.inputs.size())
+    return unsupported("dxil: eval element index out of range");
+  const auto &signature = entry.inputs[*Element];
+  if (signature.start_row < 0 || signature.start_col < 0)
+    return unsupported("dxil: eval signature element is not mapped");
+
+  auto *Type = Call.getType();
+  uint32_t Reg = (uint32_t)signature.start_row + *Row;
+  uint32_t Lane = (uint32_t)signature.start_col + *Component;
+  if (Lane > 3)
+    return unsupported("dxil: eval component out of range");
+
+  auto iter = ctx.resource.interpolant_map.find(Reg);
+  if (iter == ctx.resource.interpolant_map.end())
+    return unsupported("dxil: no eval interpolant");
+
+  if (Type->isFloatTy() || Type->isHalfTy()) {
+    auto &[ArgIndex, Perspective] = iter->second;
+
+    if (OpId == kOpEvalSampleIndex) {
+      auto SampleIndex = Get(Call.getArgOperand(4));
+      if (!SampleIndex)
+        return SampleIndex.takeError();
+      return ir.CreateExtractElement(
+          air.CreateInterpolateAtSample(ctx.function->getArg(ArgIndex), *SampleIndex, Perspective), Lane
+      );
+    } else if (OpId == kOpEvalSnapped) {
+      auto X = Get(Call.getArgOperand(4));
+      if (!X)
+        return X.takeError();
+      auto Y = Get(Call.getArgOperand(5));
+      if (!Y)
+        return Y.takeError();
+      auto Truncated = ir.CreateAnd(
+          ir.CreateAdd(
+              ir.CreateInsertElement(ir.CreateInsertElement(PoisonValue::get(air.getIntTy(2)), *X, 0ull), *Y, 1ull),
+              air.getInt2(8, 8)
+          ),
+          air.getInt2(0b1111, 0b1111)
+      );
+      auto OffsetFloat = ir.CreateFMul(air.CreateConvertToFloat(Truncated), air.getFloat2(1.0f / 16.0f, 1.0f / 16.0f));
+      return ir.CreateExtractElement(
+          air.CreateInterpolateAtOffset(ctx.function->getArg(ArgIndex), OffsetFloat, Perspective), Lane
+      );
+    } else {
+      return ir.CreateExtractElement(
+          air.CreateInterpolateAtCentroid(ctx.function->getArg(ArgIndex), Perspective), Lane
+      );
+    }
+  }
+  return unsupported("dxil: unsupported eval type");
 }
 
 } // namespace dxmt::dxil
