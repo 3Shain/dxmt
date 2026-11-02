@@ -103,7 +103,7 @@ public:
       if (this->desc.Depth > 1)
         return E_INVALIDARG;
     }
-    if (Index > subresources_.size())
+    if (Index >= subresources_.size())
       return E_INVALIDARG;
     auto surface = Com(new D3D11DXGISurface(this, Index));
     *ppSurface = surface.ref();
