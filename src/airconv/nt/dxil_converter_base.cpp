@@ -1010,6 +1010,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitLoadOutputControlPoint(Call);
   case kOpLoadPatchConstant:
     return EmitLoadPatchConstant(Call);
+  case kOpViewID:
+    return Constant::getNullValue(MapType(Call.getType()));
   default:
     break;
   }
