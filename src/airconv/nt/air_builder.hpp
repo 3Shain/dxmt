@@ -280,6 +280,8 @@ public:
 
   CallInst *CreateQuadShuffleXor(Value *ShuffleValue, uint16_t Mask);
 
+  CallInst *CreateSIMDAllAny(Value *Expr, bool Any);
+
   /* Math */
 
   Value *CreateFMA(Value *X, Value *Y, Value *Z);

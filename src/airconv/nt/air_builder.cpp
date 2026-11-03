@@ -1277,6 +1277,28 @@ AIRBuilder::CreateQuadShuffleXor(Value *ShuffleValue, uint16_t Mask) {
   return builder.CreateCall(Fn, Ops);
 }
 
+CallInst *
+AIRBuilder::CreateSIMDAllAny(Value *Expr, bool Any) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back(builder.getInt1Ty());
+  Ops.push_back(Expr);
+
+  auto Fn = getModule()->getOrInsertFunction(
+      Any ? "air.simd_any" : "air.simd_all", FunctionType::get(builder.getInt1Ty(), Tys, false), Attrs
+  );
+
+  return builder.CreateCall(Fn, Ops);
+}
+
 Value *
 AIRBuilder::CreateFMA(Value *X, Value *Y, Value *Z) {
   if (!X->getType()->getScalarType()->isFloatingPointTy()) {
