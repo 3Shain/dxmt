@@ -282,6 +282,8 @@ public:
 
   CallInst *CreateSIMDAllAny(Value *Expr, bool Any);
 
+  CallInst *CreateSIMDIsFirst();
+
   /* Math */
 
   Value *CreateFMA(Value *X, Value *Y, Value *Z);

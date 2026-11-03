@@ -1035,6 +1035,8 @@ Converter::EmitDxilOp(CallInst &Call) {
       return Expr.takeError();
     return air.CreateSIMDAllAny(*Expr, OpId == kOpWaveAnyTrue);
   }
+  case kOpWaveIsFirstLane:
+    return air.CreateSIMDIsFirst();
   default:
     break;
   }
