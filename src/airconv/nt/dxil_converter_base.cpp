@@ -1086,6 +1086,14 @@ Converter::EmitDxilOp(CallInst &Call) {
         ir.CreateExtractElement(Result, 1ull), {1ull}
     );
   }
+  case kOpWaveReadLaneFirst: {
+    auto Operand = Get(Call.getOperand(1));
+    if (!Operand)
+      return Operand.takeError();
+    if (Operand.get()->getType()->getScalarType()->isIntOrIntVectorTy(64))
+      return unsupported("dxil: 64-bit wave ops not supported");
+    return air.CreateSIMDBroadcastFirst(*Operand);
+  }
   default:
     break;
   }

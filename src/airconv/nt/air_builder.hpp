@@ -298,6 +298,8 @@ public:
 
   CallInst *CreateSIMDBallot(Value *Cond);
 
+  CallInst *CreateSIMDBroadcastFirst(Value *Operand);
+
   /* Math */
 
   Value *CreateFMA(Value *X, Value *Y, Value *Z);

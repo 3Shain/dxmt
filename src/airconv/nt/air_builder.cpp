@@ -1360,6 +1360,22 @@ AIRBuilder::CreateSIMDBallot(Value *Cond) {
   );
 }
 
+CallInst *
+AIRBuilder::CreateSIMDBroadcastFirst(Value *Operand) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+  auto OperandType = Operand->getType();
+
+  std::string FnName = "air.simd_broadcast_first";
+  FnName += getTypeOverloadSuffix(OperandType, Signedness::Unsigned);
+  auto Fn = getModule()->getOrInsertFunction(FnName, llvm::FunctionType::get(OperandType, {OperandType}, false), Attrs);
+  return builder.CreateCall(Fn, {Operand});
+}
+
 Value *
 AIRBuilder::CreateFMA(Value *X, Value *Y, Value *Z) {
   if (!X->getType()->getScalarType()->isFloatingPointTy()) {
