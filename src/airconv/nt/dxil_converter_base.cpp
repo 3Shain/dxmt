@@ -1094,6 +1094,8 @@ Converter::EmitDxilOp(CallInst &Call) {
       return unsupported("dxil: 64-bit wave ops not supported");
     return air.CreateSIMDBroadcastFirst(*Operand);
   }
+  case kOpWaveActiveAllEqual:
+    return EmitWaveActiveAllEqual(Call);
   default:
     break;
   }
@@ -2905,6 +2907,49 @@ Converter::EmitEval(const CallInst &Call, uint32_t OpId) {
     }
   }
   return unsupported("dxil: unsupported eval type");
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitWaveActiveAllEqual(const CallInst &Call) {
+  auto Operand = Get(Call.getArgOperand(1));
+  if (!Operand)
+    return Operand.takeError();
+
+  if (Operand.get()->getType()->getScalarType()->isIntOrIntVectorTy(64))
+    return unsupported("dxil: 64-bit wave ops not supported");
+
+  auto *Value = *Operand;
+
+  if (Value->getType()->isFPOrFPVectorTy()) {
+    if (auto TyVec = dyn_cast<FixedVectorType>(Value->getType())) {
+      if (TyVec->getElementType()->isFloatTy()) {
+        Value = ir.CreateBitCast(Value, FixedVectorType::get(ir.getInt32Ty(), TyVec->getNumElements()));
+      } else if (TyVec->getElementType()->isHalfTy()) {
+        Value = ir.CreateBitCast(Value, FixedVectorType::get(ir.getInt16Ty(), TyVec->getNumElements()));
+      } else {
+        return unsupported("dxil: unhandled floating point type");
+      }
+    } else if (Value->getType()->isFloatTy()) {
+      Value = ir.CreateBitCast(Value, ir.getInt32Ty());
+    } else if (Value->getType()->isHalfTy()) {
+      Value = ir.CreateBitCast(Value, ir.getInt16Ty());
+    } else {
+      return unsupported("dxil: unhandled floating point type");
+    }
+  }
+
+  llvm::Value *ValueFirst = air.CreateSIMDBroadcastFirst(Value);
+
+  auto *Result = ir.CreateICmpEQ(Value, ValueFirst);
+  if (auto TyVec = dyn_cast<FixedVectorType>(Result->getType())) {
+    llvm::Value *Ret = Constant::getNullValue(Result->getType());
+    for (unsigned i = 0; i < TyVec->getNumElements(); i++) {
+      Ret = ir.CreateInsertElement(Ret, air.CreateSIMDAllAny(ir.CreateExtractElement(Result, i), false), i);
+    }
+    return Ret;
+  } else {
+    return air.CreateSIMDAllAny(Result, false);
+  }
 }
 
 } // namespace dxmt::dxil
