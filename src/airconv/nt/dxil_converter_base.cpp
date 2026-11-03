@@ -1054,6 +1054,15 @@ Converter::EmitDxilOp(CallInst &Call) {
         (AIRBuilder::SIMDOp)(AIRBuilder::simd_sum + *Op), *Operand, !*Sign, OpId == kOpWavePrefixOp
     );
   }
+  case kOpWaveAllBitCount:
+  case kOpWavePrefixBitCount: {
+    auto Expr = Get(Call.getOperand(1));
+    if (!Expr)
+      return Expr.takeError();
+    return air.CreateSIMDOp(
+        AIRBuilder::simd_sum, ir.CreateZExt(*Expr, ir.getInt32Ty()), false, OpId == kOpWavePrefixBitCount
+    );
+  }
   default:
     break;
   }
