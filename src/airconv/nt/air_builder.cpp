@@ -1343,6 +1343,23 @@ AIRBuilder::CreateSIMDOp(SIMDOp Op, Value *Operand, bool Signed, bool Prefix, bo
   return builder.CreateCall(Fn, {Operand});
 }
 
+CallInst *
+AIRBuilder::CreateSIMDBallot(Value *Cond) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  return builder.CreateCall(
+      getModule()->getOrInsertFunction(
+          "air.simd_ballot", FunctionType::get(builder.getInt64Ty(), {builder.getInt1Ty()}, false), Attrs
+      ),
+      {Cond}
+  );
+}
+
 Value *
 AIRBuilder::CreateFMA(Value *X, Value *Y, Value *Z) {
   if (!X->getType()->getScalarType()->isFloatingPointTy()) {
