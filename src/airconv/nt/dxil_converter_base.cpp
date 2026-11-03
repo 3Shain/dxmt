@@ -1163,6 +1163,18 @@ Converter::EmitThreadId(CallInst &Call, ThreadBuiltin Kind) {
   }
 }
 
+llvm::Value *
+Converter::CreateGEPInt32WithBoundCheck(dxbc::BufferDescriptor &Buffer, llvm::Value *Index) {
+  auto Addr = ir.CreateGEP(ir.getInt32Ty(), Buffer.Pointer, {Index});
+  if (!Buffer.Metadata) {
+    return Addr;
+  }
+  auto ByteLength = ir.CreateTrunc(Buffer.Metadata, air.getIntTy());
+  return ir.CreateSelect(
+      ir.CreateICmpULT(Index, ir.CreateLShr(ByteLength, 2)), Addr, llvm::Constant::getNullValue(Addr->getType())
+  );
+}
+
 llvm::Expected<llvm::Value *>
 Converter::EmitBufferStore(CallInst &Call) {
   auto Handle = ResolveHandleOperand(Call.getArgOperand(1));
@@ -1189,9 +1201,14 @@ Converter::EmitBufferStore(CallInst &Call) {
         return component.takeError();
       Value = ir.CreateInsertElement(Value, BitcastIfNeeded(*component, TyElement), (uint64_t)i);
     }
+    auto *Address = *Index;
+    auto *OOB = ir.CreateICmpUGE(Address, ir.CreateTrunc(ir.CreateLShr(Texture->Metadata, 32uLL), air.getIntTy()));
+    Address = ir.CreateAdd(Address, ir.CreateTrunc(Texture->Metadata, air.getIntTy()));
     bool Coherent = Texture->GlobalCoherent && SupportsMemoryCoherency();
     air.CreateWrite(
-        MakeTexture(*Texture), Texture->ResourceHandle, *Index, nullptr, nullptr, air.getInt(0), Value, Coherent
+        MakeTexture(*Texture), Texture->ResourceHandle,
+        ir.CreateSelect(OOB, llvm::ConstantInt::getAllOnesValue(Address->getType()), Address), nullptr, nullptr,
+        air.getInt(0), Value, Coherent
     );
     return (llvm::Value *)nullptr;
   }
@@ -1218,7 +1235,7 @@ Converter::EmitBufferStore(CallInst &Call) {
     if (!Component)
       return Component.takeError();
     Value *Word = BitcastIfNeeded(*Component, ir.getInt32Ty());
-    auto *Ptr = ir.CreateGEP(ir.getInt32Ty(), Buffer->Pointer, {ir.CreateAdd(Base, ir.getInt32(i))});
+    auto *Ptr = CreateGEPInt32WithBoundCheck(*Buffer, ir.CreateAdd(Base, ir.getInt32(i)));
     if (Coherent)
       air.CreateDeviceCoherentStore(Word, Ptr);
     else
@@ -1239,9 +1256,14 @@ Converter::EmitBufferLoad(CallInst &Call) {
 
   auto Texture = GetTextureDescriptor(*Handle);
   if (Texture) {
+    auto *Address = *Index;
+    auto *OOB = ir.CreateICmpUGE(Address, ir.CreateTrunc(ir.CreateLShr(Texture->Metadata, 32uLL), air.getIntTy()));
+    Address = ir.CreateAdd(Address, ir.CreateTrunc(Texture->Metadata, air.getIntTy()));
     bool Coherent = Texture->GlobalCoherent && SupportsMemoryCoherency();
     auto [Value, Residency] = air.CreateRead(
-        MakeTexture(*Texture), Texture->ResourceHandle, *Index, nullptr, nullptr, air.getInt(0), Coherent
+        MakeTexture(*Texture), Texture->ResourceHandle,
+        ir.CreateSelect(OOB, llvm::ConstantInt::getAllOnesValue(Address->getType()), Address), nullptr, nullptr,
+        air.getInt(0), Coherent
     );
     return BuildResRet(Call, Value, Residency);
   }
@@ -1263,7 +1285,7 @@ Converter::EmitBufferLoad(CallInst &Call) {
 
   Value *Words = Constant::getNullValue(FixedVectorType::get(ir.getInt32Ty(), 4));
   for (unsigned i = 0; i < 4; i++) {
-    auto *Ptr = ir.CreateGEP(ir.getInt32Ty(), Buffer->Pointer, {ir.CreateAdd(Base, ir.getInt32(i))});
+    auto *Ptr = CreateGEPInt32WithBoundCheck(*Buffer, ir.CreateAdd(Base, ir.getInt32(i)));
     Value *Word = Coherent ? (Value *)air.CreateDeviceCoherentLoad(ir.getInt32Ty(), Ptr)
                            : (Value *)ir.CreateLoad(ir.getInt32Ty(), Ptr);
     Words = ir.CreateInsertElement(Words, Word, (uint64_t)i);
@@ -2407,7 +2429,11 @@ Converter::EmitAtomicRMW(const CallInst &Call) {
   if (!Address)
     return Address.takeError();
   auto [Position, Slice, Unused] = *Address;
-
+  if (Texture->ResourceKindLogical == Texture::texture_buffer) {
+    auto *OOB = ir.CreateICmpUGE(Position, ir.CreateTrunc(ir.CreateLShr(Texture->Metadata, 32uLL), air.getIntTy()));
+    Position = ir.CreateAdd(Position, ir.CreateTrunc(Texture->Metadata, air.getIntTy()));
+    Position = ir.CreateSelect(OOB, llvm::ConstantInt::getAllOnesValue(Position->getType()), Position);
+  }
   auto *TyVector = FixedVectorType::get(GetTextureSampleType(Texture->SampleType), 4);
   auto *Value = ir.CreateInsertElement(PoisonValue::get(TyVector), *NewValue, 0ull);
   auto Result = air.CreateAtomicRMW(MakeTexture(*Texture), Texture->ResourceHandle, BinOp, Position, Value, Slice);
@@ -2468,6 +2494,11 @@ Converter::EmitAtomicCmpXchg(const CallInst &Call) {
   if (!Address)
     return Address.takeError();
   auto [Position, Slice, Unused] = *Address;
+  if (Texture->ResourceKindLogical == Texture::texture_buffer) {
+    auto *OOB = ir.CreateICmpUGE(Position, ir.CreateTrunc(ir.CreateLShr(Texture->Metadata, 32uLL), air.getIntTy()));
+    Position = ir.CreateAdd(Position, ir.CreateTrunc(Texture->Metadata, air.getIntTy()));
+    Position = ir.CreateSelect(OOB, llvm::ConstantInt::getAllOnesValue(Position->getType()), Position);
+  }
   auto *TyElement = GetTextureSampleType(Texture->SampleType);
   auto *TyVector = FixedVectorType::get(TyElement, 4);
   auto *Cmp = ir.CreateInsertElement(PoisonValue::get(TyVector), *Compare, 0ull);
