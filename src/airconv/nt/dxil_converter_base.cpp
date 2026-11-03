@@ -1028,6 +1028,13 @@ Converter::EmitDxilOp(CallInst &Call) {
   case kOpEvalSampleIndex:
   case kOpEvalSnapped:
     return EmitEval(Call, OpId);
+  case kOpWaveAllTrue:
+  case kOpWaveAnyTrue: {
+    auto Expr = Get(Call.getOperand(1));
+    if (!Expr)
+      return Expr.takeError();
+    return air.CreateSIMDAllAny(*Expr, OpId == kOpWaveAnyTrue);
+  }
   default:
     break;
   }
