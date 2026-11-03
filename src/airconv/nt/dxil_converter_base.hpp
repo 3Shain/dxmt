@@ -71,6 +71,7 @@ private:
   );
   llvm::Type *GetTextureSampleType(llvm::air::Texture::SampleType SampleType);
   llvm::Value *GetSamplePos(llvm::Value *SampleCount, llvm::Value *Index);
+  llvm::Value *CreateGEPInt32WithBoundCheck(dxbc::BufferDescriptor &Buffer, llvm::Value *Index);
 
   llvm::Error TranslateTerminator(llvm::Instruction *Inst, llvm::BasicBlock *ReturnBB);
   llvm::Expected<llvm::Value *> TranslateInstruction(llvm::Instruction *Inst);
