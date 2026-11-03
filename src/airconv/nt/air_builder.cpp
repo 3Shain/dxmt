@@ -1299,6 +1299,20 @@ AIRBuilder::CreateSIMDAllAny(Value *Expr, bool Any) {
   return builder.CreateCall(Fn, Ops);
 }
 
+CallInst *
+AIRBuilder::CreateSIMDIsFirst() {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  return builder.CreateCall(
+      getModule()->getOrInsertFunction("air.simd_is_first", FunctionType::get(builder.getInt1Ty(), {}, false), Attrs)
+  );
+}
+
 Value *
 AIRBuilder::CreateFMA(Value *X, Value *Y, Value *Z) {
   if (!X->getType()->getScalarType()->isFloatingPointTy()) {
