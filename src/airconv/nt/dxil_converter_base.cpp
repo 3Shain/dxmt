@@ -1098,6 +1098,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitWaveActiveAllEqual(Call);
   case kOpMsad:
     return EmitMSAD(Call);
+  case kOpBfi:
+    return EmitBitfieldInsert(Call);
   default:
     break;
   }
@@ -2988,6 +2990,29 @@ Converter::EmitMSAD(const CallInst &Call) {
 
   auto Fn = air.getModule()->getOrInsertFunction(FnName, FunctionType::get((*Accum)->getType(), Tys, false), Attrs);
   return ir.CreateCall(Fn, Ops);
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitBitfieldInsert(const CallInst &Call) {
+  auto Src0 = Get(Call.getArgOperand(1));
+  if (!Src0)
+    return Src0.takeError();
+  auto Src1 = Get(Call.getArgOperand(2));
+  if (!Src1)
+    return Src1.takeError();
+  auto Src2 = Get(Call.getArgOperand(3));
+  if (!Src2)
+    return Src2.takeError();
+  auto Src3 = Get(Call.getArgOperand(4));
+  if (!Src3)
+    return Src3.takeError();
+
+  auto Width = ir.CreateAnd(*Src0, 0x1F);
+  auto Offset = ir.CreateAnd(*Src1, 0X1F);
+  auto Constant_1 = llvm::ConstantInt::get(Width->getType(), 1);
+  auto Bitmask = ir.CreateShl(ir.CreateSub(ir.CreateShl(Constant_1, Width), Constant_1), Offset);
+
+  return ir.CreateOr(ir.CreateAnd(ir.CreateShl(*Src2, Offset), Bitmask), ir.CreateAnd(*Src3, ir.CreateNot(Bitmask)));
 }
 
 } // namespace dxmt::dxil
