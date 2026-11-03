@@ -114,6 +114,7 @@ private:
   llvm::Expected<llvm::Value *> EmitLoadPatchConstant(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitEval(const llvm::CallInst &Call, uint32_t OpId);
   llvm::Expected<llvm::Value *> EmitWaveActiveAllEqual(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitMSAD(const llvm::CallInst &Call);
 };
 
 } // namespace dxmt::dxil

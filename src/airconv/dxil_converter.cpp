@@ -1122,6 +1122,9 @@ initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
         shader_info.pull_mode_reg_mask |= (1 << reg_index.value());
         break;
       }
+      case kOpMsad:
+        shader_info.use_msad = true;
+        break;
       default:
         break;
       }
