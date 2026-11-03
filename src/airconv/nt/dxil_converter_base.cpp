@@ -1074,6 +1074,18 @@ Converter::EmitDxilOp(CallInst &Call) {
       return unsupported("dxil: invalid waveActiveBit op");
     return air.CreateSIMDOp((AIRBuilder::SIMDOp)(AIRBuilder::simd_and + *Op), *Operand, false);
   }
+  case kOpWaveActiveBallot: {
+    auto Cond = Get(Call.getOperand(1));
+    if (!Cond)
+      return Cond.takeError();
+    auto Result = ir.CreateBitCast(air.CreateSIMDBallot(*Cond), air.getIntTy(2));
+    return ir.CreateInsertValue(
+        ir.CreateInsertValue(
+            llvm::ConstantAggregateZero::get(MapType(Call.getType())), ir.CreateExtractElement(Result, 0ull), {0ull}
+        ),
+        ir.CreateExtractElement(Result, 1ull), {1ull}
+    );
+  }
   default:
     break;
   }

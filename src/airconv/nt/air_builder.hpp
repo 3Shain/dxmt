@@ -296,6 +296,8 @@ public:
 
   CallInst *CreateSIMDOp(SIMDOp Op, Value *Operand, bool Signed, bool Prefix = false, bool InclusivePrefix = false);
 
+  CallInst *CreateSIMDBallot(Value *Cond);
+
   /* Math */
 
   Value *CreateFMA(Value *X, Value *Y, Value *Z);
