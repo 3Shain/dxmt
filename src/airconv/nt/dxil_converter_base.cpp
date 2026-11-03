@@ -1096,6 +1096,8 @@ Converter::EmitDxilOp(CallInst &Call) {
   }
   case kOpWaveActiveAllEqual:
     return EmitWaveActiveAllEqual(Call);
+  case kOpMsad:
+    return EmitMSAD(Call);
   default:
     break;
   }
@@ -2950,6 +2952,42 @@ Converter::EmitWaveActiveAllEqual(const CallInst &Call) {
   } else {
     return air.CreateSIMDAllAny(Result, false);
   }
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitMSAD(const CallInst &Call) {
+  auto Ref = Get(Call.getArgOperand(1));
+  if (!Ref)
+    return Ref.takeError();
+  auto Src = Get(Call.getArgOperand(2));
+  if (!Src)
+    return Src.takeError();
+  auto Accum = Get(Call.getArgOperand(3));
+  if (!Accum)
+    return Accum.takeError();
+
+  auto &Context = air.getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back((*Ref)->getType());
+  Ops.push_back(*Ref);
+  Tys.push_back((*Src)->getType());
+  Ops.push_back(*Src);
+  Tys.push_back((*Accum)->getType());
+  Ops.push_back(*Accum);
+
+  std::string FnName = "dxmt.msad";
+  FnName += air.getTypeOverloadSuffix((*Ref)->getType());
+
+  auto Fn = air.getModule()->getOrInsertFunction(FnName, FunctionType::get((*Accum)->getType(), Tys, false), Attrs);
+  return ir.CreateCall(Fn, Ops);
 }
 
 } // namespace dxmt::dxil
