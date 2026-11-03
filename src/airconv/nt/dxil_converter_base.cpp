@@ -1063,6 +1063,17 @@ Converter::EmitDxilOp(CallInst &Call) {
         AIRBuilder::simd_sum, ir.CreateZExt(*Expr, ir.getInt32Ty()), false, OpId == kOpWavePrefixBitCount
     );
   }
+  case kOpWaveActiveBit: {
+    auto Operand = Get(Call.getOperand(1));
+    if (!Operand)
+      return Operand.takeError();
+    if (Operand.get()->getType()->getScalarType()->isIntOrIntVectorTy(64))
+      return unsupported("dxil: 64-bit wave ops not supported");
+    auto Op = asU32(Call.getOperand(2));
+    if (!Op || *Op > 2)
+      return unsupported("dxil: invalid waveActiveBit op");
+    return air.CreateSIMDOp((AIRBuilder::SIMDOp)(AIRBuilder::simd_and + *Op), *Operand, false);
+  }
   default:
     break;
   }
