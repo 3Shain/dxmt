@@ -1313,6 +1313,36 @@ AIRBuilder::CreateSIMDIsFirst() {
   );
 }
 
+CallInst *
+AIRBuilder::CreateSIMDOp(SIMDOp Op, Value *Operand, bool Signed, bool Prefix, bool InclusivePrefix) {
+  static char const *FnNames[] = {
+      "sum", "product", "min", "max", "and", "or", "xor",
+  };
+
+  if (uint32_t(Op) >= std::size(FnNames)) {
+    debug << "invalid operation: unknown simd operation.\n";
+    return nullptr; // TODO
+  }
+
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+  auto OperandType = Operand->getType();
+
+  std::string FnName = "air.";
+  if (Prefix)
+    FnName += InclusivePrefix ? "simd_prefix_inclusive_" : "simd_prefix_exclusive_";
+  else
+    FnName += "simd_";
+  FnName += FnNames[Op];
+  FnName += getTypeOverloadSuffix(OperandType, Signed ? Signedness::Signed : Signedness::Unsigned);
+  auto Fn = getModule()->getOrInsertFunction(FnName, llvm::FunctionType::get(OperandType, {OperandType}, false), Attrs);
+  return builder.CreateCall(Fn, {Operand});
+}
+
 Value *
 AIRBuilder::CreateFMA(Value *X, Value *Y, Value *Z) {
   if (!X->getType()->getScalarType()->isFloatingPointTy()) {

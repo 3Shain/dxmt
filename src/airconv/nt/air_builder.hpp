@@ -284,6 +284,18 @@ public:
 
   CallInst *CreateSIMDIsFirst();
 
+  enum SIMDOp {
+    simd_sum,
+    simd_product,
+    simd_min,
+    simd_max,
+    simd_and,
+    simd_or,
+    simd_xor,
+  };
+
+  CallInst *CreateSIMDOp(SIMDOp Op, Value *Operand, bool Signed, bool Prefix = false, bool InclusivePrefix = false);
+
   /* Math */
 
   Value *CreateFMA(Value *X, Value *Y, Value *Z);
