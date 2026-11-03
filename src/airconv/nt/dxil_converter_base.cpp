@@ -1037,6 +1037,23 @@ Converter::EmitDxilOp(CallInst &Call) {
   }
   case kOpWaveIsFirstLane:
     return air.CreateSIMDIsFirst();
+  case kOpWaveActiveOp:
+  case kOpWavePrefixOp: {
+    auto Operand = Get(Call.getOperand(1));
+    if (!Operand)
+      return Operand.takeError();
+    if (Operand.get()->getType()->getScalarType()->isIntOrIntVectorTy(64))
+      return unsupported("dxil: 64-bit wave ops not supported");
+    auto Op = asU32(Call.getOperand(2));
+    if (!Op || *Op > 4)
+      return unsupported("dxil: invalid waveActiveOp op");
+    auto Sign = asU32(Call.getOperand(3));
+    if (!Sign || *Sign > 1)
+      return unsupported("dxil: invalid waveActiveOp sign");
+    return air.CreateSIMDOp(
+        (AIRBuilder::SIMDOp)(AIRBuilder::simd_sum + *Op), *Operand, !*Sign, OpId == kOpWavePrefixOp
+    );
+  }
   default:
     break;
   }
