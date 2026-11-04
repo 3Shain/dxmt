@@ -126,7 +126,7 @@ void handle_signature_vs(
       max_input_register = std::max(reg + 1, max_input_register);
       if (sig.mask() == 0) break;
       signature_handlers.push_back(
-        [=, type = (InputAttributeComponentType)sig.componentType(),
+        [=, type = sig.componentType(),
          name = sig.consistentAttributeName()](SignatureContext &ctx) {
           if (ctx.ia_layout) {
             for (unsigned i = 0; i < ctx.ia_layout->num_elements; i++) {
@@ -151,7 +151,7 @@ void handle_signature_vs(
             }
           } else {
             auto assigned_index = ctx.func_signature.DefineInput(
-              InputVertexStageIn{.attribute = reg, .type = type, .name = name}
+              InputVertexStageIn{.attribute = reg, .type = to_msl_type(type), .name = name}
             );
             ctx.prologue.Add([=](IOHelper &io) -> llvm::Error {
               return io.InitializeInput(assigned_index, reg, mask);
