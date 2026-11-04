@@ -597,16 +597,6 @@ initialize_geometry_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
       return unsupported("dxil: unsupported geometry shader input layout");
     uint32_t reg = element.start_row;
     max_input_register = std::max(max_input_register, reg + element.rows);
-
-    switch (element.semantic_kind) {
-    case SemanticKind::Position:
-    case SemanticKind::Arbitrary:
-      break;
-    default:
-      return unsupported(
-          "dxil: unsupported geometry shader input semantic " + std::to_string((uint32_t)element.semantic_kind)
-      );
-    }
   }
   shader->max_input_register = max_input_register;
 
