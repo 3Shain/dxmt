@@ -1100,6 +1100,8 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitMSAD(Call);
   case kOpBfi:
     return EmitBitfieldInsert(Call);
+  case kOpCBufferLoad:
+    return EmitCbufferLoad(Call);
   default:
     break;
   }
@@ -3044,6 +3046,32 @@ Converter::EmitBitfieldInsert(const CallInst &Call) {
   auto Bitmask = ir.CreateShl(ir.CreateSub(ir.CreateShl(Constant_1, Width), Constant_1), Offset);
 
   return ir.CreateOr(ir.CreateAnd(ir.CreateShl(*Src2, Offset), Bitmask), ir.CreateAnd(*Src3, ir.CreateNot(Bitmask)));
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitCbufferLoad(const CallInst &Call) {
+  auto Handle = ResolveHandleOperand(Call.getArgOperand(1));
+  if (!Handle)
+    return Handle.takeError();
+  auto Descriptor = ctx.binding.GetConstantBuffer(air, Handle->range_id, Handle->index);
+  if (!Descriptor)
+    return unsupported("dxil: no constant buffer descriptor for resource");
+  auto ByteOffset = Get(Call.getArgOperand(2));
+  if (!ByteOffset)
+    return ByteOffset.takeError();
+  auto Alignment = asU32(Call.getArgOperand(3));
+  if (!Alignment)
+    return unsupported("dxil: non-constant cbufferLoad alignment");
+
+  auto *TyResult = MapType(Call.getType());
+  auto AddrSpace = Descriptor->Pointer->getType()->getPointerAddressSpace();
+  auto *PtrCast = ir.CreatePointerCast(
+      ir.CreateGEP(
+          ir.getInt8Ty(), ir.CreatePointerCast(Descriptor->Pointer, ir.getInt8PtrTy(AddrSpace)), {*ByteOffset}
+      ),
+      TyResult->getPointerTo(AddrSpace)
+  );
+  return ir.CreateAlignedLoad(TyResult, PtrCast, *Alignment ? Align(*Alignment) : Align());
 }
 
 } // namespace dxmt::dxil
