@@ -97,7 +97,6 @@ resolve_handle(const llvm::Value *handle) {
   return unsupported("dxil: unresolvable resource handle");
 }
 
-using dxmt::air::InputAttributeComponentType;
 using dxmt::air::Interpolation;
 
 std::optional<air::MSLScalerOrVectorType>
@@ -201,20 +200,6 @@ to_signature_msl_type_with_format(ComponentType type, air::MTLPixelFormat format
   }
 }
 
-std::optional<InputAttributeComponentType>
-to_attribute_component_type(ComponentType type) {
-  switch (type) {
-  case ComponentType::I32:
-    return InputAttributeComponentType::Int;
-  case ComponentType::U32:
-    return InputAttributeComponentType::Uint;
-  case ComponentType::F32:
-    return InputAttributeComponentType::Float;
-  default:
-    return std::nullopt;
-  }
-}
-
 uint32_t
 element_usage_mask(const SignatureElement &element) {
   return element.usage_mask != 0 ? element.usage_mask : ((1u << element.cols) - 1u);
@@ -259,8 +244,8 @@ initialize_vertex_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
       break;
     }
     case SemanticKind::Arbitrary: {
-      auto attribute_type = to_attribute_component_type(element.component_type);
-      if (!attribute_type)
+      auto msl_type = to_signature_msl_type(element.component_type);
+      if (!msl_type)
         return unsupported("dxil: unsupported vertex shader input component type");
       for (unsigned row = 0; row < element.rows; row++) {
         auto name = element_attribute_name(element, row);
@@ -292,7 +277,7 @@ initialize_vertex_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
             }
           }
           uint32_t arg = ctx.func_signature.DefineInput(
-              air::InputVertexStageIn{.attribute = reg, .type = *attribute_type, .name = name}
+              air::InputVertexStageIn{.attribute = reg, .type = *msl_type, .name = name}
           );
           ctx.prologue.Add([=](IOHelper &io) -> llvm::Error { return io.InitializeInput(arg, reg, mask); });
         });
