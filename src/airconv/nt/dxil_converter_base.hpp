@@ -117,6 +117,7 @@ private:
   llvm::Expected<llvm::Value *> EmitWaveActiveAllEqual(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitMSAD(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitBitfieldInsert(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitCbufferLoad(const llvm::CallInst &Call);
 };
 
 } // namespace dxmt::dxil
