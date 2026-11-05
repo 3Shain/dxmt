@@ -1277,6 +1277,105 @@ AIRBuilder::CreateQuadShuffleXor(Value *ShuffleValue, uint16_t Mask) {
   return builder.CreateCall(Fn, Ops);
 }
 
+CallInst *
+AIRBuilder::CreateSIMDAllAny(Value *Expr, bool Any) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back(builder.getInt1Ty());
+  Ops.push_back(Expr);
+
+  auto Fn = getModule()->getOrInsertFunction(
+      Any ? "air.simd_any" : "air.simd_all", FunctionType::get(builder.getInt1Ty(), Tys, false), Attrs
+  );
+
+  return builder.CreateCall(Fn, Ops);
+}
+
+CallInst *
+AIRBuilder::CreateSIMDIsFirst() {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  return builder.CreateCall(
+      getModule()->getOrInsertFunction("air.simd_is_first", FunctionType::get(builder.getInt1Ty(), {}, false), Attrs)
+  );
+}
+
+CallInst *
+AIRBuilder::CreateSIMDOp(SIMDOp Op, Value *Operand, bool Signed, bool Prefix, bool InclusivePrefix) {
+  static char const *FnNames[] = {
+      "sum", "product", "min", "max", "and", "or", "xor",
+  };
+
+  if (uint32_t(Op) >= std::size(FnNames)) {
+    debug << "invalid operation: unknown simd operation.\n";
+    return nullptr; // TODO
+  }
+
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+  auto OperandType = Operand->getType();
+
+  std::string FnName = "air.";
+  if (Prefix)
+    FnName += InclusivePrefix ? "simd_prefix_inclusive_" : "simd_prefix_exclusive_";
+  else
+    FnName += "simd_";
+  FnName += FnNames[Op];
+  FnName += getTypeOverloadSuffix(OperandType, Signed ? Signedness::Signed : Signedness::Unsigned);
+  auto Fn = getModule()->getOrInsertFunction(FnName, llvm::FunctionType::get(OperandType, {OperandType}, false), Attrs);
+  return builder.CreateCall(Fn, {Operand});
+}
+
+CallInst *
+AIRBuilder::CreateSIMDBallot(Value *Cond) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  return builder.CreateCall(
+      getModule()->getOrInsertFunction(
+          "air.simd_ballot", FunctionType::get(builder.getInt64Ty(), {builder.getInt1Ty()}, false), Attrs
+      ),
+      {Cond}
+  );
+}
+
+CallInst *
+AIRBuilder::CreateSIMDBroadcastFirst(Value *Operand) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+  auto OperandType = Operand->getType();
+
+  std::string FnName = "air.simd_broadcast_first";
+  FnName += getTypeOverloadSuffix(OperandType, Signedness::Unsigned);
+  auto Fn = getModule()->getOrInsertFunction(FnName, llvm::FunctionType::get(OperandType, {OperandType}, false), Attrs);
+  return builder.CreateCall(Fn, {Operand});
+}
+
 Value *
 AIRBuilder::CreateFMA(Value *X, Value *Y, Value *Z) {
   if (!X->getType()->getScalarType()->isFloatingPointTy()) {

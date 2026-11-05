@@ -280,6 +280,26 @@ public:
 
   CallInst *CreateQuadShuffleXor(Value *ShuffleValue, uint16_t Mask);
 
+  CallInst *CreateSIMDAllAny(Value *Expr, bool Any);
+
+  CallInst *CreateSIMDIsFirst();
+
+  enum SIMDOp {
+    simd_sum,
+    simd_product,
+    simd_min,
+    simd_max,
+    simd_and,
+    simd_or,
+    simd_xor,
+  };
+
+  CallInst *CreateSIMDOp(SIMDOp Op, Value *Operand, bool Signed, bool Prefix = false, bool InclusivePrefix = false);
+
+  CallInst *CreateSIMDBallot(Value *Cond);
+
+  CallInst *CreateSIMDBroadcastFirst(Value *Operand);
+
   /* Math */
 
   Value *CreateFMA(Value *X, Value *Y, Value *Z);

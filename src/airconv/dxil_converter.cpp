@@ -97,7 +97,6 @@ resolve_handle(const llvm::Value *handle) {
   return unsupported("dxil: unresolvable resource handle");
 }
 
-using dxmt::air::InputAttributeComponentType;
 using dxmt::air::Interpolation;
 
 std::optional<air::MSLScalerOrVectorType>
@@ -120,31 +119,84 @@ to_signature_msl_type(ComponentType type) {
   }
 }
 
-std::optional<dxbc::RegisterComponentType>
-to_register_component_type(ComponentType type) {
+bool
+is_16bit_component(ComponentType type) {
   switch (type) {
-  case ComponentType::I32:
-    return dxbc::RegisterComponentType::Int;
-  case ComponentType::U32:
-    return dxbc::RegisterComponentType::Uint;
-  case ComponentType::F32:
-    return dxbc::RegisterComponentType::Float;
+  case ComponentType::I16:
+  case ComponentType::U16:
+  case ComponentType::F16:
+  case ComponentType::SNormF16:
+  case ComponentType::UNormF16:
+    return true;
   default:
-    return std::nullopt;
+    return false;
   }
 }
 
-std::optional<InputAttributeComponentType>
-to_attribute_component_type(ComponentType type) {
-  switch (type) {
-  case ComponentType::I32:
-    return InputAttributeComponentType::Int;
-  case ComponentType::U32:
-    return InputAttributeComponentType::Uint;
-  case ComponentType::F32:
-    return InputAttributeComponentType::Float;
+std::optional<air::MSLScalerOrVectorType>
+to_signature_msl_type_with_format(ComponentType type, air::MTLPixelFormat format) {
+  bool output_reg_is_16bit = is_16bit_component(type);
+  switch (format) {
+  case air::MTLPixelFormat::RGB10A2Uint:
+  case air::MTLPixelFormat::R8Uint:
+  case air::MTLPixelFormat::R16Uint:
+  case air::MTLPixelFormat::RG8Uint:
+  case air::MTLPixelFormat::RG16Uint:
+  case air::MTLPixelFormat::R32Uint:
+  case air::MTLPixelFormat::RGBA8Uint:
+  case air::MTLPixelFormat::RG32Uint:
+  case air::MTLPixelFormat::RGBA16Uint:
+  case air::MTLPixelFormat::RGBA32Uint:
+    return output_reg_is_16bit ? air::msl_ushort4 : air::msl_uint4;
+  case air::MTLPixelFormat::R8Sint:
+  case air::MTLPixelFormat::R16Sint:
+  case air::MTLPixelFormat::RG8Sint:
+  case air::MTLPixelFormat::RG16Sint:
+  case air::MTLPixelFormat::R32Sint:
+  case air::MTLPixelFormat::RGBA8Sint:
+  case air::MTLPixelFormat::RG32Sint:
+  case air::MTLPixelFormat::RGBA16Sint:
+  case air::MTLPixelFormat::RGBA32Sint:
+    return output_reg_is_16bit ? air::msl_short4 : air::msl_int4;
+  case air::MTLPixelFormat::A8Unorm:
+  case air::MTLPixelFormat::R8Unorm:
+  case air::MTLPixelFormat::R8Unorm_sRGB:
+  case air::MTLPixelFormat::R8Snorm:
+  case air::MTLPixelFormat::R16Unorm:
+  case air::MTLPixelFormat::R16Snorm:
+  case air::MTLPixelFormat::RG8Unorm:
+  case air::MTLPixelFormat::RG8Unorm_sRGB:
+  case air::MTLPixelFormat::RG8Snorm:
+  case air::MTLPixelFormat::B5G6R5Unorm:
+  case air::MTLPixelFormat::A1BGR5Unorm:
+  case air::MTLPixelFormat::ABGR4Unorm:
+  case air::MTLPixelFormat::BGR5A1Unorm:
+  case air::MTLPixelFormat::RG16Unorm:
+  case air::MTLPixelFormat::RG16Snorm:
+  case air::MTLPixelFormat::RGBA8Unorm:
+  case air::MTLPixelFormat::RGBA8Unorm_sRGB:
+  case air::MTLPixelFormat::RGBA8Snorm:
+  case air::MTLPixelFormat::BGRA8Unorm:
+  case air::MTLPixelFormat::BGRA8Unorm_sRGB:
+  case air::MTLPixelFormat::RGB10A2Unorm:
+  case air::MTLPixelFormat::BGR10A2Unorm:
+  case air::MTLPixelFormat::RGBA16Unorm:
+  case air::MTLPixelFormat::RGBA16Snorm:
+  case air::MTLPixelFormat::RGB9E5Float:
+  case air::MTLPixelFormat::RG11B10Float:
+  case air::MTLPixelFormat::R16Float:
+  case air::MTLPixelFormat::RG16Float:
+  case air::MTLPixelFormat::RG32Float:
+  case air::MTLPixelFormat::R32Float:
+  case air::MTLPixelFormat::RGBA16Float:
+  case air::MTLPixelFormat::BGR10_XR:
+  case air::MTLPixelFormat::BGR10_XR_sRGB:
+  case air::MTLPixelFormat::BGRA10_XR:
+  case air::MTLPixelFormat::BGRA10_XR_sRGB:
+  case air::MTLPixelFormat::RGBA32Float:
+    return output_reg_is_16bit ? air::msl_half4 : air::msl_float4;
   default:
-    return std::nullopt;
+    return to_signature_msl_type(type);
   }
 }
 
@@ -192,8 +244,8 @@ initialize_vertex_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
       break;
     }
     case SemanticKind::Arbitrary: {
-      auto attribute_type = to_attribute_component_type(element.component_type);
-      if (!attribute_type)
+      auto msl_type = to_signature_msl_type(element.component_type);
+      if (!msl_type)
         return unsupported("dxil: unsupported vertex shader input component type");
       for (unsigned row = 0; row < element.rows; row++) {
         auto name = element_attribute_name(element, row);
@@ -225,7 +277,7 @@ initialize_vertex_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
             }
           }
           uint32_t arg = ctx.func_signature.DefineInput(
-              air::InputVertexStageIn{.attribute = reg, .type = *attribute_type, .name = name}
+              air::InputVertexStageIn{.attribute = reg, .type = *msl_type, .name = name}
           );
           ctx.prologue.Add([=](IOHelper &io) -> llvm::Error { return io.InitializeInput(arg, reg, mask); });
         });
@@ -398,13 +450,35 @@ initialize_pixel_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
         auto user = element_attribute_name(element, row);
         if (auto err = user.takeError())
           return err;
-        shader->signature_handlers.push_back([=, user = *user, reg = reg + row](SignatureContext &ctx) {
+        shader->signature_handlers.push_back([=, user = *user, reg = reg + row,
+                                              interpolation = *interpolation](SignatureContext &ctx) {
+          bool pull_mode = bool(ctx.pull_mode_reg_mask & (1 << i)) && interpolation != air::Interpolation::flat;
           uint32_t arg = ctx.func_signature.DefineInput(
               air::InputFragmentStageIn{
-                  .user = user, .type = *msl_type, .interpolation = *interpolation, .pull_mode = false
+                  .user = user, .type = *msl_type, .interpolation = interpolation, .pull_mode = pull_mode
               }
           );
-          ctx.prologue.Add([=](IOHelper &io) -> llvm::Error { return io.InitializeInput(arg, reg, mask); });
+          if (pull_mode) {
+            ctx.resource.interpolant_map[reg] = interpolant_descriptor{
+                arg, (interpolation == air::Interpolation::sample_perspective ||
+                      interpolation == air::Interpolation::center_perspective ||
+                      interpolation == air::Interpolation::centroid_perspective)
+            };
+            uint32_t sampleidx_at = ~0u;
+            switch (interpolation) {
+            case Interpolation::sample_perspective:
+            case Interpolation::sample_no_perspective:
+              sampleidx_at = ctx.func_signature.DefineInput(air::InputSampleIndex{});
+              break;
+            default:
+              break;
+            }
+            ctx.prologue.Add([=](IOHelper &io) -> llvm::Error {
+              return io.InitializeInterpolatedInput(arg, reg, mask, interpolation, sampleidx_at);
+            });
+          } else {
+            ctx.prologue.Add([=](IOHelper &io) -> llvm::Error { return io.InitializeInput(arg, reg, mask); });
+          }
         });
       }
       break;
@@ -475,23 +549,22 @@ initialize_pixel_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
     case SemanticKind::Target: {
       if (element.start_row < 0 || element.start_col < 0 || reg >= 8)
         return unsupported("dxil: unsupported pixel shader output layout");
-      auto component_type = to_register_component_type(element.component_type);
-      if (!component_type)
+      auto msl_type = to_signature_msl_type(element.component_type);
+      if (!msl_type)
         return unsupported("dxil: unsupported pixel shader output component type");
       max_output_register = std::max(max_output_register, reg + 1);
       shader->pso_valid_output_reg_mask |= (1u << reg);
-      shader->signature_handlers.push_back([=](SignatureContext &ctx) {
-        auto type = component_type_from_pixel_format(ctx.pixel_formats[reg]);
-        if (ctx.dual_source_blending || type == RegisterComponentType::Unknown)
-          type = *component_type;
+      shader->signature_handlers.push_back([=, component_type = element.component_type](SignatureContext &ctx) {
+        auto inferred_type =
+            to_signature_msl_type_with_format(component_type, ctx.pixel_formats[ctx.dual_source_blending ? 0 : reg]);
+        if (!inferred_type)
+          inferred_type = msl_type;
         if (ctx.dual_source_blending && reg > 1)
           return;
         uint32_t out = ctx.func_signature.DefineOutput(
-            air::OutputRenderTarget{
-                .dual_source_blending = ctx.dual_source_blending, .index = reg, .type = dxbc::to_msl_type(type)
-            }
+            air::OutputRenderTarget{.dual_source_blending = ctx.dual_source_blending, .index = reg, .type = *inferred_type}
         );
-        if (type == RegisterComponentType::Float && (ctx.unorm_output_reg_mask & (1u << reg)))
+        if (component_type == ComponentType::F32 && (ctx.unorm_output_reg_mask & (1u << reg)))
           ctx.epilogue.Add([=](llvm::Value *ret, IOHelper &io) -> llvm::Expected<llvm::Value *> {
             return io.PopulateOutputFixUnorm(reg, mask, ret, out);
           });
@@ -575,16 +648,6 @@ initialize_geometry_signature(dxmt::dxbc::SM50ShaderInternal *shader) {
       return unsupported("dxil: unsupported geometry shader input layout");
     uint32_t reg = element.start_row;
     max_input_register = std::max(max_input_register, reg + element.rows);
-
-    switch (element.semantic_kind) {
-    case SemanticKind::Position:
-    case SemanticKind::Arbitrary:
-      break;
-    default:
-      return unsupported(
-          "dxil: unsupported geometry shader input semantic " + std::to_string((uint32_t)element.semantic_kind)
-      );
-    }
   }
   shader->max_input_register = max_input_register;
 
@@ -1072,6 +1135,7 @@ initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
           return err;
         break;
       case kOpTexture2DMSGetSamplePosition:
+      case kOpRenderTargetGetSamplePosition:
         shader_info.use_samplepos = true;
         break;
       case kOpCoverage: {
@@ -1087,6 +1151,20 @@ initialize_shader(dxmt::dxbc::SM50ShaderInternal *shader, const Info &info) {
       }
       case kOpLoadOutputControlPoint:
         shader_info.output_control_point_read = true;
+        break;
+      case kOpEvalSnapped:
+      case kOpEvalCentroid:
+      case kOpEvalSampleIndex: {
+        auto reg_index = asU32(ci->getArgOperand(1));
+        if (!reg_index)
+          return unsupported("dxil: non-constant eval index");
+        if (reg_index.value() > 31)
+          return unsupported("dxil: eval index larger than 31");
+        shader_info.pull_mode_reg_mask |= (1 << reg_index.value());
+        break;
+      }
+      case kOpMsad:
+        shader_info.use_msad = true;
         break;
       default:
         break;

@@ -71,6 +71,7 @@ private:
   );
   llvm::Type *GetTextureSampleType(llvm::air::Texture::SampleType SampleType);
   llvm::Value *GetSamplePos(llvm::Value *SampleCount, llvm::Value *Index);
+  llvm::Value *CreateGEPInt32WithBoundCheck(dxbc::BufferDescriptor &Buffer, llvm::Value *Index);
 
   llvm::Error TranslateTerminator(llvm::Instruction *Inst, llvm::BasicBlock *ReturnBB);
   llvm::Expected<llvm::Value *> TranslateInstruction(llvm::Instruction *Inst);
@@ -112,6 +113,11 @@ private:
   llvm::Expected<llvm::Value *> EmitStorePatchConstant(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitLoadOutputControlPoint(const llvm::CallInst &Call);
   llvm::Expected<llvm::Value *> EmitLoadPatchConstant(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitEval(const llvm::CallInst &Call, uint32_t OpId);
+  llvm::Expected<llvm::Value *> EmitWaveActiveAllEqual(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitMSAD(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitBitfieldInsert(const llvm::CallInst &Call);
+  llvm::Expected<llvm::Value *> EmitCbufferLoad(const llvm::CallInst &Call);
 };
 
 } // namespace dxmt::dxil

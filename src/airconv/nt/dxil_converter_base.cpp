@@ -964,6 +964,18 @@ Converter::EmitDxilOp(CallInst &Call) {
                                              : ctx.resource.coverage_mask_arg;
   case kOpRenderTargetGetSampleCount:
     return air.CreateGetNumSamples();
+  case kOpRenderTargetGetSamplePosition: {
+    auto Index = Get(Call.getOperand(1));
+    if (!Index)
+      return Index.takeError();
+    auto Position = GetSamplePos(air.CreateGetNumSamples(), *Index);
+    return ir.CreateInsertValue(
+        ir.CreateInsertValue(
+            llvm::PoisonValue::get(MapType(Call.getType())), ir.CreateExtractElement(Position, 0ull), {0ull}
+        ),
+        ir.CreateExtractElement(Position, 1ull), {1ull}
+    );
+  }
   case kOpEmitStream: {
     ctx.resource.call_emit();
     return nullptr;
@@ -1010,6 +1022,86 @@ Converter::EmitDxilOp(CallInst &Call) {
     return EmitLoadOutputControlPoint(Call);
   case kOpLoadPatchConstant:
     return EmitLoadPatchConstant(Call);
+  case kOpViewID:
+    return Constant::getNullValue(MapType(Call.getType()));
+  case kOpEvalCentroid:
+  case kOpEvalSampleIndex:
+  case kOpEvalSnapped:
+    return EmitEval(Call, OpId);
+  case kOpWaveAllTrue:
+  case kOpWaveAnyTrue: {
+    auto Expr = Get(Call.getOperand(1));
+    if (!Expr)
+      return Expr.takeError();
+    return air.CreateSIMDAllAny(*Expr, OpId == kOpWaveAnyTrue);
+  }
+  case kOpWaveIsFirstLane:
+    return air.CreateSIMDIsFirst();
+  case kOpWaveActiveOp:
+  case kOpWavePrefixOp: {
+    auto Operand = Get(Call.getOperand(1));
+    if (!Operand)
+      return Operand.takeError();
+    if (Operand.get()->getType()->getScalarType()->isIntOrIntVectorTy(64))
+      return unsupported("dxil: 64-bit wave ops not supported");
+    auto Op = asU32(Call.getOperand(2));
+    if (!Op || *Op > 4)
+      return unsupported("dxil: invalid waveActiveOp op");
+    auto Sign = asU32(Call.getOperand(3));
+    if (!Sign || *Sign > 1)
+      return unsupported("dxil: invalid waveActiveOp sign");
+    return air.CreateSIMDOp(
+        (AIRBuilder::SIMDOp)(AIRBuilder::simd_sum + *Op), *Operand, !*Sign, OpId == kOpWavePrefixOp
+    );
+  }
+  case kOpWaveAllBitCount:
+  case kOpWavePrefixBitCount: {
+    auto Expr = Get(Call.getOperand(1));
+    if (!Expr)
+      return Expr.takeError();
+    return air.CreateSIMDOp(
+        AIRBuilder::simd_sum, ir.CreateZExt(*Expr, ir.getInt32Ty()), false, OpId == kOpWavePrefixBitCount
+    );
+  }
+  case kOpWaveActiveBit: {
+    auto Operand = Get(Call.getOperand(1));
+    if (!Operand)
+      return Operand.takeError();
+    if (Operand.get()->getType()->getScalarType()->isIntOrIntVectorTy(64))
+      return unsupported("dxil: 64-bit wave ops not supported");
+    auto Op = asU32(Call.getOperand(2));
+    if (!Op || *Op > 2)
+      return unsupported("dxil: invalid waveActiveBit op");
+    return air.CreateSIMDOp((AIRBuilder::SIMDOp)(AIRBuilder::simd_and + *Op), *Operand, false);
+  }
+  case kOpWaveActiveBallot: {
+    auto Cond = Get(Call.getOperand(1));
+    if (!Cond)
+      return Cond.takeError();
+    auto Result = ir.CreateBitCast(air.CreateSIMDBallot(*Cond), air.getIntTy(2));
+    return ir.CreateInsertValue(
+        ir.CreateInsertValue(
+            llvm::ConstantAggregateZero::get(MapType(Call.getType())), ir.CreateExtractElement(Result, 0ull), {0ull}
+        ),
+        ir.CreateExtractElement(Result, 1ull), {1ull}
+    );
+  }
+  case kOpWaveReadLaneFirst: {
+    auto Operand = Get(Call.getOperand(1));
+    if (!Operand)
+      return Operand.takeError();
+    if (Operand.get()->getType()->getScalarType()->isIntOrIntVectorTy(64))
+      return unsupported("dxil: 64-bit wave ops not supported");
+    return air.CreateSIMDBroadcastFirst(*Operand);
+  }
+  case kOpWaveActiveAllEqual:
+    return EmitWaveActiveAllEqual(Call);
+  case kOpMsad:
+    return EmitMSAD(Call);
+  case kOpBfi:
+    return EmitBitfieldInsert(Call);
+  case kOpCBufferLoad:
+    return EmitCbufferLoad(Call);
   default:
     break;
   }
@@ -1073,6 +1165,18 @@ Converter::EmitThreadId(CallInst &Call, ThreadBuiltin Kind) {
   }
 }
 
+llvm::Value *
+Converter::CreateGEPInt32WithBoundCheck(dxbc::BufferDescriptor &Buffer, llvm::Value *Index) {
+  auto Addr = ir.CreateGEP(ir.getInt32Ty(), Buffer.Pointer, {Index});
+  if (!Buffer.Metadata) {
+    return Addr;
+  }
+  auto ByteLength = ir.CreateTrunc(Buffer.Metadata, air.getIntTy());
+  return ir.CreateSelect(
+      ir.CreateICmpULT(Index, ir.CreateLShr(ByteLength, 2)), Addr, llvm::Constant::getNullValue(Addr->getType())
+  );
+}
+
 llvm::Expected<llvm::Value *>
 Converter::EmitBufferStore(CallInst &Call) {
   auto Handle = ResolveHandleOperand(Call.getArgOperand(1));
@@ -1099,9 +1203,14 @@ Converter::EmitBufferStore(CallInst &Call) {
         return component.takeError();
       Value = ir.CreateInsertElement(Value, BitcastIfNeeded(*component, TyElement), (uint64_t)i);
     }
+    auto *Address = *Index;
+    auto *OOB = ir.CreateICmpUGE(Address, ir.CreateTrunc(ir.CreateLShr(Texture->Metadata, 32uLL), air.getIntTy()));
+    Address = ir.CreateAdd(Address, ir.CreateTrunc(Texture->Metadata, air.getIntTy()));
     bool Coherent = Texture->GlobalCoherent && SupportsMemoryCoherency();
     air.CreateWrite(
-        MakeTexture(*Texture), Texture->ResourceHandle, *Index, nullptr, nullptr, air.getInt(0), Value, Coherent
+        MakeTexture(*Texture), Texture->ResourceHandle,
+        ir.CreateSelect(OOB, llvm::ConstantInt::getAllOnesValue(Address->getType()), Address), nullptr, nullptr,
+        air.getInt(0), Value, Coherent
     );
     return (llvm::Value *)nullptr;
   }
@@ -1128,7 +1237,7 @@ Converter::EmitBufferStore(CallInst &Call) {
     if (!Component)
       return Component.takeError();
     Value *Word = BitcastIfNeeded(*Component, ir.getInt32Ty());
-    auto *Ptr = ir.CreateGEP(ir.getInt32Ty(), Buffer->Pointer, {ir.CreateAdd(Base, ir.getInt32(i))});
+    auto *Ptr = CreateGEPInt32WithBoundCheck(*Buffer, ir.CreateAdd(Base, ir.getInt32(i)));
     if (Coherent)
       air.CreateDeviceCoherentStore(Word, Ptr);
     else
@@ -1149,9 +1258,14 @@ Converter::EmitBufferLoad(CallInst &Call) {
 
   auto Texture = GetTextureDescriptor(*Handle);
   if (Texture) {
+    auto *Address = *Index;
+    auto *OOB = ir.CreateICmpUGE(Address, ir.CreateTrunc(ir.CreateLShr(Texture->Metadata, 32uLL), air.getIntTy()));
+    Address = ir.CreateAdd(Address, ir.CreateTrunc(Texture->Metadata, air.getIntTy()));
     bool Coherent = Texture->GlobalCoherent && SupportsMemoryCoherency();
     auto [Value, Residency] = air.CreateRead(
-        MakeTexture(*Texture), Texture->ResourceHandle, *Index, nullptr, nullptr, air.getInt(0), Coherent
+        MakeTexture(*Texture), Texture->ResourceHandle,
+        ir.CreateSelect(OOB, llvm::ConstantInt::getAllOnesValue(Address->getType()), Address), nullptr, nullptr,
+        air.getInt(0), Coherent
     );
     return BuildResRet(Call, Value, Residency);
   }
@@ -1173,7 +1287,7 @@ Converter::EmitBufferLoad(CallInst &Call) {
 
   Value *Words = Constant::getNullValue(FixedVectorType::get(ir.getInt32Ty(), 4));
   for (unsigned i = 0; i < 4; i++) {
-    auto *Ptr = ir.CreateGEP(ir.getInt32Ty(), Buffer->Pointer, {ir.CreateAdd(Base, ir.getInt32(i))});
+    auto *Ptr = CreateGEPInt32WithBoundCheck(*Buffer, ir.CreateAdd(Base, ir.getInt32(i)));
     Value *Word = Coherent ? (Value *)air.CreateDeviceCoherentLoad(ir.getInt32Ty(), Ptr)
                            : (Value *)ir.CreateLoad(ir.getInt32Ty(), Ptr);
     Words = ir.CreateInsertElement(Words, Word, (uint64_t)i);
@@ -2317,7 +2431,11 @@ Converter::EmitAtomicRMW(const CallInst &Call) {
   if (!Address)
     return Address.takeError();
   auto [Position, Slice, Unused] = *Address;
-
+  if (Texture->ResourceKindLogical == Texture::texture_buffer) {
+    auto *OOB = ir.CreateICmpUGE(Position, ir.CreateTrunc(ir.CreateLShr(Texture->Metadata, 32uLL), air.getIntTy()));
+    Position = ir.CreateAdd(Position, ir.CreateTrunc(Texture->Metadata, air.getIntTy()));
+    Position = ir.CreateSelect(OOB, llvm::ConstantInt::getAllOnesValue(Position->getType()), Position);
+  }
   auto *TyVector = FixedVectorType::get(GetTextureSampleType(Texture->SampleType), 4);
   auto *Value = ir.CreateInsertElement(PoisonValue::get(TyVector), *NewValue, 0ull);
   auto Result = air.CreateAtomicRMW(MakeTexture(*Texture), Texture->ResourceHandle, BinOp, Position, Value, Slice);
@@ -2378,6 +2496,11 @@ Converter::EmitAtomicCmpXchg(const CallInst &Call) {
   if (!Address)
     return Address.takeError();
   auto [Position, Slice, Unused] = *Address;
+  if (Texture->ResourceKindLogical == Texture::texture_buffer) {
+    auto *OOB = ir.CreateICmpUGE(Position, ir.CreateTrunc(ir.CreateLShr(Texture->Metadata, 32uLL), air.getIntTy()));
+    Position = ir.CreateAdd(Position, ir.CreateTrunc(Texture->Metadata, air.getIntTy()));
+    Position = ir.CreateSelect(OOB, llvm::ConstantInt::getAllOnesValue(Position->getType()), Position);
+  }
   auto *TyElement = GetTextureSampleType(Texture->SampleType);
   auto *TyVector = FixedVectorType::get(TyElement, 4);
   auto *Cmp = ir.CreateInsertElement(PoisonValue::get(TyVector), *Compare, 0ull);
@@ -2761,6 +2884,194 @@ Converter::EmitLoadPatchConstant(const CallInst &Call) {
     return ir.CreateBitCast(ir.CreateTrunc(Value, ir.getInt16Ty()), ir.getHalfTy());
   }
   return unsupported("dxil: unsupported loadPatchConstant type");
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitEval(const CallInst &Call, uint32_t OpId) {
+  auto Element = asU32(Call.getArgOperand(1));
+  auto Row = asU32(Call.getArgOperand(2));
+  auto Component = asU32(Call.getArgOperand(3));
+  if (!Element || !Row || !Component)
+    return unsupported("dxil: non-constant eval index");
+  if (*Element >= entry.inputs.size())
+    return unsupported("dxil: eval element index out of range");
+  const auto &signature = entry.inputs[*Element];
+  if (signature.start_row < 0 || signature.start_col < 0)
+    return unsupported("dxil: eval signature element is not mapped");
+
+  auto *Type = Call.getType();
+  uint32_t Reg = (uint32_t)signature.start_row + *Row;
+  uint32_t Lane = (uint32_t)signature.start_col + *Component;
+  if (Lane > 3)
+    return unsupported("dxil: eval component out of range");
+
+  auto iter = ctx.resource.interpolant_map.find(Reg);
+  if (iter == ctx.resource.interpolant_map.end())
+    return unsupported("dxil: no eval interpolant");
+
+  if (Type->isFloatTy() || Type->isHalfTy()) {
+    auto &[ArgIndex, Perspective] = iter->second;
+
+    if (OpId == kOpEvalSampleIndex) {
+      auto SampleIndex = Get(Call.getArgOperand(4));
+      if (!SampleIndex)
+        return SampleIndex.takeError();
+      return ir.CreateExtractElement(
+          air.CreateInterpolateAtSample(ctx.function->getArg(ArgIndex), *SampleIndex, Perspective), Lane
+      );
+    } else if (OpId == kOpEvalSnapped) {
+      auto X = Get(Call.getArgOperand(4));
+      if (!X)
+        return X.takeError();
+      auto Y = Get(Call.getArgOperand(5));
+      if (!Y)
+        return Y.takeError();
+      auto Truncated = ir.CreateAnd(
+          ir.CreateAdd(
+              ir.CreateInsertElement(ir.CreateInsertElement(PoisonValue::get(air.getIntTy(2)), *X, 0ull), *Y, 1ull),
+              air.getInt2(8, 8)
+          ),
+          air.getInt2(0b1111, 0b1111)
+      );
+      auto OffsetFloat = ir.CreateFMul(air.CreateConvertToFloat(Truncated), air.getFloat2(1.0f / 16.0f, 1.0f / 16.0f));
+      return ir.CreateExtractElement(
+          air.CreateInterpolateAtOffset(ctx.function->getArg(ArgIndex), OffsetFloat, Perspective), Lane
+      );
+    } else {
+      return ir.CreateExtractElement(
+          air.CreateInterpolateAtCentroid(ctx.function->getArg(ArgIndex), Perspective), Lane
+      );
+    }
+  }
+  return unsupported("dxil: unsupported eval type");
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitWaveActiveAllEqual(const CallInst &Call) {
+  auto Operand = Get(Call.getArgOperand(1));
+  if (!Operand)
+    return Operand.takeError();
+
+  if (Operand.get()->getType()->getScalarType()->isIntOrIntVectorTy(64))
+    return unsupported("dxil: 64-bit wave ops not supported");
+
+  auto *Value = *Operand;
+
+  if (Value->getType()->isFPOrFPVectorTy()) {
+    if (auto TyVec = dyn_cast<FixedVectorType>(Value->getType())) {
+      if (TyVec->getElementType()->isFloatTy()) {
+        Value = ir.CreateBitCast(Value, FixedVectorType::get(ir.getInt32Ty(), TyVec->getNumElements()));
+      } else if (TyVec->getElementType()->isHalfTy()) {
+        Value = ir.CreateBitCast(Value, FixedVectorType::get(ir.getInt16Ty(), TyVec->getNumElements()));
+      } else {
+        return unsupported("dxil: unhandled floating point type");
+      }
+    } else if (Value->getType()->isFloatTy()) {
+      Value = ir.CreateBitCast(Value, ir.getInt32Ty());
+    } else if (Value->getType()->isHalfTy()) {
+      Value = ir.CreateBitCast(Value, ir.getInt16Ty());
+    } else {
+      return unsupported("dxil: unhandled floating point type");
+    }
+  }
+
+  llvm::Value *ValueFirst = air.CreateSIMDBroadcastFirst(Value);
+
+  auto *Result = ir.CreateICmpEQ(Value, ValueFirst);
+  if (auto TyVec = dyn_cast<FixedVectorType>(Result->getType())) {
+    llvm::Value *Ret = Constant::getNullValue(Result->getType());
+    for (unsigned i = 0; i < TyVec->getNumElements(); i++) {
+      Ret = ir.CreateInsertElement(Ret, air.CreateSIMDAllAny(ir.CreateExtractElement(Result, i), false), i);
+    }
+    return Ret;
+  } else {
+    return air.CreateSIMDAllAny(Result, false);
+  }
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitMSAD(const CallInst &Call) {
+  auto Ref = Get(Call.getArgOperand(1));
+  if (!Ref)
+    return Ref.takeError();
+  auto Src = Get(Call.getArgOperand(2));
+  if (!Src)
+    return Src.takeError();
+  auto Accum = Get(Call.getArgOperand(3));
+  if (!Accum)
+    return Accum.takeError();
+
+  auto &Context = air.getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back((*Ref)->getType());
+  Ops.push_back(*Ref);
+  Tys.push_back((*Src)->getType());
+  Ops.push_back(*Src);
+  Tys.push_back((*Accum)->getType());
+  Ops.push_back(*Accum);
+
+  std::string FnName = "dxmt.msad";
+  FnName += air.getTypeOverloadSuffix((*Ref)->getType());
+
+  auto Fn = air.getModule()->getOrInsertFunction(FnName, FunctionType::get((*Accum)->getType(), Tys, false), Attrs);
+  return ir.CreateCall(Fn, Ops);
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitBitfieldInsert(const CallInst &Call) {
+  auto Src0 = Get(Call.getArgOperand(1));
+  if (!Src0)
+    return Src0.takeError();
+  auto Src1 = Get(Call.getArgOperand(2));
+  if (!Src1)
+    return Src1.takeError();
+  auto Src2 = Get(Call.getArgOperand(3));
+  if (!Src2)
+    return Src2.takeError();
+  auto Src3 = Get(Call.getArgOperand(4));
+  if (!Src3)
+    return Src3.takeError();
+
+  auto Width = ir.CreateAnd(*Src0, 0x1F);
+  auto Offset = ir.CreateAnd(*Src1, 0X1F);
+  auto Constant_1 = llvm::ConstantInt::get(Width->getType(), 1);
+  auto Bitmask = ir.CreateShl(ir.CreateSub(ir.CreateShl(Constant_1, Width), Constant_1), Offset);
+
+  return ir.CreateOr(ir.CreateAnd(ir.CreateShl(*Src2, Offset), Bitmask), ir.CreateAnd(*Src3, ir.CreateNot(Bitmask)));
+}
+
+llvm::Expected<llvm::Value *>
+Converter::EmitCbufferLoad(const CallInst &Call) {
+  auto Handle = ResolveHandleOperand(Call.getArgOperand(1));
+  if (!Handle)
+    return Handle.takeError();
+  auto Descriptor = ctx.binding.GetConstantBuffer(air, Handle->range_id, Handle->index);
+  if (!Descriptor)
+    return unsupported("dxil: no constant buffer descriptor for resource");
+  auto ByteOffset = Get(Call.getArgOperand(2));
+  if (!ByteOffset)
+    return ByteOffset.takeError();
+  auto Alignment = asU32(Call.getArgOperand(3));
+  if (!Alignment)
+    return unsupported("dxil: non-constant cbufferLoad alignment");
+
+  auto *TyResult = MapType(Call.getType());
+  auto AddrSpace = Descriptor->Pointer->getType()->getPointerAddressSpace();
+  auto *PtrCast = ir.CreatePointerCast(
+      ir.CreateGEP(
+          ir.getInt8Ty(), ir.CreatePointerCast(Descriptor->Pointer, ir.getInt8PtrTy(AddrSpace)), {*ByteOffset}
+      ),
+      TyResult->getPointerTo(AddrSpace)
+  );
+  return ir.CreateAlignedLoad(TyResult, PtrCast, *Alignment ? Align(*Alignment) : Align());
 }
 
 } // namespace dxmt::dxil
