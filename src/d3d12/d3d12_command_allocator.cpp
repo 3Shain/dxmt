@@ -215,7 +215,7 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectComputeCommand(MTLD3D12CommandSignat
 
     auto &cmd_dispatch_res = EncodeComputeCommand<wmtcmd_compute_dispatch>();
     cmd_dispatch_res.type = WMTComputeCommandDispatchThreads;
-    cmd_dispatch_res.size = {1, 1, 1};
+    cmd_dispatch_res.size = {MaxCount, 1, 1};
 
     auto &cmd_setpso = EncodeComputeCommand<wmtcmd_compute_setpso>();
     cmd_setpso.type = WMTComputeCommandSetPSO;
@@ -307,7 +307,7 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectRenderCommand(
 
     auto &cmd_draw_res = EncodeRenderPrepassCommand<wmtcmd_compute_dispatch>();
     cmd_draw_res.type = WMTComputeCommandDispatchThreads;
-    cmd_draw_res.size = {1, 1, 1};
+    cmd_draw_res.size = {MaxCount, 1, 1};
 
     auto &cmd_setpso = EncodeRenderCommand<wmtcmd_render_setpso>();
     cmd_setpso.type = WMTRenderCommandSetPSO;
