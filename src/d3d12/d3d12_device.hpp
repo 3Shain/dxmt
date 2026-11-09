@@ -115,8 +115,7 @@ public:
   UINT UpdateVertexBuffers : 1;
   UINT UpdateIndexBuffer   : 1;
 
-  WMT::Reference<WMT::RenderPipelineState> render_resolver;
-  WMT::Reference<WMT::ComputePipelineState> compute_resolver;
+  WMT::Reference<WMT::ComputePipelineState> resolver;
 
   virtual void AddRefPrivate() = 0;
   virtual void ReleasePrivate() = 0;

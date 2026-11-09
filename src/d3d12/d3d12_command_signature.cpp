@@ -175,15 +175,10 @@ public:
     CommandType = side_effect;
     UpdateIndexBuffer = ib_index != ~0u;
 
-    if (is_compute)
-      source
-          << "[[kernel]] void resolve_indirect_commands([[thread_position_in_grid]] uint x, constant dxmt_compute_command_data";
-    else
-      source << "[[vertex]] void resolve_indirect_commands(constant dxmt_render_command_data";
-    source << " &command_data [[buffer(30)]]) {\n";
+    source << "[[kernel]] void resolve_indirect_commands([[thread_position_in_grid]] uint x, constant dxmt_"
+           << (is_compute ? "compute" : "render") << "_command_data &command_data [[buffer(30)]]) {\n";
 
-    if (is_compute)
-      source << "if (x !=0 ) return;\n";
+    source << "if (x !=0 ) return;\n";
 
     source << "uint count = command_data.max_count_buffer ? "
               "command_data.max_count_buffer[0] : command_data.max_count;\n";
@@ -334,15 +329,7 @@ public:
       return E_FAIL;
     }
 
-    if (is_compute) {
-      compute_resolver = device_->GetMTLDevice().newComputePipelineState(function, err);
-    } else {
-      WMTRenderPipelineInfo info;
-      WMT::InitializeRenderPipelineInfo(info);
-      info.rasterization_enabled = false;
-      info.vertex_function = function;
-      render_resolver = device_->GetMTLDevice().newRenderPipelineState(info, err);
-    }
+    resolver = device_->GetMTLDevice().newComputePipelineState(function, err);
 
     if (err) {
       ERR("Failed to compile command signature resolve pso: ", err.description().getUTF8String());
