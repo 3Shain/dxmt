@@ -204,7 +204,7 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectComputeCommand(MTLD3D12CommandSignat
 
     auto &cmd_setpso_res = EncodeComputeCommand<wmtcmd_compute_setpso>();
     cmd_setpso_res.type = WMTComputeCommandSetPSO;
-    cmd_setpso_res.pso = pCmdSig->compute_resolver;
+    cmd_setpso_res.pso = pCmdSig->resolver;
     cmd_setpso_res.threadgroup_size = {1, 1, 1};
 
     auto &cmd_argbuf_res = EncodeComputeCommand<wmtcmd_compute_setbuffer>();
@@ -214,7 +214,7 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectComputeCommand(MTLD3D12CommandSignat
     cmd_argbuf_res.index = 30;
 
     auto &cmd_dispatch_res = EncodeComputeCommand<wmtcmd_compute_dispatch>();
-    cmd_dispatch_res.type = WMTComputeCommandDispatch;
+    cmd_dispatch_res.type = WMTComputeCommandDispatchThreads;
     cmd_dispatch_res.size = {1, 1, 1};
 
     auto &cmd_setpso = EncodeComputeCommand<wmtcmd_compute_setpso>();
@@ -289,29 +289,25 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectRenderCommand(
      * TODO: move these out?
      */
 
-    auto &cmd_use_icb = EncodeRenderCommand<wmtcmd_render_useresource>();
-    cmd_use_icb.type = WMTRenderCommandUseResource;
-    cmd_use_icb.stages = WMTRenderStageVertex;
+    auto &cmd_use_icb = EncodeRenderPrepassCommand<wmtcmd_compute_useresource>();
+    cmd_use_icb.type = WMTComputeCommandUseResource;
     cmd_use_icb.usage = WMTResourceUsageRead | WMTResourceUsageWrite;
     cmd_use_icb.resource = icb;
 
-    auto &cmd_setpso_res = EncodeRenderCommand<wmtcmd_render_setpso>();
-    cmd_setpso_res.type = WMTRenderCommandSetPSO;
-    cmd_setpso_res.pso = pCmdSig->render_resolver;
+    auto &cmd_setpso_res = EncodeRenderPrepassCommand<wmtcmd_compute_setpso>();
+    cmd_setpso_res.type = WMTComputeCommandSetPSO;
+    cmd_setpso_res.pso = pCmdSig->resolver;
+    cmd_setpso_res.threadgroup_size = {32, 1, 1};
 
-    auto &cmd_argbuf_res = EncodeRenderCommand<wmtcmd_render_setbuffer>();
-    cmd_argbuf_res.type = WMTRenderCommandSetVertexBuffer;
+    auto &cmd_argbuf_res = EncodeRenderPrepassCommand<wmtcmd_compute_setbuffer>();
+    cmd_argbuf_res.type = WMTComputeCommandSetBuffer;
     cmd_argbuf_res.buffer = gpu_heap_buffer_;
     cmd_argbuf_res.offset = Offset;
     cmd_argbuf_res.index = 30;
 
-    auto &cmd_draw_res = EncodeRenderCommand<wmtcmd_render_draw>();
-    cmd_draw_res.type = WMTRenderCommandDraw;
-    cmd_draw_res.primitive_type = WMTPrimitiveTypePoint;
-    cmd_draw_res.vertex_start = 0;
-    cmd_draw_res.vertex_count = 1;
-    cmd_draw_res.base_instance = 0;
-    cmd_draw_res.instance_count = 1;
+    auto &cmd_draw_res = EncodeRenderPrepassCommand<wmtcmd_compute_dispatch>();
+    cmd_draw_res.type = WMTComputeCommandDispatchThreads;
+    cmd_draw_res.size = {1, 1, 1};
 
     auto &cmd_setpso = EncodeRenderCommand<wmtcmd_render_setpso>();
     cmd_setpso.type = WMTRenderCommandSetPSO;
