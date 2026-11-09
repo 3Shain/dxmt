@@ -197,6 +197,18 @@ public:
 
   template <typename cmd_struct>
   cmd_struct &
+  EncodeRenderPrepassCommand() {
+    assert(encoder_current->type == EncoderType::Render);
+    auto encoder = static_cast<RenderEncoderData *>(encoder_current);
+    auto storage = (cmd_struct *)AllocateCPUHeap(sizeof(cmd_struct), 16);
+    encoder->cmd_prepass_tail->next.set(storage);
+    encoder->cmd_prepass_tail = (wmtcmd_base *)storage;
+    storage->next.set(nullptr);
+    return *storage;
+  }
+
+  template <typename cmd_struct>
+  cmd_struct &
   EncodeBlitCommand() {
     assert(encoder_current->type == EncoderType::Blit);
     auto encoder = static_cast<BlitEncoderData *>(encoder_current);

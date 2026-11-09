@@ -443,6 +443,9 @@ SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::startRenderPass() {
   render->cmd_head.type = WMTRenderCommandNop;
   render->cmd_head.next.set(0);
   render->cmd_tail = (wmtcmd_base *)&render->cmd_head;
+  render->cmd_prepass_head.type = WMTComputeCommandNop;
+  render->cmd_prepass_head.next.set(0);
+  render->cmd_prepass_tail = (wmtcmd_base *)&render->cmd_prepass_head;
   render->dsv_planar_flags = 0;
   render->dsv_readonly_flags = 0;
   render->render_target_count = 0;
