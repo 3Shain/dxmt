@@ -175,14 +175,10 @@ public:
     CommandType = side_effect;
     UpdateIndexBuffer = ib_index != ~0u;
 
-    source << "[[kernel]] void resolve_indirect_commands([[thread_position_in_grid]] uint x, constant dxmt_"
+    source << "[[kernel]] void resolve_indirect_commands([[thread_position_in_grid]] uint i, constant dxmt_"
            << (is_compute ? "compute" : "render") << "_command_data &command_data [[buffer(30)]]) {\n";
-
-    source << "if (x !=0 ) return;\n";
-
     source << "uint count = command_data.max_count_buffer ? "
               "command_data.max_count_buffer[0] : command_data.max_count;\n";
-    source << "for (uint i = 0; i < command_data.max_count; i++) {\n";
     source << "device d3d12_arguments& arg = reinterpret_cast<device d3d12_arguments *>("
               "command_data.argument_buffer + i * "
            << pDesc->ByteStride << ")[0];\n";
@@ -192,7 +188,7 @@ public:
       source << "render_command cmd(command_data.cmd_buf, i);\n";
     }
     source << "cmd.reset();\n";
-    source << "if (i >= count) continue;\n";
+    source << "if (i >= count) return;\n";
     source << "device ulong * rootsig_qwords = command_data.rootsig_qwords + "
               "(i * command_data.rootsig_qwords_stride);\n";
     if (!is_compute)
@@ -311,8 +307,7 @@ public:
       }
     }
 
-    source << "}\n"
-              "};\n";
+    source << "};\n";
 
     WMT::Reference<WMT::Error> err;
     auto lib = device_->GetMTLDevice().newLibraryWithSource(source.view(), err);
