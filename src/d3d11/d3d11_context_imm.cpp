@@ -7,6 +7,7 @@
 #include "d3d11_context_impl.cpp"
 #include "dxmt_context.hpp"
 #include "dxmt_staging.hpp"
+#include "util_env.hpp"
 
 namespace dxmt {
 struct ContextInternalState {
@@ -78,8 +79,20 @@ public:
       cmd_queue(cmd_queue),
       ctx_state({cmd_queue}),
       d3dmt_(this, mutex) {
-        ignore_map_flag_no_wait_ = Config::getInstance().getOption<bool>("d3d11.ignoreMapFlagNoWait", false);
-      }
+    ignore_map_flag_no_wait_ = Config::getInstance().getOption<bool>("d3d11.ignoreMapFlagNoWait", false);
+    switch(Config::getInstance().getOption<Tristate>("d3d11.coherentEventCompletion", Tristate::Auto)) {
+    case Tristate::False:
+      coherent_event_ = false;
+      break;
+    case Tristate::True:
+      coherent_event_ = true;
+      break;
+    case Tristate::Auto:
+      // enable it for Unreal Engine games
+      coherent_event_ = env::getExeBaseName().ends_with("Win64-Shipping");
+      break;
+    }
+  }
 
   HRESULT
   STDMETHODCALLTYPE
@@ -334,6 +347,11 @@ public:
     case D3D11_QUERY_TIMESTAMP_DISJOINT:
     case D3D11_QUERY_TIMESTAMP:
     case D3D11_QUERY_EVENT:
+    case D3D11_QUERY_SO_STATISTICS:
+    case D3D11_QUERY_SO_STATISTICS_STREAM0:
+    case D3D11_QUERY_SO_STATISTICS_STREAM1:
+    case D3D11_QUERY_SO_STATISTICS_STREAM2:
+    case D3D11_QUERY_SO_STATISTICS_STREAM3:
       break;
     case D3D11_QUERY_OCCLUSION:
     case D3D11_QUERY_OCCLUSION_PREDICATE: {
@@ -366,18 +384,24 @@ public:
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
     case D3D11_QUERY_TIMESTAMP_DISJOINT:
-    case D3D11_QUERY_EVENT: {
+    case D3D11_QUERY_EVENT:
+    case D3D11_QUERY_SO_STATISTICS:
+    case D3D11_QUERY_SO_STATISTICS_STREAM0:
+    case D3D11_QUERY_SO_STATISTICS_STREAM1:
+    case D3D11_QUERY_SO_STATISTICS_STREAM2:
+    case D3D11_QUERY_SO_STATISTICS_STREAM3: {
       if (ctx_state.has_dirty_op_since_last_event) {
-        auto event_id = cmd_queue.GetNextEventSeqId();
+        auto event_id = coherent_event_ ? cmd_queue.CurrentSeqId() : cmd_queue.GetNextEventSeqId();
         static_cast<MTLD3D11EventQuery *>(pAsync)->Issue(event_id);
         InvalidateCurrentPass(true);
-        EmitOP([event_id](ArgumentEncodingContext &enc) mutable {
-          enc.signalEvent(event_id);
-        });
         promote_flush = true;
-        ctx_state.has_dirty_op_since_last_event = false;
+        if (!coherent_event_) {
+          EmitOP([event_id](ArgumentEncodingContext &enc) mutable { enc.signalEvent(event_id); });
+          ctx_state.has_dirty_op_since_last_event = false;
+        }
       } else {
-        static_cast<MTLD3D11EventQuery *>(pAsync)->Issue(cmd_queue.GetCurrentEventSeqId());
+        auto event_id = coherent_event_ ? cmd_queue.CurrentSeqId() - 1 : cmd_queue.GetCurrentEventSeqId();
+        static_cast<MTLD3D11EventQuery *>(pAsync)->Issue(event_id);
       }
       break;
     }
@@ -426,8 +450,14 @@ public:
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
     case D3D11_QUERY_EVENT:
-    case D3D11_QUERY_TIMESTAMP_DISJOINT: {
-      switch (static_cast<MTLD3D11EventQuery *>(pAsync)->CheckEventState(cmd_queue.SignaledEventSeqId())) {
+    case D3D11_QUERY_TIMESTAMP_DISJOINT:
+    case D3D11_QUERY_SO_STATISTICS:
+    case D3D11_QUERY_SO_STATISTICS_STREAM0:
+    case D3D11_QUERY_SO_STATISTICS_STREAM1:
+    case D3D11_QUERY_SO_STATISTICS_STREAM2:
+    case D3D11_QUERY_SO_STATISTICS_STREAM3: {
+      auto event_id = coherent_event_ ? cmd_queue.CoherentSeqId() : cmd_queue.SignaledEventSeqId();
+      switch (static_cast<MTLD3D11EventQuery *>(pAsync)->CheckEventState(event_id)) {
       case EventState::Pending:
         break;
       case EventState::Stall:
@@ -477,6 +507,16 @@ public:
     case D3D11_QUERY_PIPELINE_STATISTICS: {
       if (pData) {
         (*static_cast<D3D11_QUERY_DATA_PIPELINE_STATISTICS *>(pData)) = {};
+      }
+      return S_OK;
+    }
+    case D3D11_QUERY_SO_STATISTICS:
+    case D3D11_QUERY_SO_STATISTICS_STREAM0:
+    case D3D11_QUERY_SO_STATISTICS_STREAM1:
+    case D3D11_QUERY_SO_STATISTICS_STREAM2:
+    case D3D11_QUERY_SO_STATISTICS_STREAM3: {
+      if (pData) {
+        (*static_cast<D3D11_QUERY_DATA_SO_STATISTICS *>(pData)) = {0, 0};
       }
       return S_OK;
     }
@@ -707,6 +747,7 @@ private:
   std::atomic<uint32_t> refcount = 0;
   D3D11Multithread d3dmt_;
   bool ignore_map_flag_no_wait_;
+  bool coherent_event_;
   Com<MTLD3D11DeviceContextState, false> state_object_;
 };
 
