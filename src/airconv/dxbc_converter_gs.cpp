@@ -792,8 +792,8 @@ convert_dxbc_vertex_for_geometry_shader(
       );
       builder.CreateBr(finalize_index);
     }
-
-  } else if (index_buffer_idx) {
+  // compare index_buffer_idx with ~0u instead
+  } else if (index_buffer_idx != ~0u) {
     auto start_index = builder.CreateExtractValue(draw_arguments, 2);
     auto index_buffer = function->getArg(index_buffer_idx);
     auto index_buffer_element_type = index_buffer->getType()->getNonOpaquePointerElementType();

@@ -354,9 +354,17 @@ int main(int argc, char **argv) {
       SM50FreeError(err);
       return 1;
     }
+    // Pass the geometry shader settings and empty input layout as well
+    SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout{};
+    ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
+    ia_layout.next = &data;
+    SM50_SHADER_PSO_GEOMETRY_SHADER_DATA geometry{};
+    geometry.type = SM50_SHADER_PSO_GEOMETRY_SHADER;
+    geometry.next = &ia_layout;
     if (auto err = dxmt::dxbc::convert_dxbc_vertex_for_geometry_shader(
           (dxmt::dxbc::SM50ShaderInternal *)sm50, "shader_main",
-          (dxmt::dxbc::SM50ShaderInternal *)sm50_geometry, Context, M, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&data
+          (dxmt::dxbc::SM50ShaderInternal *)sm50_geometry, Context, M,
+          (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&geometry
         )) {
       errs() << err << '\n';
       return 1;

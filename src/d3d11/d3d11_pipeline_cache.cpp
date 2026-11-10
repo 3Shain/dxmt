@@ -9,6 +9,7 @@
 #include "sha1/sha1_util.hpp"
 #include "../d3d10/d3d10_shader.hpp"
 #include "../d3d10/d3d10_input_layout.hpp"
+#include "util_shader_dump.hpp"
 #include <cstring>
 #include <shared_mutex>
 
@@ -227,6 +228,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
         return shaders_.at(sha1).get();
       }
     }
+    DumpShaderBytecode(sha1, pBytecode, BytecodeLength);
     sm50_error_t err;
     sm50_shader_t sm50;
     MTL_SHADER_REFLECTION reflection;

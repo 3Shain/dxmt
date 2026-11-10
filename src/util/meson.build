@@ -10,6 +10,7 @@ util_src = files([
   # 'util_sleep.cpp',
   'util_bloom.cpp',
   'util_md5.cpp',
+  'util_shader_dump.cpp',
 
   'thread.cpp',
 
