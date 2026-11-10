@@ -1743,20 +1743,34 @@ public:
     uint32_t cp_count;
     if (!to_metal_primitive_type(topology_, primitive_type, cp_count))
       return;
-    bool encode_binding = sig->UpdateRootArguments || sig->UpdateIndexBuffer || sig->UpdateVertexBuffers;
+    bool encode_binding = sig->UpdateRootArguments || sig->UpdateIndexBuffer || sig->UpdateVertexBuffers ||
+                          pso_graphics_->is_geometry || pso_graphics_->is_tess;
     DrawCallStatus status = PreDraw(encode_binding);
     if (status == DrawCallStatus::Invalid)
       return;
-    if (status != DrawCallStatus::Ordinary) {
-      IMPLEMENT_ME // TODO: (potential) emulated pipeline
-    }
 
-    auto cmd = allocator_->EncodeIndirectRenderCommand(sig, pso_graphics_.ptr(), MaxCommandCount);
+    auto cmd = allocator_->EncodeIndirectRenderCommand(sig, pso_graphics_.ptr(), MaxCommandCount, topology_);
     cmd->max_count_buffer = CountBufferAddress;
     cmd->argument_buffer = ArgBufferAddress;
     cmd->primitive_type = primitive_type;
-    cmd->index_buffer = index_buffer_address;
-    cmd->index_buffer_format = index_type == WMTIndexTypeUInt32 ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
+    if (sig->CommandType == D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED) {
+      cmd->index_buffer = index_buffer_address;
+      cmd->index_buffer_format = index_type == WMTIndexTypeUInt32 ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
+    } else {
+      cmd->index_buffer = 0;
+      cmd->index_buffer_format = DXGI_FORMAT_UNKNOWN;
+    }
+    if (status == DrawCallStatus::Geometry) {
+      std::tie(cmd->vertex_per_warp, cmd->vertex_increment_per_warp) = get_gs_vertex_count(topology_);
+    }
+    if (status == DrawCallStatus::Tessellation) {
+      cmd->control_point_count = cp_count;
+      cmd->threads_per_patch = pso_graphics_->tess_threads_per_patch;
+    }
+    if (status != DrawCallStatus::Ordinary) {
+      auto [Unused, Offset] = allocator_->AllocateGPUHeap(sizeof(DXMT_DRAW_DYNAMIC_IB_ARGUMENTS) * MaxCommandCount, 32);
+      cmd->dyn_ib_args = allocator_->gpu_heap_buffer_address_ + Offset;
+    }
     if (!encode_binding)
       return;
     cmd->rootsig_qwords = EncodeRootArgument(rootsig_graphics_.ptr(), rootarg_graphics_staging_, MaxCommandCount);
