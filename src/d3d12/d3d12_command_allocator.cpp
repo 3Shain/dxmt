@@ -236,10 +236,14 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectComputeCommand(MTLD3D12CommandSignat
 
 IndirectRenderCommandData *
 MTLD3D12CommandAllocatorImpl::EncodeIndirectRenderCommand(
-    MTLD3D12CommandSignature *pCmdSig, MTLD3D12GraphicsPipelineState *pPSO, size_t MaxCount
+    MTLD3D12CommandSignature *pCmdSig, MTLD3D12GraphicsPipelineState *pPSO, size_t MaxCount,
+    D3D12_PRIMITIVE_TOPOLOGY Topology
 ) {
+  bool use_emulated_mesh = pPSO->is_geometry || pPSO->is_tess;
+  bool encode_binding =
+      use_emulated_mesh || pCmdSig->UpdateVertexBuffers || pCmdSig->UpdateIndexBuffer || pCmdSig->UpdateRootArguments;
   WMTIndirectCommandBufferInfo info;
-  info.inherit_buffers = !(pCmdSig->UpdateVertexBuffers || pCmdSig->UpdateIndexBuffer || pCmdSig->UpdateRootArguments);
+  info.inherit_buffers = !encode_binding;
   info.inherit_pso = 1;
   info.inherit_cull_mode = 1;
   info.inherit_fill_mode = 1;
@@ -250,12 +254,13 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectRenderCommand(
   info.support_color_attachment_mapping = 0;
   info.support_dynamic_attribute_stride = 0;
   info.support_ray_tracing = 0;
-  info.type = pCmdSig->CommandType == D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED ? WMTIndirectCommandTypeDrawIndexed
-                                                                                : WMTIndirectCommandTypeDraw;
+  info.type = use_emulated_mesh ? WMTIndirectCommandTypeDrawMeshThreadgroups
+              : pCmdSig->CommandType == D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED ? WMTIndirectCommandTypeDrawIndexed
+                                                                                  : WMTIndirectCommandTypeDraw;
   info.max_vertex_buffer_binding = 31;
   info.max_fragment_buffer_binding = 31;
-  info.max_object_buffer_binding = 0;
-  info.max_mesh_buffer_binding = 0;
+  info.max_object_buffer_binding = 31;
+  info.max_mesh_buffer_binding = 31;
   info.max_kernel_buffer_binding = 0;
   info.max_kernel_threadgroup_memory_binding = 0;
   info.max_object_threadgroup_memory_binding = 0;
@@ -269,6 +274,12 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectRenderCommand(
 
   data->cmd_buf = info.gpu_resource_id;
   data->max_count = MaxCount;
+  uint32_t cmd_flags = 0;
+  if (pPSO->is_geometry)
+    cmd_flags |= kIndirectRenderCommandFlagIsGeometry;
+  if (pPSO->is_tess)
+    cmd_flags |= kIndirectRenderCommandFlagIsTessellation;
+  data->flags = cmd_flags;
 
   {
     // populated outside
@@ -282,13 +293,12 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectRenderCommand(
     data->primitive_type = 0;
     data->index_buffer = 0;
     data->index_buffer_format = {};
+    data->dyn_ib_args = 0;
+    data->vertex_increment_per_warp = 0;
+    data->vertex_per_warp = 0;
   }
 
   {
-    /**
-     * TODO: move these out?
-     */
-
     auto &cmd_use_icb = EncodeRenderPrepassCommand<wmtcmd_compute_useresource>();
     cmd_use_icb.type = WMTComputeCommandUseResource;
     cmd_use_icb.usage = WMTResourceUsageRead | WMTResourceUsageWrite;
@@ -311,7 +321,7 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectRenderCommand(
 
     auto &cmd_setpso = EncodeRenderCommand<wmtcmd_render_setpso>();
     cmd_setpso.type = WMTRenderCommandSetPSO;
-    cmd_setpso.pso = pPSO->GetRenderPipelineVariant({} /* FIXME: value should not matter here until gs/ts */);
+    cmd_setpso.pso = pPSO->GetRenderPipelineVariant(Topology);
   }
 
   auto &cmd = EncodeRenderCommand<wmtcmd_render_executecommands>();
