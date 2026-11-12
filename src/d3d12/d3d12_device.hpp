@@ -17,7 +17,7 @@
  */
 
 #pragma once
-#include "d3d12.h"
+#include "dxmt_d3d12.h"
 #include "d3d12_command_encoder.hpp"
 #include "d3d12_descriptor_heap.hpp"
 #include "dxgi1_2.h"
