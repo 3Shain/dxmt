@@ -552,7 +552,7 @@ jobs:
       - name: Build
         run: |
           export PATH="$PATH:$GITHUB_WORKSPACE/toolchains/${{ env.LLVM_MINGW_DIR }}/bin"
-          meson setup --cross-file build-arm64ec.txt -Dnative_llvm_path=toolchains/llvm-darwin-arm64 -Dwine_install_path=toolchains/wine build --buildtype debugoptimized --prefix $(pwd)/install
+          meson setup --cross-file build-arm64ec.txt -Dnative_llvm_path=toolchains/llvm-darwin-arm64 -Dwine_install_path=toolchains/wine build -Denable_d3d12=true --buildtype debugoptimized --prefix $(pwd)/install
           meson compile -C build
           meson install -C build
 
@@ -598,7 +598,7 @@ jobs:
       - name: Build
         run: |
           export PATH="$PATH:$GITHUB_WORKSPACE/toolchains/${{ env.LLVM_MINGW_DIR }}/bin"
-          meson setup --cross-file build-arm64ec.txt -Denable_nvapi=true -Denable_nvngx=true -Dnative_llvm_path=toolchains/llvm-darwin-arm64 -Dwine_install_path=toolchains/wine build --buildtype release --prefix $(pwd)/install --strip
+          meson setup --cross-file build-arm64ec.txt -Denable_nvapi=true -Denable_nvngx=true -Denable_d3d12=true -Dnative_llvm_path=toolchains/llvm-darwin-arm64 -Dwine_install_path=toolchains/wine build --buildtype release --prefix $(pwd)/install --strip
           meson compile -C build
           meson install -C build
 
