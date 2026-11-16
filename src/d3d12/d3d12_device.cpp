@@ -71,6 +71,8 @@ public:
     info.depth_compare_function = WMTCompareFunctionAlways;
     default_depth_stencil_state = GetMTLDevice().newDepthStencilState(info);
 
+    mesh_icb_supported = GetMTLDevice().supportsFamily(WMTGPUFamilyApple9);
+
     return S_OK;
   };
 

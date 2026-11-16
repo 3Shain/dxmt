@@ -1772,6 +1772,8 @@ public:
       cmd->threads_per_patch = pso_graphics_->tess_threads_per_patch;
     }
     if (status != DrawCallStatus::Ordinary) {
+      if (!device_->mesh_icb_supported)
+        return ExecuteIndirectMeshUnroll(cmd, MaxCommandCount);
       auto [Unused, Offset] = allocator_->AllocateGPUHeap(sizeof(DXMT_DRAW_DYNAMIC_IB_ARGUMENTS) * MaxCommandCount, 32);
       cmd->dyn_ib_args = allocator_->gpu_heap_buffer_address_ + Offset;
     }
@@ -1786,6 +1788,94 @@ public:
     cmd->vertex_buffer = allocator_->gpu_heap_buffer_address_ + VBOffset;
     cmd->vertex_argbuf_stride = VBStride;
   };
+
+  void
+  ExecuteIndirectMeshUnroll(IndirectRenderCommandData *cmd, UINT MaxCommandCount) {
+    auto [_, IBArgOffset] = allocator_->AllocateGPUHeap(sizeof(DXMT_DRAW_DYNAMIC_IB_ARGUMENTS) * MaxCommandCount, 32);
+    cmd->dyn_ib_args = allocator_->gpu_heap_buffer_address_ + IBArgOffset;
+    auto [__, DrawArgOffset] = allocator_->AllocateGPUHeap(sizeof(D3D12_DISPATCH_ARGUMENTS) * MaxCommandCount, 32);
+    cmd->static_samplers = allocator_->gpu_heap_buffer_address_ + DrawArgOffset;
+    auto RAOffset = EncodeRootArgument(rootsig_graphics_.ptr(), rootarg_graphics_staging_, MaxCommandCount);
+    cmd->rootsig_qwords = RAOffset;
+    cmd->rootsig_qwords += allocator_->gpu_heap_buffer_address_;
+    cmd->rootsig_qwords_stride = rootsig_graphics_->UploadQwords;
+    auto [VBOffset, VBStride] = PopulateVertexBufferTable(MaxCommandCount);
+    cmd->vertex_buffer = allocator_->gpu_heap_buffer_address_ + VBOffset;
+    cmd->vertex_argbuf_stride = VBStride;
+
+    {
+      auto SSOffset = EncodeStaticSamplers(rootsig_graphics_.ptr());
+      auto &cmd_fsargbuf = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+      cmd_fsargbuf.type = WMTRenderCommandSetFragmentBuffer;
+      cmd_fsargbuf.buffer = allocator_->gpu_heap_buffer_;
+      cmd_fsargbuf.offset = SSOffset;
+      cmd_fsargbuf.index = SM50_BINDING_INDEX_STATIC_SAMPLERS;
+      auto &cmd_osargbuf = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+      cmd_osargbuf.type = WMTRenderCommandSetObjectBuffer;
+      cmd_osargbuf.buffer = allocator_->gpu_heap_buffer_;
+      cmd_osargbuf.offset = SSOffset;
+      cmd_osargbuf.index = SM50_BINDING_INDEX_STATIC_SAMPLERS;
+      auto &cmd_msargbuf = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+      cmd_msargbuf.type = WMTRenderCommandSetMeshBuffer;
+      cmd_msargbuf.buffer = allocator_->gpu_heap_buffer_;
+      cmd_msargbuf.offset = SSOffset;
+      cmd_msargbuf.index = SM50_BINDING_INDEX_STATIC_SAMPLERS;
+    }
+
+    for (unsigned i = 0; i < MaxCommandCount; i++) {
+
+      auto IBArgOffsetLocal = IBArgOffset + i * sizeof(DXMT_DRAW_DYNAMIC_IB_ARGUMENTS);
+      auto VBOffsetLocal = VBOffset + i * VBStride;
+      auto RAOffsetLocal = RAOffset + i * sizeof(uint64_t) * rootsig_graphics_->UploadQwords;
+
+      auto &cmd_osvb = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+      cmd_osvb.type = WMTRenderCommandSetObjectBuffer;
+      cmd_osvb.buffer = allocator_->gpu_heap_buffer_;
+      cmd_osvb.offset = VBOffsetLocal;
+      cmd_osvb.index = SM50_BINDING_INDEX_VERTEX_BUFFER;
+
+      auto &cmd_osdrawarg = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+      cmd_osdrawarg.type = WMTRenderCommandSetObjectBuffer;
+      cmd_osdrawarg.buffer = allocator_->gpu_heap_buffer_;
+      cmd_osdrawarg.offset = IBArgOffsetLocal;
+      cmd_osdrawarg.index = SM50_BINDING_INDEX_DRAW_ARGUMENTS;
+
+      auto &cmd_fsargbuf = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+      cmd_fsargbuf.type = WMTRenderCommandSetFragmentBuffer;
+      cmd_fsargbuf.buffer = allocator_->gpu_heap_buffer_;
+      cmd_fsargbuf.offset = RAOffsetLocal;
+      cmd_fsargbuf.index = SM50_BINDING_INDEX_ROOT_ARGUMENTS;
+      auto &cmd_osargbuf = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+      cmd_osargbuf.type = WMTRenderCommandSetObjectBuffer;
+      cmd_osargbuf.buffer = allocator_->gpu_heap_buffer_;
+      cmd_osargbuf.offset = RAOffsetLocal;
+      cmd_osargbuf.index = SM50_BINDING_INDEX_ROOT_ARGUMENTS;
+      auto &cmd_msargbuf = allocator_->EncodeRenderCommand<wmtcmd_render_setbuffer>();
+      cmd_msargbuf.type = WMTRenderCommandSetMeshBuffer;
+      cmd_msargbuf.buffer = allocator_->gpu_heap_buffer_;
+      cmd_msargbuf.offset = RAOffsetLocal;
+      cmd_msargbuf.index = SM50_BINDING_INDEX_ROOT_ARGUMENTS;
+
+      auto &cmd_mesh = allocator_->EncodeRenderCommand<wmtcmd_render_draw_meshthreadgroups_indirect>();
+      cmd_mesh.type = WMTRenderCommandDrawMeshThreadgroupsIndirect;
+      cmd_mesh.indirect_args_buffer = allocator_->gpu_heap_buffer_;
+      cmd_mesh.indirect_args_offset = DrawArgOffset + i * sizeof(D3D12_DISPATCH_ARGUMENTS);
+      if (pso_graphics_->is_geometry) {
+        auto [vertex_per_warp, _] = get_gs_vertex_count(topology_);
+        cmd_mesh.object_threadgroup_size = {vertex_per_warp, 1, 1};
+        cmd_mesh.mesh_threadgroup_size = {1, 1, 1};
+      } else if (pso_graphics_->is_tess) {
+        auto PatchPerGroup = 32 / pso_graphics_->tess_threads_per_patch;
+        auto ThreadsPerPatch = pso_graphics_->tess_threads_per_patch;
+        cmd_mesh.object_threadgroup_size = {ThreadsPerPatch, PatchPerGroup, 1};
+        cmd_mesh.mesh_threadgroup_size = {32, 1, 1};
+      } else {
+        // unreachable
+        cmd_mesh.object_threadgroup_size = {0, 0, 0};
+        cmd_mesh.mesh_threadgroup_size = {0, 0, 0};
+      }
+    }
+  }
 
   void STDMETHODCALLTYPE
   AtomicCopyBufferUINT(
