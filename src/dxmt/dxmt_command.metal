@@ -564,13 +564,10 @@ struct DXMTClearUintMetadata {
 [[kernel]] void cs_clear_texture3d_float(
     texture3d<float, access::write> tex [[texture(0)]],
     constant DXMTClearFloatMetadata& meta [[buffer(1)]],
-    uint2 pos [[thread_position_in_grid]]
+    uint3 pos [[thread_position_in_grid]]
 ) {
-  auto depth = tex.get_depth();
-  for (uint i = 0; i < depth; i++) {
-    uint2 final_pos = meta.offset + pos;
-    tex.write(meta.value, uint3(final_pos.x, final_pos.y, i));
-  }
+  uint2 final_pos = meta.offset + pos.xy;
+  tex.write(meta.value, uint3(final_pos.x, final_pos.y, pos.z));
 }
 
 [[kernel]] void cs_clear_texture2d_uint(
@@ -592,13 +589,10 @@ struct DXMTClearUintMetadata {
 [[kernel]] void cs_clear_texture3d_uint(
     texture3d<uint, access::write> tex [[texture(0)]],
     constant DXMTClearUintMetadata& meta [[buffer(1)]],
-    uint2 pos [[thread_position_in_grid]]
+    uint3 pos [[thread_position_in_grid]]
 ) {
-  auto depth = tex.get_depth();
-  for (uint i = 0; i < depth; i++) {
-    uint2 final_pos = meta.offset + pos;
-    tex.write(meta.value, uint3(final_pos.x, final_pos.y, i));
-  }
+  uint2 final_pos = meta.offset + pos.xy;
+  tex.write(meta.value, uint3(final_pos.x, final_pos.y, pos.z));
 }
 
 [[kernel]] void cs_clear_tbuffer_float(
