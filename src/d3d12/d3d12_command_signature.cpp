@@ -116,6 +116,8 @@ public:
     UpdateVertexBuffers = false;
     uint32_t ib_index = ~-0u;
 
+    auto mesh_icb_supported = device_->mesh_icb_supported;
+
     source << kSharedHeader;
 
     source << "struct __attribute__ ((packed)) d3d12_arguments {\n";
@@ -199,10 +201,20 @@ public:
            << pDesc->ByteStride << ")[0];\n";
     if (is_compute) {
       source << "compute_command cmd(command_data.cmd_buf, i);\n";
+      source << "cmd.reset();\n";
     } else {
+      source << "bool is_geometry = command_data.flags & " << kIndirectRenderCommandFlagIsGeometry << ";\n";
+      source << "bool is_tessellation = command_data.flags & " << kIndirectRenderCommandFlagIsTessellation << ";\n";
+      source << "bool is_mesh_emulated = is_geometry || is_tessellation;\n";
       source << "render_command cmd(command_data.cmd_buf, i);\n";
+      if (mesh_icb_supported) {
+        source << "cmd.reset();\n";
+      } else {
+        source
+            << "auto device & mesh_args = reinterpret_cast<device packed_uint3 *>(command_data.static_samplers)[i];\n";
+        source << "if (!is_mesh_emulated) { cmd.reset(); } else { mesh_args = 0; }\n";
+      }
     }
-    source << "cmd.reset();\n";
     source << "if (i >= count) return;\n";
     source << "device ulong * rootsig_qwords = command_data.rootsig_qwords + "
               "(i * command_data.rootsig_qwords_stride);\n";
@@ -211,10 +223,10 @@ public:
                 "reinterpret_cast<device dxmt_vertex_buffer *>(command_data.vertex_buffer + "
                 "(i * command_data.vertex_argbuf_stride));\n";
       source << "device dxmt_dynamic_ib_arguments * dyn_ib_args = &command_data.dyn_ib_args[i];\n";
-      source << "bool is_geometry = command_data.flags & " << kIndirectRenderCommandFlagIsGeometry << ";\n";
-      source << "bool is_tessellation = command_data.flags & " << kIndirectRenderCommandFlagIsTessellation << ";\n";
-      source << "bool is_mesh_emulated = is_geometry || is_tessellation;\n";
-      source << "if (is_mesh_emulated) {\n";
+      if (mesh_icb_supported)
+        source << "if (is_mesh_emulated) {\n";
+      else
+        source << "if (0) {\n";
       source << "cmd.set_object_buffer(vertex_buffer," << SM50_BINDING_INDEX_VERTEX_BUFFER << ");\n";
       source << "cmd.set_object_buffer(rootsig_qwords," << SM50_BINDING_INDEX_ROOT_ARGUMENTS << ");\n";
       source << "cmd.set_object_buffer(command_data.static_samplers," << SM50_BINDING_INDEX_STATIC_SAMPLERS << ");\n";
@@ -246,32 +258,41 @@ public:
       auto &arg = pDesc->pArgumentDescs[i];
       switch (arg.Type) {
       case D3D12_INDIRECT_ARGUMENT_TYPE_DRAW: {
-        source
-            << "if (is_mesh_emulated) {\n"
-               "  dyn_ib_args->vertex_per_instance = arg.draw.vertex_count_per_instance;\n"
-               "  dyn_ib_args->instance_count = arg.draw.instance_count;\n"
-               "  dyn_ib_args->start_vertex = arg.draw.start_vertex_location;\n"
-               "  dyn_ib_args->base_vertex = 0;\n"
-               "  dyn_ib_args->start_instance = arg.draw.start_instance_location;\n"
-               "  dyn_ib_args->index_format = 0;\n"
-               "  dyn_ib_args->index_buffer = 0;\n"
-               "}\n"
-               "if (is_geometry) {\n"
-               "  uint warp_count = (arg.draw.vertex_count_per_instance - 1) / command_data.mesh_arg2 + 1;\n"
-               "  cmd.draw_mesh_threadgroups(uint3(warp_count, arg.draw.instance_count, 1),"
-               "                             uint3(command_data.mesh_arg1, 1, 1), uint3(1, 1, 1));\n"
-               "} else if (is_tessellation) {\n"
-               "  uint patch_per_instance = arg.draw.vertex_count_per_instance / command_data.mesh_arg1;\n"
-               "  uint patch_per_group = 32 / command_data.mesh_arg2;\n"
-               "  uint patch_per_object = (patch_per_instance - 1) / patch_per_group + 1;\n"
-               "  cmd.draw_mesh_threadgroups(uint3(patch_per_object, arg.draw.instance_count, 1),"
-               "                             uint3(command_data.mesh_arg2, patch_per_group, 1), uint3(32, 1, 1));\n"
-               "} else {\n"
-               "  cmd.draw_primitives((primitive_type)command_data.primitive_type,"
-               "                      arg.draw.start_vertex_location,"
-               "                      arg.draw.vertex_count_per_instance, arg.draw.instance_count,"
-               "                      arg.draw.start_instance_location);\n"
-               "}\n";
+        source << "if (is_mesh_emulated) {\n"
+                  "  dyn_ib_args->vertex_per_instance = arg.draw.vertex_count_per_instance;\n"
+                  "  dyn_ib_args->instance_count = arg.draw.instance_count;\n"
+                  "  dyn_ib_args->start_vertex = arg.draw.start_vertex_location;\n"
+                  "  dyn_ib_args->base_vertex = 0;\n"
+                  "  dyn_ib_args->start_instance = arg.draw.start_instance_location;\n"
+                  "  dyn_ib_args->index_format = 0;\n"
+                  "  dyn_ib_args->index_buffer = 0;\n"
+                  "}\n"
+                  "if (is_geometry) {\n"
+                  "  uint warp_count = arg.draw.vertex_count_per_instance"
+                  "   ? (arg.draw.vertex_count_per_instance - 1) / command_data.mesh_arg2 + 1"
+                  "   : 0;\n";
+        if (mesh_icb_supported)
+          source << "cmd.draw_mesh_threadgroups(uint3(warp_count, arg.draw.instance_count, 1),"
+                    "                           uint3(command_data.mesh_arg1, 1, 1), uint3(1, 1, 1));\n";
+        else
+          source << "mesh_args = uint3(warp_count, arg.draw.instance_count, 1);\n";
+        source << "} else if (is_tessellation) {\n"
+                  "  uint patch_per_instance = arg.draw.vertex_count_per_instance / command_data.mesh_arg1;\n"
+                  "  uint patch_per_group = 32 / command_data.mesh_arg2;\n"
+                  "  uint patch_per_object = patch_per_instance"
+                  "   ? (patch_per_instance - 1) / patch_per_group + 1"
+                  "   : 0;\n";
+        if (mesh_icb_supported)
+          source << "cmd.draw_mesh_threadgroups(uint3(patch_per_object, arg.draw.instance_count, 1),"
+                    "                           uint3(command_data.mesh_arg2, patch_per_group, 1), uint3(32, 1, 1));\n";
+        else
+          source << "mesh_args = uint3(patch_per_object, arg.draw.instance_count, 1);\n";
+        source << "} else {\n"
+                  "  cmd.draw_primitives((primitive_type)command_data.primitive_type,"
+                  "                      arg.draw.start_vertex_location,"
+                  "                      arg.draw.vertex_count_per_instance, arg.draw.instance_count,"
+                  "                      arg.draw.start_instance_location);\n"
+                  "}\n";
         break;
       }
       case D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED: {
@@ -279,27 +300,37 @@ public:
           source << "bool ib32bit = command_data.index_buffer_format == 42;\n";
           source << "device void* ib = command_data.index_buffer;\n";
         }
+        source << "if (is_mesh_emulated) {\n"
+                  "  dyn_ib_args->vertex_per_instance = arg.draw_indexed.index_count_per_instance;\n"
+                  "  dyn_ib_args->instance_count = arg.draw_indexed.instance_count;\n"
+                  "  dyn_ib_args->start_vertex = arg.draw_indexed.start_index_location;\n"
+                  "  dyn_ib_args->base_vertex = arg.draw_indexed.base_vertex_location;\n"
+                  "  dyn_ib_args->start_instance = arg.draw_indexed.start_instance_location;\n"
+                  "  dyn_ib_args->index_format = command_data.index_buffer_format;\n"
+                  "  dyn_ib_args->index_buffer = ib;\n"
+                  "}\n"
+                  "if (is_geometry) {\n"
+                  "  uint warp_count = arg.draw_indexed.index_count_per_instance"
+                  "   ? (arg.draw_indexed.index_count_per_instance - 1) / command_data.mesh_arg2 + 1"
+                  "   : 0;\n";
+        if (mesh_icb_supported)
+          source << "cmd.draw_mesh_threadgroups(uint3(warp_count, arg.draw_indexed.instance_count, 1), "
+                    "                           uint3(command_data.mesh_arg1, 1, 1), uint3(1, 1, 1));\n";
+        else
+          source << "mesh_args = uint3(warp_count, arg.draw_indexed.instance_count, 1);\n";
+        source << "} else if (is_tessellation) {\n"
+                  "  uint patch_per_instance = arg.draw_indexed.index_count_per_instance / command_data.mesh_arg1;\n"
+                  "  uint patch_per_group = 32 / command_data.mesh_arg2;\n"
+                  "  uint patch_per_object = patch_per_instance"
+                  "   ? (patch_per_instance - 1) / patch_per_group + 1"
+                  "   : 0;\n";
+        if (mesh_icb_supported)
+          source << "cmd.draw_mesh_threadgroups(uint3(patch_per_object, arg.draw_indexed.instance_count, 1), "
+                    "                           uint3(command_data.mesh_arg2, patch_per_group, 1), uint3(32, 1, 1));\n";
+        else
+          source << "mesh_args = uint3(patch_per_object, arg.draw_indexed.instance_count, 1);\n";
         source
-            << "if (is_mesh_emulated) {\n"
-               "  dyn_ib_args->vertex_per_instance = arg.draw_indexed.index_count_per_instance;\n"
-               "  dyn_ib_args->instance_count = arg.draw_indexed.instance_count;\n"
-               "  dyn_ib_args->start_vertex = arg.draw_indexed.start_index_location;\n"
-               "  dyn_ib_args->base_vertex = arg.draw_indexed.base_vertex_location;\n"
-               "  dyn_ib_args->start_instance = arg.draw_indexed.start_instance_location;\n"
-               "  dyn_ib_args->index_format = command_data.index_buffer_format;\n"
-               "  dyn_ib_args->index_buffer = ib;\n"
-               "}\n"
-               "if (is_geometry) {\n"
-               "  uint warp_count = (arg.draw_indexed.index_count_per_instance - 1) / command_data.mesh_arg2 + 1;\n"
-               "  cmd.draw_mesh_threadgroups(uint3(warp_count, arg.draw_indexed.instance_count, 1), "
-               "                             uint3(command_data.mesh_arg1, 1, 1), uint3(1, 1, 1));\n"
-               "} else if (is_tessellation) {\n"
-               "  uint patch_per_instance = arg.draw_indexed.index_count_per_instance / command_data.mesh_arg1;\n"
-               "  uint patch_per_group = 32 / command_data.mesh_arg2;\n"
-               "  uint patch_per_object = (patch_per_instance - 1) / patch_per_group + 1;\n"
-               "  cmd.draw_mesh_threadgroups(uint3(patch_per_object, arg.draw_indexed.instance_count, 1), "
-               "                             uint3(command_data.mesh_arg2, patch_per_group, 1), uint3(32, 1, 1));\n"
-               "} else if (ib32bit) {\n"
+            << "} else if (ib32bit) {\n"
                "  cmd.draw_indexed_primitives((primitive_type)command_data.primitive_type,"
                "                              arg.draw_indexed.index_count_per_instance,"
                "                              reinterpret_cast<device uint *>(ib) + arg.draw_indexed.start_index_location,"

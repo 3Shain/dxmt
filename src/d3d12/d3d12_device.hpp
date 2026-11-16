@@ -193,6 +193,8 @@ public:
   EventListener event_listener;
 
   WMT::Reference<WMT::DepthStencilState> default_depth_stencil_state;
+
+  bool mesh_icb_supported;
 };
 
 HRESULT
