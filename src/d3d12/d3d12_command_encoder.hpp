@@ -35,7 +35,6 @@ enum class EncoderType {
 struct EncoderData {
   EncoderType type;
   EncoderData *next = nullptr;
-  uint64_t id;
 };
 
 struct ClearEncoderData : EncoderData {
@@ -44,13 +43,16 @@ struct ClearEncoderData : EncoderData {
     std::pair<float, uint8_t> depth_stencil;
   };
   TextureViewRef attachment;
-  unsigned clear_dsv;
-  unsigned array_length;
-  unsigned width;
-  unsigned height;
-  unsigned depth_plane;
+  unsigned clear_dsv = 0;
+  unsigned array_length = 0;
+  unsigned width = 0;
+  unsigned height = 0;
+  unsigned depth_plane = 0;
 
-  ClearEncoderData() {}
+  ClearEncoderData() {
+    type = EncoderType::Clear;
+    color = {0, 0, 0, 0};
+  }
 };
 
 struct RenderEncoderColorAttachmentData {
@@ -88,37 +90,63 @@ struct RenderEncoderStencilAttachmentData {
 };
 
 struct RenderEncoderData : EncoderData {
-  std::array<RenderEncoderColorAttachmentData, 8> colors;
-  RenderEncoderDepthAttachmentData depth;
-  RenderEncoderStencilAttachmentData stencil;
-  uint8_t default_raster_sample_count;
-  uint16_t render_target_array_length;
-  uint32_t render_target_height;
-  uint32_t render_target_width;
+  std::array<RenderEncoderColorAttachmentData, 8> colors{{}};
+  RenderEncoderDepthAttachmentData depth{};
+  RenderEncoderStencilAttachmentData stencil{};
+  uint8_t default_raster_sample_count = 0;
+  uint16_t render_target_array_length = 0;
+  uint32_t render_target_height = 16384;
+  uint32_t render_target_width = 16384;
   wmtcmd_render_nop cmd_head;
   wmtcmd_base *cmd_tail;
   wmtcmd_compute_nop cmd_prepass_head;
   wmtcmd_base *cmd_prepass_tail;
-  uint8_t dsv_planar_flags;
-  uint8_t dsv_readonly_flags;
-  uint8_t render_target_count;
+  uint8_t dsv_planar_flags = 0;
+  uint8_t dsv_readonly_flags = 0;
+  uint8_t render_target_count = 0;
   bool use_visibility_result = 0;
-  bool use_tessellation = 0;
-  bool use_geometry = 0;
+
+  RenderEncoderData() {
+    type = EncoderType::Render;
+    cmd_head.type = WMTRenderCommandNop;
+    cmd_head.next.set(nullptr);
+    cmd_tail = (wmtcmd_base *)&cmd_head;
+    cmd_prepass_head.type = WMTComputeCommandNop;
+    cmd_prepass_head.next.set(nullptr);
+    cmd_prepass_tail = (wmtcmd_base *)&cmd_prepass_head;
+  }
 };
 
 struct BlitEncoderData : EncoderData {
   wmtcmd_blit_nop cmd_head;
   wmtcmd_base *cmd_tail;
+
+  BlitEncoderData() {
+    type = EncoderType::Blit;
+    cmd_head.type = WMTBlitCommandNop;
+    cmd_head.next.set(0);
+    cmd_tail = (wmtcmd_base *)&cmd_head;
+  }
 };
 
 struct ComputeEncoderData : EncoderData {
   wmtcmd_compute_nop cmd_head;
   wmtcmd_base *cmd_tail;
+
+  ComputeEncoderData() {
+    type = EncoderType::Compute;
+    cmd_head.type = WMTComputeCommandNop;
+    cmd_head.next.set(0);
+    cmd_tail = (wmtcmd_base *)&cmd_head;
+  }
 };
 struct ResolveEncoderData : EncoderData {
   TextureViewRef src;
   TextureViewRef dst;
+
+  ResolveEncoderData() {
+    type = EncoderType::Resolve;
+  }
 };
 
 }; // namespace dxmt

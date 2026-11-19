@@ -349,11 +349,7 @@ template <>
 void
 SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::startComputePass() {
   ctx.InvalidateCurrentPass();
-  auto compute = ctx.AllocatePass<ComputeEncoderData>();
-  compute->type = EncoderType::Compute;
-  compute->cmd_head.type = WMTComputeCommandNop;
-  compute->cmd_head.next.set(0);
-  compute->cmd_tail = (wmtcmd_base *)&compute->cmd_head;
+  ctx.AllocatePass<ComputeEncoderData>();
 }
 
 template <>
@@ -439,21 +435,7 @@ template <>
 void
 SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::startRenderPass() {
   ctx.InvalidateCurrentPass();
-  auto render = ctx.AllocatePass<RenderEncoderData>();
-  render->type = EncoderType::Render;
-  render->cmd_head.type = WMTRenderCommandNop;
-  render->cmd_head.next.set(0);
-  render->cmd_tail = (wmtcmd_base *)&render->cmd_head;
-  render->cmd_prepass_head.type = WMTComputeCommandNop;
-  render->cmd_prepass_head.next.set(0);
-  render->cmd_prepass_tail = (wmtcmd_base *)&render->cmd_prepass_head;
-  render->dsv_planar_flags = 0;
-  render->dsv_readonly_flags = 0;
-  render->render_target_count = 0;
-  render->render_target_width = 16384;
-  render->render_target_height = 16384;
-  render->render_target_array_length = 0;
-  render->default_raster_sample_count = 1;
+  ctx.AllocatePass<RenderEncoderData>();
 }
 
 template <>

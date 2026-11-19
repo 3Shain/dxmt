@@ -377,15 +377,6 @@ public:
 
       allocator_->InvalidateCurrentPass();
       auto render = allocator_->AllocatePass<RenderEncoderData>();
-      render->type = EncoderType::Render;
-      render->cmd_head.type = WMTRenderCommandNop;
-      render->cmd_head.next.set(0);
-      render->cmd_tail = (wmtcmd_base *)&render->cmd_head;
-      render->cmd_prepass_head.type = WMTComputeCommandNop;
-      render->cmd_prepass_head.next.set(0);
-      render->cmd_prepass_tail = (wmtcmd_base *)&render->cmd_prepass_head;
-      render->dsv_planar_flags = 0;
-      render->dsv_readonly_flags = 0;
       render->render_target_count = num_rtvs;
 
       unsigned render_target_width = 16384, render_target_height = 16384, render_target_array_length = 0;
@@ -810,11 +801,7 @@ public:
   PreDispatch(bool SkipResourceBinding = false) {
     if (!allocator_->encoder_current || allocator_->encoder_current->type != EncoderType::Compute) {
       allocator_->InvalidateCurrentPass();
-      auto compute = allocator_->AllocatePass<ComputeEncoderData>();
-      compute->type = EncoderType::Compute;
-      compute->cmd_head.type = WMTComputeCommandNop;
-      compute->cmd_head.next.set(0);
-      compute->cmd_tail = (wmtcmd_base *)&compute->cmd_head;
+      allocator_->AllocatePass<ComputeEncoderData>();
       dirty_state_.set(DirtyState::ComputeRootArguments, DirtyState::ComputeRootSignature);
       dirty_state_.set(DirtyState::ComputePipelineState);
     }
@@ -871,11 +858,7 @@ public:
   PreBlit() {
     if (!allocator_->encoder_current || allocator_->encoder_current->type != EncoderType::Blit) {
       allocator_->InvalidateCurrentPass();
-      auto render = allocator_->AllocatePass<BlitEncoderData>();
-      render->type = EncoderType::Blit;
-      render->cmd_head.type = WMTBlitCommandNop;
-      render->cmd_head.next.set(0);
-      render->cmd_tail = (wmtcmd_base *)&render->cmd_head;
+      allocator_->AllocatePass<BlitEncoderData>();
     }
     return true;
   }
@@ -1161,7 +1144,6 @@ public:
 
     allocator_->InvalidateCurrentPass();
     auto resolve = allocator_->AllocatePass<ResolveEncoderData>();
-    resolve->type = EncoderType::Resolve;
 
     MTL_DXGI_FORMAT_DESC format_desc;
     if (FAILED(MTLQueryDXGIFormat(device_->GetMTLDevice(), Format, format_desc))) {
@@ -1513,7 +1495,6 @@ public:
     }
     allocator_->InvalidateCurrentPass();
     auto encoder_info = allocator_->AllocatePass<ClearEncoderData>();
-    encoder_info->type = EncoderType::Clear;
     encoder_info->clear_dsv = CheckedFlags;
     encoder_info->depth_stencil = {Depth, Stencil};
     encoder_info->attachment = AttachmentDesc.Texture->view(AttachmentDesc.View);
@@ -1553,7 +1534,6 @@ public:
     }
     allocator_->InvalidateCurrentPass();
     auto encoder_info = allocator_->AllocatePass<ClearEncoderData>();
-    encoder_info->type = EncoderType::Clear;
     encoder_info->clear_dsv = 0;
     encoder_info->color = {Color[0], Color[1], Color[2], Color[3]};
     SanitizeRTVClearColor(AttachmentDesc.Texture->pixelFormat(AttachmentDesc.View), encoder_info->color);
