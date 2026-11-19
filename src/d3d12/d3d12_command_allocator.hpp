@@ -155,10 +155,9 @@ public:
 
   HRESULT
   EndRecord(size_t *pEncoderCount) {
+    assert(!encoder_current);
     if (!encoder_last)
       return E_FAIL;
-    if (encoder_current)
-      InvalidateCurrentPass();
     encoder_last = nullptr;
     *pEncoderCount = encoder_count_;
     encoder_count_ = 0;
@@ -185,6 +184,7 @@ public:
   template <typename T>
   T *
   AllocatePass() {
+    assert(!encoder_current);
     auto p = (new (AllocateCPUHeap(sizeof(T), alignof(T))) T());
     encoder_current = p;
     return p;

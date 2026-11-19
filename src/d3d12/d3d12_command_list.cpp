@@ -195,6 +195,8 @@ class MTLD3D12GraphicsCommandListImpl : public MTLD3D12DeviceChild<MTLD3D12Graph
 
   Com<MTLD3D12CommandAllocatorImpl, false> allocator_;
 
+  EncoderType list_current_encoder_type_ = EncoderType::Null;
+
   /* state */
 
   Flags<DirtyState> dirty_state_;
@@ -325,6 +327,7 @@ public:
   Close() {
     if (encoder_count < std::numeric_limits<size_t>::max())
       return E_FAIL;
+    EndCommandListPass();
     return allocator_->EndRecord(&encoder_count);
   };
 
@@ -337,9 +340,30 @@ public:
 
   void STDMETHODCALLTYPE
   ClearState(ID3D12PipelineState *pPipelineState) {
-    allocator_->InvalidateCurrentPass();
+    EndCommandListPass();
     ResetState(pPipelineState);
   };
+
+  void
+  EndCommandListPass() {
+    assert((list_current_encoder_type_ == EncoderType::Null) ^ !!allocator_->encoder_current);
+    assert(!allocator_->encoder_current || allocator_->encoder_current->type == list_current_encoder_type_);
+
+    if (list_current_encoder_type_ != EncoderType::Null) {
+      list_current_encoder_type_ = EncoderType::Null;
+      allocator_->InvalidateCurrentPass();
+    }
+  }
+
+  template <typename EncoderDataType>
+  EncoderDataType *
+  StartCommandListPass() {
+    if (list_current_encoder_type_ != EncoderType::Null)
+      EndCommandListPass();
+    auto encoder = allocator_->AllocatePass<EncoderDataType>();
+    list_current_encoder_type_ = encoder->type;
+    return encoder;
+  }
 
   std::tuple<uint64_t, uint64_t>
   PopulateVertexBufferTable(uint32_t Count) {
@@ -373,10 +397,9 @@ public:
 
   DrawCallStatus
   PreDraw(bool SkipResourceBinding = false) {
-    if (!allocator_->encoder_current || allocator_->encoder_current->type != EncoderType::Render) {
+    if (list_current_encoder_type_ != EncoderType::Render) {
 
-      allocator_->InvalidateCurrentPass();
-      auto render = allocator_->AllocatePass<RenderEncoderData>();
+      auto render = StartCommandListPass<RenderEncoderData>();
       render->render_target_count = num_rtvs;
 
       unsigned render_target_width = 16384, render_target_height = 16384, render_target_array_length = 0;
@@ -799,9 +822,8 @@ public:
 
   bool
   PreDispatch(bool SkipResourceBinding = false) {
-    if (!allocator_->encoder_current || allocator_->encoder_current->type != EncoderType::Compute) {
-      allocator_->InvalidateCurrentPass();
-      allocator_->AllocatePass<ComputeEncoderData>();
+    if (list_current_encoder_type_ != EncoderType::Compute) {
+      StartCommandListPass<ComputeEncoderData>();
       dirty_state_.set(DirtyState::ComputeRootArguments, DirtyState::ComputeRootSignature);
       dirty_state_.set(DirtyState::ComputePipelineState);
     }
@@ -856,9 +878,8 @@ public:
 
   bool
   PreBlit() {
-    if (!allocator_->encoder_current || allocator_->encoder_current->type != EncoderType::Blit) {
-      allocator_->InvalidateCurrentPass();
-      allocator_->AllocatePass<BlitEncoderData>();
+    if (list_current_encoder_type_ != EncoderType::Blit) {
+      StartCommandListPass<BlitEncoderData>();
     }
     return true;
   }
@@ -1142,8 +1163,7 @@ public:
     auto DstLevel = DstSubresource % DstMips;
     auto DstSlice = DstSubresource / DstMips;
 
-    allocator_->InvalidateCurrentPass();
-    auto resolve = allocator_->AllocatePass<ResolveEncoderData>();
+    auto resolve = StartCommandListPass<ResolveEncoderData>();
 
     MTL_DXGI_FORMAT_DESC format_desc;
     if (FAILED(MTLQueryDXGIFormat(device_->GetMTLDevice(), Format, format_desc))) {
@@ -1176,7 +1196,7 @@ public:
       resolve->src = src->view(src_view);
       resolve->dst = dst->view(dst_view);
     }
-    allocator_->InvalidateCurrentPass();
+    EndCommandListPass();
   };
 
   void STDMETHODCALLTYPE
@@ -1455,7 +1475,7 @@ public:
       UINT NumRTV, const D3D12_CPU_DESCRIPTOR_HANDLE *RTVs, WINBOOL SingleDescriptor,
       const D3D12_CPU_DESCRIPTOR_HANDLE *DSV
   ) {
-    allocator_->InvalidateCurrentPass();
+    EndCommandListPass();
 
     num_rtvs = NumRTV;
     for (unsigned i = 0; i < NumRTV; i++) {
@@ -1479,6 +1499,7 @@ public:
     if (!CheckedFlags)
       return;
     if (Rects) {
+      EndCommandListPass();
       allocator_->clear_rtv_.begin(AttachmentDesc.Texture, AttachmentDesc.View, 0, CheckedFlags);
       for (unsigned i = 0; i < RectCount; i++) {
         auto rect = Rects[i];
@@ -1493,8 +1514,7 @@ public:
       allocator_->clear_rtv_.end();
       return;
     }
-    allocator_->InvalidateCurrentPass();
-    auto encoder_info = allocator_->AllocatePass<ClearEncoderData>();
+    auto encoder_info = StartCommandListPass<ClearEncoderData>();
     encoder_info->clear_dsv = CheckedFlags;
     encoder_info->depth_stencil = {Depth, Stencil};
     encoder_info->attachment = AttachmentDesc.Texture->view(AttachmentDesc.View);
@@ -1503,7 +1523,7 @@ public:
     encoder_info->height = AttachmentDesc.Height;
     encoder_info->depth_plane = 0;
 
-    allocator_->InvalidateCurrentPass();
+    EndCommandListPass();
   };
 
   void STDMETHODCALLTYPE
@@ -1515,6 +1535,7 @@ public:
     if (!AttachmentDesc.Texture)
       return;
     if (Rects) {
+      EndCommandListPass();
       allocator_->clear_rtv_.begin(AttachmentDesc.Texture, AttachmentDesc.View, AttachmentDesc.DepthPlane);
       for (unsigned i = 0; i < RectCount; i++) {
         auto rect = Rects[i];
@@ -1532,8 +1553,7 @@ public:
       allocator_->clear_rtv_.end();
       return;
     }
-    allocator_->InvalidateCurrentPass();
-    auto encoder_info = allocator_->AllocatePass<ClearEncoderData>();
+    auto encoder_info = StartCommandListPass<ClearEncoderData>();
     encoder_info->clear_dsv = 0;
     encoder_info->color = {Color[0], Color[1], Color[2], Color[3]};
     SanitizeRTVClearColor(AttachmentDesc.Texture->pixelFormat(AttachmentDesc.View), encoder_info->color);
@@ -1542,8 +1562,7 @@ public:
     encoder_info->width = AttachmentDesc.Width;
     encoder_info->height = AttachmentDesc.Height;
     encoder_info->depth_plane = AttachmentDesc.DepthPlane;
-
-    allocator_->InvalidateCurrentPass();
+    EndCommandListPass();
   };
 
   void STDMETHODCALLTYPE
@@ -1555,6 +1574,7 @@ public:
     auto &Descriptor = Heap->GetDescriptor(Index);
     auto color = std::array<uint32_t, 4>({Values[0], Values[1], Values[2], Values[3]});
     D3D12_RECT full_rect;
+    EndCommandListPass();
     switch (Descriptor.type) {
     case ShaderVisibleDescriptorType::UAVBuffer: {
       allocator_->clear_uav_.begin(color, Descriptor.UAVBuffer.buffer);
@@ -1609,6 +1629,7 @@ public:
     auto &Descriptor = Heap->GetDescriptor(Index);
     auto color = std::array<float, 4>({Values[0], Values[1], Values[2], Values[3]});
     D3D12_RECT full_rect;
+    EndCommandListPass();
     switch (Descriptor.type) {
     case ShaderVisibleDescriptorType::UAVBuffer: {
       allocator_->clear_uav_.begin(color, Descriptor.UAVBuffer.buffer);

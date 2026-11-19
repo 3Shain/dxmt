@@ -348,7 +348,6 @@ SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::getComputePipeline(std::stri
 template <>
 void
 SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::startComputePass() {
-  ctx.InvalidateCurrentPass();
   ctx.AllocatePass<ComputeEncoderData>();
 }
 
@@ -434,7 +433,6 @@ SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::getDefaultLibrary() {
 template <>
 void
 SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::startRenderPass() {
-  ctx.InvalidateCurrentPass();
   ctx.AllocatePass<RenderEncoderData>();
 }
 
