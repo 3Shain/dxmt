@@ -294,7 +294,18 @@ public:
     if (!pUsage) {
       return E_INVALIDARG;
     }
-    *pUsage = 0;
+    DXGI_USAGE usage = DXGI_CPU_ACCESS_NONE;
+    if (desc.Usage == D3D11_USAGE_DYNAMIC)
+      usage = DXGI_CPU_ACCESS_DYNAMIC;
+    else if (desc.Usage == D3D11_USAGE_STAGING)
+      usage = DXGI_CPU_ACCESS_READ_WRITE;
+    if (desc.BindFlags & (D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_CONSTANT_BUFFER))
+      usage |= DXGI_USAGE_SHADER_INPUT;
+    if (desc.BindFlags & D3D11_BIND_RENDER_TARGET)
+      usage |= DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    if (desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS)
+      usage |= DXGI_USAGE_UNORDERED_ACCESS;
+    *pUsage = usage;
     return S_OK;
   }
 
