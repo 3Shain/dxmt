@@ -52,6 +52,9 @@ struct IndirectComputeCommandData {
   uint32_t tgsize_z;
 };
 
+constexpr uint32_t kIndirectRenderCommandFlagIsGeometry = 1 << 0;
+constexpr uint32_t kIndirectRenderCommandFlagIsTessellation = 1 << 1;
+
 struct IndirectRenderCommandData {
   uint64_t cmd_buf;
   uint64_t max_count;
@@ -65,6 +68,16 @@ struct IndirectRenderCommandData {
   uint64_t index_buffer;
   DXGI_FORMAT index_buffer_format;
   uint32_t vertex_argbuf_stride;
+  uint64_t dyn_ib_args;
+  uint32_t flags;
+  union {
+    uint32_t vertex_per_warp;
+    uint32_t control_point_count;
+  };
+  union {
+    uint32_t vertex_increment_per_warp;
+    uint32_t threads_per_patch;
+  };
 };
 
 class MTLD3D12CommandAllocatorImpl : public MTLD3D12Pageable<MTLD3D12CommandAllocator> {
@@ -197,6 +210,18 @@ public:
 
   template <typename cmd_struct>
   cmd_struct &
+  EncodeRenderPrepassCommand() {
+    assert(encoder_current->type == EncoderType::Render);
+    auto encoder = static_cast<RenderEncoderData *>(encoder_current);
+    auto storage = (cmd_struct *)AllocateCPUHeap(sizeof(cmd_struct), 16);
+    encoder->cmd_prepass_tail->next.set(storage);
+    encoder->cmd_prepass_tail = (wmtcmd_base *)storage;
+    storage->next.set(nullptr);
+    return *storage;
+  }
+
+  template <typename cmd_struct>
+  cmd_struct &
   EncodeBlitCommand() {
     assert(encoder_current->type == EncoderType::Blit);
     auto encoder = static_cast<BlitEncoderData *>(encoder_current);
@@ -239,7 +264,10 @@ public:
 
   IndirectComputeCommandData *EncodeIndirectComputeCommand(MTLD3D12CommandSignature *pCmdSig, MTLD3D12ComputePipelineState *pPSO, size_t MaxCount);
 
-  IndirectRenderCommandData *EncodeIndirectRenderCommand(MTLD3D12CommandSignature *pCmdSig, MTLD3D12GraphicsPipelineState *pPSO, size_t MaxCount);
+  IndirectRenderCommandData * EncodeIndirectRenderCommand(
+      MTLD3D12CommandSignature *pCmdSig, MTLD3D12GraphicsPipelineState *pPSO, size_t MaxCount,
+      D3D12_PRIMITIVE_TOPOLOGY Topology
+  );
 };
 
 } // namespace dxmt

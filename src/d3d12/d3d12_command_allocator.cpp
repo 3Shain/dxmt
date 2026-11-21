@@ -204,7 +204,7 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectComputeCommand(MTLD3D12CommandSignat
 
     auto &cmd_setpso_res = EncodeComputeCommand<wmtcmd_compute_setpso>();
     cmd_setpso_res.type = WMTComputeCommandSetPSO;
-    cmd_setpso_res.pso = pCmdSig->compute_resolver;
+    cmd_setpso_res.pso = pCmdSig->resolver;
     cmd_setpso_res.threadgroup_size = {1, 1, 1};
 
     auto &cmd_argbuf_res = EncodeComputeCommand<wmtcmd_compute_setbuffer>();
@@ -214,8 +214,8 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectComputeCommand(MTLD3D12CommandSignat
     cmd_argbuf_res.index = 30;
 
     auto &cmd_dispatch_res = EncodeComputeCommand<wmtcmd_compute_dispatch>();
-    cmd_dispatch_res.type = WMTComputeCommandDispatch;
-    cmd_dispatch_res.size = {1, 1, 1};
+    cmd_dispatch_res.type = WMTComputeCommandDispatchThreads;
+    cmd_dispatch_res.size = {MaxCount, 1, 1};
 
     auto &cmd_setpso = EncodeComputeCommand<wmtcmd_compute_setpso>();
     cmd_setpso.type = WMTComputeCommandSetPSO;
@@ -236,95 +236,96 @@ MTLD3D12CommandAllocatorImpl::EncodeIndirectComputeCommand(MTLD3D12CommandSignat
 
 IndirectRenderCommandData *
 MTLD3D12CommandAllocatorImpl::EncodeIndirectRenderCommand(
-    MTLD3D12CommandSignature *pCmdSig, MTLD3D12GraphicsPipelineState *pPSO, size_t MaxCount
+    MTLD3D12CommandSignature *pCmdSig, MTLD3D12GraphicsPipelineState *pPSO, size_t MaxCount,
+    D3D12_PRIMITIVE_TOPOLOGY Topology
 ) {
-  WMTIndirectCommandBufferInfo info;
-  info.inherit_buffers = !(pCmdSig->UpdateVertexBuffers || pCmdSig->UpdateIndexBuffer || pCmdSig->UpdateRootArguments);
-  info.inherit_pso = 1;
-  info.inherit_cull_mode = 1;
-  info.inherit_fill_mode = 1;
-  info.inherit_front_facing = 1;
-  info.inherit_depth_bias = 1;
-  info.inherit_depth_clip_mode = 1;
-  info.inherit_depth_stencil_state = 1;
-  info.support_color_attachment_mapping = 0;
-  info.support_dynamic_attribute_stride = 0;
-  info.support_ray_tracing = 0;
-  info.type = pCmdSig->CommandType == D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED ? WMTIndirectCommandTypeDrawIndexed
-                                                                                : WMTIndirectCommandTypeDraw;
-  info.max_vertex_buffer_binding = 31;
-  info.max_fragment_buffer_binding = 31;
-  info.max_object_buffer_binding = 0;
-  info.max_mesh_buffer_binding = 0;
-  info.max_kernel_buffer_binding = 0;
-  info.max_kernel_threadgroup_memory_binding = 0;
-  info.max_object_threadgroup_memory_binding = 0;
-  info.gpu_resource_id = 0;
-
-  auto icb = device_->GetMTLDevice().newIndirectCommandBuffer(info, MaxCount, WMTResourceStorageModePrivate);
+  bool use_emulated_mesh = pPSO->is_geometry || pPSO->is_tess;
+  bool encode_binding =
+      use_emulated_mesh || pCmdSig->UpdateVertexBuffers || pCmdSig->UpdateIndexBuffer || pCmdSig->UpdateRootArguments;
 
   auto [Ptr, Offset] = AllocateGPUHeap(sizeof(IndirectRenderCommandData), 16);
 
   auto data = reinterpret_cast<IndirectRenderCommandData *>(Ptr);
 
-  data->cmd_buf = info.gpu_resource_id;
+  uint32_t cmd_flags = 0;
+  if (pPSO->is_geometry)
+    cmd_flags |= kIndirectRenderCommandFlagIsGeometry;
+  if (pPSO->is_tess)
+    cmd_flags |= kIndirectRenderCommandFlagIsTessellation;
+
+  data->cmd_buf = 0;
   data->max_count = MaxCount;
+  data->max_count_buffer = 0;
+  data->argument_buffer = 0;
+  data->rootsig_qwords = 0;
+  data->rootsig_qwords_stride = 0;
+  data->static_samplers = 0;
+  data->vertex_buffer = 0;
+  data->vertex_argbuf_stride = 0;
+  data->primitive_type = 0;
+  data->index_buffer = 0;
+  data->index_buffer_format = {};
+  data->dyn_ib_args = 0;
+  data->flags = cmd_flags;
+  data->vertex_increment_per_warp = 0;
+  data->vertex_per_warp = 0;
 
-  {
-    // populated outside
-    data->max_count_buffer = 0;
-    data->argument_buffer = 0;
-    data->rootsig_qwords = 0;
-    data->rootsig_qwords_stride = 0;
-    data->static_samplers = 0;
-    data->vertex_buffer = 0;
-    data->vertex_argbuf_stride = 0;
-    data->primitive_type = 0;
-    data->index_buffer = 0;
-    data->index_buffer_format = {};
-  }
+  if (!use_emulated_mesh || device_->mesh_icb_supported) {
+    WMTIndirectCommandBufferInfo info;
+    info.inherit_buffers = !encode_binding;
+    info.inherit_pso = 1;
+    info.inherit_cull_mode = 1;
+    info.inherit_fill_mode = 1;
+    info.inherit_front_facing = 1;
+    info.inherit_depth_bias = 1;
+    info.inherit_depth_clip_mode = 1;
+    info.inherit_depth_stencil_state = 1;
+    info.support_color_attachment_mapping = 0;
+    info.support_dynamic_attribute_stride = 0;
+    info.support_ray_tracing = 0;
+    info.type = use_emulated_mesh ? WMTIndirectCommandTypeDrawMeshThreadgroups
+                : pCmdSig->CommandType == D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED ? WMTIndirectCommandTypeDrawIndexed
+                                                                                    : WMTIndirectCommandTypeDraw;
+    info.max_vertex_buffer_binding = 31;
+    info.max_fragment_buffer_binding = 31;
+    info.max_object_buffer_binding = 31;
+    info.max_mesh_buffer_binding = 31;
+    info.max_kernel_buffer_binding = 0;
+    info.max_kernel_threadgroup_memory_binding = 0;
+    info.max_object_threadgroup_memory_binding = 0;
+    info.gpu_resource_id = 0;
+    auto icb = device_->GetMTLDevice().newIndirectCommandBuffer(info, MaxCount, WMTResourceStorageModePrivate | WMTResourceHazardTrackingModeUntracked);
 
-  {
-    /**
-     * TODO: move these out?
-     */
+    data->cmd_buf = info.gpu_resource_id;
 
-    auto &cmd_use_icb = EncodeRenderCommand<wmtcmd_render_useresource>();
-    cmd_use_icb.type = WMTRenderCommandUseResource;
-    cmd_use_icb.stages = WMTRenderStageVertex;
+    auto &cmd_use_icb = EncodeRenderPrepassCommand<wmtcmd_compute_useresource>();
+    cmd_use_icb.type = WMTComputeCommandUseResource;
     cmd_use_icb.usage = WMTResourceUsageRead | WMTResourceUsageWrite;
     cmd_use_icb.resource = icb;
 
-    auto &cmd_setpso_res = EncodeRenderCommand<wmtcmd_render_setpso>();
-    cmd_setpso_res.type = WMTRenderCommandSetPSO;
-    cmd_setpso_res.pso = pCmdSig->render_resolver;
+    auto &cmd = EncodeRenderCommand<wmtcmd_render_executecommands>();
+    cmd.type = WMTRenderCommandExecuteCommandsInBuffer;
+    cmd.indirect_command_buffer = icb;
+    cmd.location = 0;
+    cmd.length = MaxCount;
 
-    auto &cmd_argbuf_res = EncodeRenderCommand<wmtcmd_render_setbuffer>();
-    cmd_argbuf_res.type = WMTRenderCommandSetVertexBuffer;
-    cmd_argbuf_res.buffer = gpu_heap_buffer_;
-    cmd_argbuf_res.offset = Offset;
-    cmd_argbuf_res.index = 30;
-
-    auto &cmd_draw_res = EncodeRenderCommand<wmtcmd_render_draw>();
-    cmd_draw_res.type = WMTRenderCommandDraw;
-    cmd_draw_res.primitive_type = WMTPrimitiveTypePoint;
-    cmd_draw_res.vertex_start = 0;
-    cmd_draw_res.vertex_count = 1;
-    cmd_draw_res.base_instance = 0;
-    cmd_draw_res.instance_count = 1;
-
-    auto &cmd_setpso = EncodeRenderCommand<wmtcmd_render_setpso>();
-    cmd_setpso.type = WMTRenderCommandSetPSO;
-    cmd_setpso.pso = pPSO->GetRenderPipelineVariant({} /* FIXME: value should not matter here until gs/ts */);
+    icb_.push_back(std::move(icb));
   }
 
-  auto &cmd = EncodeRenderCommand<wmtcmd_render_executecommands>();
-  cmd.type = WMTRenderCommandExecuteCommandsInBuffer;
-  cmd.indirect_command_buffer = icb;
-  cmd.location = 0;
-  cmd.length = MaxCount;
+  auto &cmd_setpso_res = EncodeRenderPrepassCommand<wmtcmd_compute_setpso>();
+  cmd_setpso_res.type = WMTComputeCommandSetPSO;
+  cmd_setpso_res.pso = pCmdSig->resolver;
+  cmd_setpso_res.threadgroup_size = {32, 1, 1};
 
-  icb_.push_back(std::move(icb));
+  auto &cmd_argbuf_res = EncodeRenderPrepassCommand<wmtcmd_compute_setbuffer>();
+  cmd_argbuf_res.type = WMTComputeCommandSetBuffer;
+  cmd_argbuf_res.buffer = gpu_heap_buffer_;
+  cmd_argbuf_res.offset = Offset;
+  cmd_argbuf_res.index = 30;
+
+  auto &cmd_draw_res = EncodeRenderPrepassCommand<wmtcmd_compute_dispatch>();
+  cmd_draw_res.type = WMTComputeCommandDispatchThreads;
+  cmd_draw_res.size = {MaxCount, 1, 1};
 
   return data;
 }
@@ -443,6 +444,9 @@ SimpleCommandContext<MTLD3D12CommandAllocatorImpl>::startRenderPass() {
   render->cmd_head.type = WMTRenderCommandNop;
   render->cmd_head.next.set(0);
   render->cmd_tail = (wmtcmd_base *)&render->cmd_head;
+  render->cmd_prepass_head.type = WMTComputeCommandNop;
+  render->cmd_prepass_head.next.set(0);
+  render->cmd_prepass_tail = (wmtcmd_base *)&render->cmd_prepass_head;
   render->dsv_planar_flags = 0;
   render->dsv_readonly_flags = 0;
   render->render_target_count = 0;

@@ -97,6 +97,8 @@ struct RenderEncoderData : EncoderData {
   uint32_t render_target_width;
   wmtcmd_render_nop cmd_head;
   wmtcmd_base *cmd_tail;
+  wmtcmd_compute_nop cmd_prepass_head;
+  wmtcmd_base *cmd_prepass_tail;
   uint8_t dsv_planar_flags;
   uint8_t dsv_readonly_flags;
   uint8_t render_target_count;

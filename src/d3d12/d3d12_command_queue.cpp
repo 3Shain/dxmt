@@ -295,6 +295,13 @@ public:
             render_pass_info.render_target_width = data->render_target_width;
             render_pass_info.render_target_height = data->render_target_height;
           }
+          if (data->cmd_prepass_tail->type != WMTComputeCommandNop) {
+            auto encoder = cmdbuf.computeCommandEncoder(false);
+            encoder.waitForFence(fence_);
+            encoder.encodeCommands(&data->cmd_prepass_head);
+            encoder.updateFence(fence_);
+            encoder.endEncoding();
+          }
           auto encoder = cmdbuf.renderCommandEncoder(render_pass_info);
           encoder.waitForFence(fence_, WMTRenderStageVertex);
           encoder.encodeCommands(&data->cmd_head);
