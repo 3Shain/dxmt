@@ -42,12 +42,15 @@ class MTLD3D12CommandQueueImpl : public MTLD3D12Pageable<MTLD3D12CommandQueue, I
   WMT::Reference<WMT::CommandQueue> queue_;
   WMT::Reference<WMT::Fence> fence_;
 
+  WMT::Reference<WMT::ComputePipelineState> pso_occlusion_query_resolve_;
+
   std::atomic_uint64_t inflight_cmdbuf_seq_ = 1;
   std::atomic_uint64_t inflight_cmdbuf_count_ = 0;
   std::atomic_uint64_t inflight_cmdbuf_stop_ = 0;
 
   struct InflightCommandBuffer {
     WMT::Reference<WMT::CommandBuffer> cmdbuf{};
+    small_vector<WMT::Reference<WMT::Buffer>, 1> visibility_buffers;
     HANDLE semaphore{};
   };
 
@@ -141,6 +144,13 @@ public:
 
     fence_ = metal_device.newFence();
 
+    WMT::Reference<WMT::Error> err;
+    auto occlusion_query_resolve_function = device_->GetLib().getLibrary().newFunction("cs_occlusion_query_resolve");
+    pso_occlusion_query_resolve_ = metal_device.newComputePipelineState(occlusion_query_resolve_function, err);
+
+    if (err || !pso_occlusion_query_resolve_)
+      return E_FAIL;
+
     return S_OK;
   }
 
@@ -203,6 +213,14 @@ public:
     auto &cmdbuf = scope.inflight.cmdbuf;
     for (unsigned i = 0; i < Count; i++) {
       auto pCommandList = static_cast<MTLD3D12GraphicsCommandList *>(ppCommandLists[i]);
+      WMT::Reference<WMT::Buffer> visibility_buffer;
+      if (pCommandList->visibility_result_count) {
+        WMTBufferInfo info;
+        info.length = pCommandList->visibility_result_count * sizeof(uint64_t);
+        info.memory.set(nullptr);
+        info.options = WMTResourceStorageModePrivate | WMTResourceHazardTrackingModeUntracked;
+        visibility_buffer = device_->GetMTLDevice().newBuffer(info);
+      }
       EncoderData *current = pCommandList->entry;
       while (current) {
         switch (current->type) {
@@ -294,6 +312,8 @@ public:
             render_pass_info.render_target_array_length = data->render_target_array_length;
             render_pass_info.render_target_width = data->render_target_width;
             render_pass_info.render_target_height = data->render_target_height;
+            if (data->use_visibility_result)
+              render_pass_info.visibility_buffer = visibility_buffer;
           }
           if (data->cmd_prepass_tail->type != WMTComputeCommandNop) {
             auto encoder = cmdbuf.computeCommandEncoder(false);
@@ -345,9 +365,49 @@ public:
 
           break;
         }
+        case EncoderType::OcclusionQueryResolve: {
+          auto data = static_cast<OcclusionQueryResolveEncoderData *>(current);
+          auto encoder = cmdbuf.computeCommandEncoder(false);
+          encoder.waitForFence(fence_);
+
+          {
+            wmtcmd_compute_setbytes cmd_setbytes;
+            cmd_setbytes.index = 0;
+            cmd_setbytes.bytes.set(data->info.data());
+            cmd_setbytes.length = data->info.size() * sizeof(OcclusionQueryResolveInfo);
+            cmd_setbytes.type = WMTComputeCommandSetBytes;
+
+            wmtcmd_compute_setbuffer cmd_setbuffer;
+            cmd_setbytes.next.set(&cmd_setbuffer);
+            cmd_setbuffer.type = WMTComputeCommandSetBuffer;
+            cmd_setbuffer.index = 1;
+            cmd_setbuffer.buffer = visibility_buffer;
+            cmd_setbuffer.offset = 0;
+
+            wmtcmd_compute_setpso cmd_setpso;
+            cmd_setbuffer.next.set(&cmd_setpso);
+            cmd_setpso.type = WMTComputeCommandSetPSO;
+            cmd_setpso.threadgroup_size = {1, 1, 1};
+            cmd_setpso.pso = pso_occlusion_query_resolve_;
+
+            wmtcmd_compute_dispatch cmd_dispatch;
+            cmd_setpso.next.set(&cmd_dispatch);
+            cmd_dispatch.type = WMTComputeCommandDispatch;
+            cmd_dispatch.size = {data->info.size(), 1, 1};
+
+            cmd_dispatch.next.set(nullptr);
+            encoder.encodeCommands((wmtcmd_compute_nop *)&cmd_setbytes);
+          }
+
+          encoder.updateFence(fence_);
+          encoder.endEncoding();
+          break;
+        }
         }
         current = current->next;
       }
+      if (visibility_buffer)
+        scope.inflight.visibility_buffers.push_back(std::move(visibility_buffer));
     }
   };
 

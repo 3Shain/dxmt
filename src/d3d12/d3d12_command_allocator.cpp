@@ -134,6 +134,9 @@ MTLD3D12CommandAllocatorImpl::Reset() {
       case EncoderType::Resolve:
         reinterpret_cast<ResolveEncoderData *>(next)->~ResolveEncoderData();
         break;
+      case EncoderType::OcclusionQueryResolve:
+        reinterpret_cast<OcclusionQueryResolveEncoderData *>(next)->~OcclusionQueryResolveEncoderData();
+        break;
       }
       next = next->next;
     }

@@ -44,6 +44,7 @@ class MTLD3D12GraphicsCommandList : public ID3D12GraphicsCommandList2 {
 public:
   EncoderData *entry;
   size_t encoder_count;
+  size_t visibility_result_count;
 };
 
 class MTLD3D12CommandAllocator : public ID3D12CommandAllocator {

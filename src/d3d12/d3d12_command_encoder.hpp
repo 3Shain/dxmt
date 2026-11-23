@@ -19,6 +19,7 @@
 #pragma once
 
 #include "dxmt_texture.hpp"
+#include "util_svector.hpp"
 #include <cstdint>
 
 namespace dxmt {
@@ -30,6 +31,7 @@ enum class EncoderType {
   Blit,
   Compute,
   Resolve,
+  OcclusionQueryResolve,
 };
 
 struct EncoderData {
@@ -146,6 +148,20 @@ struct ResolveEncoderData : EncoderData {
 
   ResolveEncoderData() {
     type = EncoderType::Resolve;
+  }
+};
+
+struct OcclusionQueryResolveInfo {
+  uint64_t visibility_offset_start;
+  uint64_t visibility_offset_end;
+  uint64_t resolve_dst;
+};
+
+struct OcclusionQueryResolveEncoderData : EncoderData {
+  small_vector<OcclusionQueryResolveInfo, 4> info;
+
+  OcclusionQueryResolveEncoderData() {
+    type = EncoderType::OcclusionQueryResolve;
   }
 };
 

@@ -647,3 +647,27 @@ struct DXMTClearUintMetadata {
 [[kernel]] void tile_barrier(ushort2 pos [[thread_position_in_threadgroup]]) {
   // empty
 }
+
+struct DXMTOcclusionQueryResolveInfo {
+  ulong visibility_offset_start;
+  ulong visibility_offset_end;
+  device ulong2 * resolve_dst;
+};
+
+[[kernel]] void cs_occlusion_query_resolve(
+  uint id [[threadgroup_position_in_grid]],
+  constant DXMTOcclusionQueryResolveInfo* infos [[buffer(0)]],
+  constant ulong* visibility_buffer [[buffer(1)]]
+) {
+  constant auto& info = infos[id];
+  if (info.visibility_offset_end <= info.visibility_offset_start) {
+    *info.resolve_dst = 0;
+    return;
+  }
+  ulong accum = 0;
+  for (auto i = info.visibility_offset_start; i < info.visibility_offset_end; i++) {
+    accum += visibility_buffer[i];
+  }
+  *info.resolve_dst = ulong2(accum, !!accum);
+  return;
+}

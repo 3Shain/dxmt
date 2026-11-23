@@ -293,6 +293,7 @@ public:
     ResetState(pInitialPipelineState);
 
     encoder_count = std::numeric_limits<size_t>::max();
+    visibility_result_count = 0;
     return allocator_->StartRecord(&entry);
   }
 
