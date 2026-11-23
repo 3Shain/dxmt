@@ -27,7 +27,37 @@ public:
 
   HRESULT
   Initialize(const D3D12_QUERY_HEAP_DESC *pDesc) {
+    query_count = pDesc->Count;
+
+    /**
+    Two uint64_t are allocated for each occlusion query slot, one for binary occlusion.
+    We need to store both numerical and binary value because we implement `ResolveQueryData` as a blit, where
+    `D3D12_QUERY_TYPE` actually matters
+    */
+    auto query_size = pDesc->Type == D3D12_QUERY_HEAP_TYPE_OCCLUSION ? sizeof(uint64_t) * 2 : sizeof(uint64_t);
+
+    WMTBufferInfo info;
+    info.memory.set(nullptr);
+    info.length = query_size * query_count;
+    info.options = WMTResourceStorageModePrivate | WMTResourceHazardTrackingModeUntracked;
+
+    query_heap = device_->GetMTLDevice().newBuffer(info);
+
+    if (!query_heap) {
+      ERR("MTLD3D12QueryHeapImpl: failed to allocate query heap");
+      return E_OUTOFMEMORY;
+    }
+    query_heap_address = info.gpu_address;
+    device_->RegisterResidency(query_heap);
     return S_OK;
+  }
+
+  ~MTLD3D12QueryHeapImpl() {
+    if (query_heap) {
+      device_->UnregisterResidency(query_heap);
+    }
+    query_heap = {};
+    query_heap_address = 0;
   }
 
   HRESULT

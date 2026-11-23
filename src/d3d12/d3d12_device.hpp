@@ -124,6 +124,9 @@ public:
 
 class MTLD3D12QueryHeap : public ID3D12QueryHeap {
 public:
+  WMT::Reference<WMT::Buffer> query_heap;
+  uint64_t query_heap_address;
+  size_t query_count;
 };
 
 class MTLD3D12PipelineState : public ID3D12PipelineState {
