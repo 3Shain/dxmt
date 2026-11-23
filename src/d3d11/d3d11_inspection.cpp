@@ -61,7 +61,7 @@ MTLD3D11Inspection::MTLD3D11Inspection(WMT::Device pDevice)
 
   m_d3d11Options3.VPAndRTArrayIndexFromAnyShaderFeedingRasterizer = TRUE;
 
-  m_d3d11Options5.SharedResourceTier = D3D11_SHARED_RESOURCE_TIER_0; // TODO
+  m_d3d11Options5.SharedResourceTier = D3D11_SHARED_RESOURCE_TIER_3;
 
   // use dxvk values
   m_gpuVirtualAddress.MaxGPUVirtualAddressBitsPerProcess = 40;
