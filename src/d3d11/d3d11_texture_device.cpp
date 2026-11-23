@@ -451,6 +451,7 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
     }
 
     initialize(std::move(allocation));
+    initializer.wait(initializer.flushToWait());
     *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(
         ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), create.hResource,
                                    create.hGlobalShare, std::move(keyed_mutex), pDevice))
