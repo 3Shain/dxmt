@@ -17,8 +17,10 @@
  */
 
 #include "d3d12_command_allocator.hpp"
+#include "d3d12_occlusion_query.hpp"
 #include "com/com_pointer.hpp"
 #include "dxmt_format.hpp"
+#include "dxmt_occlusion_query.hpp"
 
 namespace dxmt {
 
@@ -233,6 +235,11 @@ class MTLD3D12GraphicsCommandListImpl : public MTLD3D12DeviceChild<MTLD3D12Graph
   FLOAT blend_factor_[4];
   UINT8 stencil_ref_;
 
+  bool cmdlist_valid_ = true;
+
+  VisibilityResultOffsetBumpState vro_state_;
+  CommandListOcclusionQueryState occlusion_query_state_;
+
 public:
   MTLD3D12GraphicsCommandListImpl(MTLD3D12Device *pDevice) : MTLD3D12DeviceChild<MTLD3D12GraphicsCommandList>(pDevice) {}
 
@@ -327,14 +334,26 @@ public:
   HRESULT STDMETHODCALLTYPE
   Close() {
     if (encoder_count < std::numeric_limits<size_t>::max())
-      return E_FAIL;
+      return E_FAIL; // the command list has already been closed
+
+    if (!occlusion_query_state_.Flush([this](auto info) { ResolveOcclusionQueryData(info); })) {
+      ERR("D3D12CommandList::Close(): exists outstanding `BeginQuery()` of occlusion queries");
+      cmdlist_valid_ = false;
+    }
+
     EndCommandListPass();
-    return allocator_->EndRecord(&encoder_count);
+    visibility_result_count = vro_state_.reset();
+    HRESULT hr = allocator_->EndRecord(&encoder_count);
+    if (!cmdlist_valid_)
+      return E_FAIL;
+    return hr;
   };
 
   HRESULT STDMETHODCALLTYPE
   Reset(ID3D12CommandAllocator *pAllocator, ID3D12PipelineState *pInitialState) {
     if (encoder_count == std::numeric_limits<size_t>::max())
+      return E_FAIL; // still recording
+    if (!cmdlist_valid_)
       return E_FAIL;
     return Initialize(pAllocator, pInitialState);
   };
@@ -351,6 +370,8 @@ public:
     assert(!allocator_->encoder_current || allocator_->encoder_current->type == list_current_encoder_type_);
 
     if (list_current_encoder_type_ != EncoderType::Null) {
+      if (list_current_encoder_type_ == EncoderType::Render)
+        vro_state_.endEncoder();
       list_current_encoder_type_ = EncoderType::Null;
       allocator_->InvalidateCurrentPass();
     }
@@ -363,6 +384,8 @@ public:
       EndCommandListPass();
     auto encoder = allocator_->AllocatePass<EncoderDataType>();
     list_current_encoder_type_ = encoder->type;
+    if (list_current_encoder_type_ == EncoderType::Render)
+      vro_state_.beginEncoder();
     return encoder;
   }
 
@@ -650,6 +673,7 @@ public:
     if (status == DrawCallStatus::Invalid)
       return;
 
+    BumpVisibilityResultOffset();
     if (status == DrawCallStatus::Geometry) {
       auto [Ptr, Offset] = allocator_->AllocateGPUHeap(sizeof(DXMT_DRAW_DYNAMIC_IB_ARGUMENTS), 32);
       DXMT_DRAW_DYNAMIC_IB_ARGUMENTS *draw_argument = reinterpret_cast<DXMT_DRAW_DYNAMIC_IB_ARGUMENTS *>(Ptr);
@@ -732,6 +756,7 @@ public:
     if (status == DrawCallStatus::Invalid)
       return;
 
+    BumpVisibilityResultOffset();
     if (status == DrawCallStatus::Geometry) {
       auto [Ptr, Offset] = allocator_->AllocateGPUHeap(sizeof(DXMT_DRAW_DYNAMIC_IB_ARGUMENTS), 32);
       DXMT_DRAW_DYNAMIC_IB_ARGUMENTS *draw_argument = reinterpret_cast<DXMT_DRAW_DYNAMIC_IB_ARGUMENTS *>(Ptr);
@@ -1682,12 +1707,40 @@ public:
 
   void STDMETHODCALLTYPE
   BeginQuery(ID3D12QueryHeap *pHeap, D3D12_QUERY_TYPE Type, UINT Index) {
-    DEBUG("BeginQuery");
+    switch (Type) {
+    case D3D12_QUERY_TYPE_OCCLUSION:
+    case D3D12_QUERY_TYPE_BINARY_OCCLUSION: {
+      if (!occlusion_query_state_.Begin(
+              static_cast<MTLD3D12QueryHeap *>(pHeap), Index, vro_state_.getNextReadOffset()
+          )) {
+        ERR("D3D12CommandList::BeginQuery(): exists outstanding `BeginQuery()` of occlusion query at index ", Index);
+        cmdlist_valid_ = false;
+      }
+      break;
+    }
+    default: {
+      DEBUG("BeginQuery ", Type);
+      break;
+    }
+    }
   };
 
   void STDMETHODCALLTYPE
   EndQuery(ID3D12QueryHeap *pHeap, D3D12_QUERY_TYPE Type, UINT Index) {
-    DEBUG("EndQuery");
+    switch (Type) {
+    case D3D12_QUERY_TYPE_OCCLUSION:
+    case D3D12_QUERY_TYPE_BINARY_OCCLUSION: {
+      if (!occlusion_query_state_.End(static_cast<MTLD3D12QueryHeap *>(pHeap), Index, vro_state_.getNextReadOffset())) {
+        ERR("D3D12CommandList::EndQuery(): called without corresponding `BeginQuery()` at index ", Index);
+        cmdlist_valid_ = false;
+      }
+      break;
+    }
+    default: {
+      DEBUG("EndQuery ", Type);
+      break;
+    }
+    }
   };
 
   void STDMETHODCALLTYPE
@@ -1695,8 +1748,66 @@ public:
       ID3D12QueryHeap *pHeap, D3D12_QUERY_TYPE Type, UINT StartIndex, UINT QueryCount, ID3D12Resource *pDstBuffer,
       UINT64 AlignedDstBufferOffset
   ) {
-    DEBUG("ResolveQueryData");
+    if (Type == D3D12_QUERY_TYPE_OCCLUSION || Type == D3D12_QUERY_TYPE_BINARY_OCCLUSION) {
+      auto heap = static_cast<MTLD3D12QueryHeap *>(pHeap);
+      OcclusionQueryResolveInfo info;
+      for (unsigned i = 0; i < QueryCount; i++) {
+        if (occlusion_query_state_.GetResolveInfo(heap, StartIndex + i, info)) {
+          if (~info.visibility_offset_start)
+            ResolveOcclusionQueryData(info);
+        } else {
+          ERR("D3D12CommandList::ResolveQueryData(): `BeginQuery()` without corresponding `EndQuery()` at index ", StartIndex + i);
+          cmdlist_valid_ = false;
+        }
+      }
+
+      if (!PreBlit())
+        return;
+
+      auto Dst = static_cast<MTLD3D12Resource *>(pDstBuffer);
+      for (unsigned i = 0; i < QueryCount; i++) {
+        auto &cmd_cp = allocator_->EncodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
+        cmd_cp.type = WMTBlitCommandCopyFromBufferToBuffer;
+        cmd_cp.src = heap->query_heap;
+        cmd_cp.dst = Dst->buffer->current()->buffer();
+        cmd_cp.src_offset = sizeof(uint64_t) * ((StartIndex + i) * 2 + (Type == D3D12_QUERY_TYPE_BINARY_OCCLUSION));
+        cmd_cp.dst_offset = AlignedDstBufferOffset + sizeof(uint64_t) * i;
+        cmd_cp.copy_length = sizeof(uint64_t);
+      }
+
+      return;
+    }
+    DEBUG("ResolveQueryData ", Type);
   };
+
+  void
+  BumpVisibilityResultOffset() {
+    assert(allocator_->encoder_current->type == EncoderType::Render);
+    auto encoder = static_cast<RenderEncoderData *>(allocator_->encoder_current);
+    bool has_outstanding_query = occlusion_query_state_.HasOutstandingQuery();
+    encoder->use_visibility_result = encoder->use_visibility_result || has_outstanding_query;
+
+    uint64_t offset;
+    if (vro_state_.tryGetNextWriteOffset(has_outstanding_query, offset)) {
+      auto &cmd = allocator_->EncodeRenderCommand<wmtcmd_render_setvisibilitymode>();
+      cmd.type = WMTRenderCommandSetVisibilityMode;
+      if (~offset == 0) {
+        cmd.mode = WMTVisibilityResultModeDisabled;
+        cmd.offset = 0;
+      } else {
+        cmd.mode = WMTVisibilityResultModeCounting;
+        cmd.offset = offset * sizeof(uint64_t);
+      }
+    }
+  }
+
+  void
+  ResolveOcclusionQueryData(OcclusionQueryResolveInfo const &info) {
+    if (list_current_encoder_type_ != EncoderType::OcclusionQueryResolve)
+      StartCommandListPass<OcclusionQueryResolveEncoderData>();
+    auto encoder = static_cast<OcclusionQueryResolveEncoderData *>(allocator_->encoder_current);
+    encoder->info.push_back(info);
+  }
 
   void STDMETHODCALLTYPE SetPredication(ID3D12Resource *pBuffer, UINT64 AlignedBufferOffset, D3D12_PREDICATION_OP Op) {
     IMPLEMENT_ME
@@ -1755,6 +1866,7 @@ public:
     if (status == DrawCallStatus::Invalid)
       return;
 
+    BumpVisibilityResultOffset();
     auto cmd = allocator_->EncodeIndirectRenderCommand(sig, pso_graphics_.ptr(), MaxCommandCount, topology_);
     cmd->max_count_buffer = CountBufferAddress;
     cmd->argument_buffer = ArgBufferAddress;
