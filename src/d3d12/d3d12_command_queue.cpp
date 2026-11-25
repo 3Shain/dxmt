@@ -323,7 +323,7 @@ public:
             encoder.endEncoding();
           }
           auto encoder = cmdbuf.renderCommandEncoder(render_pass_info);
-          encoder.waitForFence(fence_, WMTRenderStageVertex);
+          encoder.waitForFence(fence_, WMTRenderStageVertex | WMTRenderStageObject | WMTRenderStageMesh);
           encoder.encodeCommands(&data->cmd_head);
           encoder.updateFence(fence_, WMTRenderStageFragment);
           encoder.endEncoding();
