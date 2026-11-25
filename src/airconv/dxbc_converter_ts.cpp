@@ -116,8 +116,7 @@ get_max_potential_workload_count(uint32_t max_tess_factor, SM50ShaderInternal *p
   case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_TRI:
     return std::ceil((max_tess_factor - 1) / 4.0) * 3 + (max_tess_factor & 1);
   case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_QUAD:
-    return std::ceil((max_tess_factor - 1) / 4.0) * 4 + (max_tess_factor & 1);
-    ;
+    return max_tess_factor + ((max_tess_factor & 1) == 0);
   }
 }
 
