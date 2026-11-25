@@ -283,7 +283,7 @@ convert_dxbc_vertex_hull_shader(
       context,
       {hs_output_per_group_type, hs_pcout_per_group_scaler_type, types._int,
        llvm::ArrayType::get(types._int, max_workload_count * patch_per_group * size_workload_info / 4)},
-      "payload"
+      "payload", true
   );
   uint32_t payload_struct_size = module.getDataLayout().getTypeAllocSize(payload_struct_type);
 
@@ -910,7 +910,7 @@ convert_dxbc_tesselator_domain_shader(
       context,
       {hs_output_per_group_type, hs_pcout_per_group_scaler_type, types._int,
        llvm::ArrayType::get(types._int, max_workload_count * patch_per_group * size_workload_info / 4)},
-      "payload"
+      "payload", true
   );
   uint32_t payload_struct_size = module.getDataLayout().getTypeAllocSize(payload_struct_type);
 
