@@ -275,7 +275,7 @@ convert_dxbc_vertex_hull_shader(
 
   uint32_t max_workload_count = get_max_potential_workload_count(factor_int, pHullStage);
 
-  func_signature.UseMaxMeshWorkgroupSize(max_workload_count);
+  func_signature.UseMaxMeshWorkgroupSize(max_workload_count * patch_per_group);
 
   constexpr uint32_t size_workload_info = sizeof(TessMeshWorkload);
 
