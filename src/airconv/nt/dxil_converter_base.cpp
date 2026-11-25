@@ -48,8 +48,10 @@ Converter::Converter(EntryPoint const &entry, dxmt::dxbc::context &ctx) :
     air(ctx.air),
     entry(entry) {
   for (const auto &property : entry.properties) {
-    if (property.tag == EntryPropertyTag::HSState)
+    if (property.tag == EntryPropertyTag::HSState) {
       pcf_ = property.hs_state.patch_constant_function;
+      output_control_point_count_ = property.hs_state.output_control_point_count;
+    }
   }
 }
 
@@ -133,6 +135,20 @@ Converter::Run(llvm::BasicBlock *ReturnBB) {
     ir.CreateBr(ReturnBB);
     if (!entry.function)
       return PCFStart;
+  }
+
+  if (output_control_point_count_) {
+    auto cp_active = llvm::BasicBlock::Create(air.getContext(), "cp_active", ctx.function);
+    auto cp_end = llvm::BasicBlock::Create(air.getContext(), "cp_end", ctx.function);
+    ir.SetInsertPoint(cp_active);
+    auto is_active_control_point_thread = ctx.builder.CreateICmp(
+        llvm::CmpInst::ICMP_ULT, ctx.resource.thread_id_in_patch, ctx.builder.getInt32(output_control_point_count_)
+    );
+    ir.CreateCondBr(is_active_control_point_thread, block_map_[&entry.function->getEntryBlock()], cp_end);
+    ir.SetInsertPoint(cp_end);
+    air.CreateBarrier(llvm::air::MemFlags::Threadgroup);
+    ir.CreateBr(pcf_ ? PCFStart : ReturnBB);
+    return cp_active;
   }
 
   return block_map_[&entry.function->getEntryBlock()];
