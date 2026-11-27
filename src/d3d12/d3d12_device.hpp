@@ -44,6 +44,7 @@ class MTLD3D12GraphicsCommandList : public ID3D12GraphicsCommandList2 {
 public:
   EncoderData *entry;
   size_t encoder_count;
+  size_t visibility_result_count;
 };
 
 class MTLD3D12CommandAllocator : public ID3D12CommandAllocator {
@@ -115,8 +116,7 @@ public:
   UINT UpdateVertexBuffers : 1;
   UINT UpdateIndexBuffer   : 1;
 
-  WMT::Reference<WMT::RenderPipelineState> render_resolver;
-  WMT::Reference<WMT::ComputePipelineState> compute_resolver;
+  WMT::Reference<WMT::ComputePipelineState> resolver;
 
   virtual void AddRefPrivate() = 0;
   virtual void ReleasePrivate() = 0;
@@ -124,6 +124,9 @@ public:
 
 class MTLD3D12QueryHeap : public ID3D12QueryHeap {
 public:
+  WMT::Reference<WMT::Buffer> query_heap;
+  uint64_t query_heap_address;
+  size_t query_count;
 };
 
 class MTLD3D12PipelineState : public ID3D12PipelineState {
@@ -167,7 +170,7 @@ public:
   virtual void ReleasePrivate() = 0;
 };
 
-class MTLD3D12Device : public ID3D12Device4 {
+class MTLD3D12Device : public ID3D12Device5 {
 public:
   virtual WMT::Device GetMTLDevice() = 0;
 
@@ -194,6 +197,8 @@ public:
   EventListener event_listener;
 
   WMT::Reference<WMT::DepthStencilState> default_depth_stencil_state;
+
+  bool mesh_icb_supported;
 };
 
 HRESULT

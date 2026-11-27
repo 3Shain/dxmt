@@ -71,6 +71,8 @@ public:
     info.depth_compare_function = WMTCompareFunctionAlways;
     default_depth_stencil_state = GetMTLDevice().newDepthStencilState(info);
 
+    mesh_icb_supported = GetMTLDevice().supportsFamily(WMTGPUFamilyApple9);
+
     return S_OK;
   };
 
@@ -104,7 +106,7 @@ public:
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D12Object) || riid == __uuidof(ID3D12Device) ||
         riid == __uuidof(ID3D12Device1) || riid == __uuidof(ID3D12Device2) || riid == __uuidof(ID3D12Device3) ||
-        riid == __uuidof(ID3D12Device4)) {
+        riid == __uuidof(ID3D12Device4) || riid == __uuidof(ID3D12Device5)) {
       *ppvObject = ref(this);
       return S_OK;
     }
@@ -1207,6 +1209,53 @@ public:
     __ret->Alignment = has_msaa_resource ? D3D12_DEFAULT_MSAA_RESOURCE_PLACEMENT_ALIGNMENT
                                          : D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
     return __ret;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  CreateLifetimeTracker(ID3D12LifetimeOwner *pOwner, REFIID riid, void **ppTracker) {
+    return E_NOTIMPL;
+  }
+
+  void STDMETHODCALLTYPE
+  RemoveDevice() {}
+
+  HRESULT STDMETHODCALLTYPE
+  EnumerateMetaCommands(UINT *pCount, D3D12_META_COMMAND_DESC *pDescs) {
+    *pCount = 0;
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  EnumerateMetaCommandParameters(
+      REFGUID id, D3D12_META_COMMAND_PARAMETER_STAGE Stage, UINT *pTotalSizeInBytes, UINT *pParameterCount,
+      D3D12_META_COMMAND_PARAMETER_DESC *pParameterDescs
+  ) {
+    return E_NOTIMPL;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  CreateMetaCommand(
+      REFGUID id, UINT NodeMask, const void *pCreationParameters, SIZE_T SizeInBytes, REFIID riid, void **ppCommand
+  ) {
+    return DXGI_ERROR_UNSUPPORTED;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  CreateStateObject(const D3D12_STATE_OBJECT_DESC *pDesc, REFIID riid, void **ppStateObject) {
+    return E_NOTIMPL;
+  }
+
+  void STDMETHODCALLTYPE
+  GetRaytracingAccelerationStructurePrebuildInfo(
+      const D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS *pDesc,
+      D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO *pInfo
+  ) {}
+
+  D3D12_DRIVER_MATCHING_IDENTIFIER_STATUS STDMETHODCALLTYPE
+  CheckDriverMatchingIdentifier(
+      D3D12_SERIALIZED_DATA_TYPE Type, const D3D12_SERIALIZED_DATA_DRIVER_MATCHING_IDENTIFIER *pIdentifier
+  ) {
+    return D3D12_DRIVER_MATCHING_IDENTIFIER_UNRECOGNIZED;
   }
 
   WMT::ResidencySet

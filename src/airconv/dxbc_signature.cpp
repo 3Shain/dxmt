@@ -171,6 +171,7 @@ void handle_signature_vs(
     unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
     auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
     auto siv = Inst.m_OutputDeclSIV.Name;
+    auto sig = findOutputElement([=](Signature &sig) { return (sig.reg() == reg) && ((sig.mask() & mask) != 0); });
     switch (siv) {
     case D3D10_SB_NAME_CLIP_DISTANCE: {
       for (unsigned i = 0; i < 4; i++) {
@@ -181,7 +182,7 @@ void handle_signature_vs(
         }
       }
       uint32_t assigned_index = func_signature.DefineOutput(OutputVertex{
-        .user = std::format("SV_ClipDistance{}", reg),
+        .user = std::format("SV_ClipDistance{}", sig.semanticIndex()),
         .type = msl_float4,
       });
       signature_handlers.push_back([=](SignatureContext &ctx) {
@@ -203,7 +204,7 @@ void handle_signature_vs(
         }
       }
       uint32_t assigned_index = func_signature.DefineOutput(OutputVertex{
-        .user = std::format("SV_CullDistance{}", reg),
+        .user = std::format("SV_CullDistance{}", sig.semanticIndex()),
         .type = msl_float4,
       });
       signature_handlers.push_back([=](SignatureContext &ctx) {
@@ -368,6 +369,7 @@ void handle_signature_ps(
     unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
     auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
     auto siv = Inst.m_InputPSDeclSIV.Name;
+    auto sig = findInputElement([=](Signature sig) { return (sig.reg() == reg) && ((sig.mask() & mask) != 0); });
     auto interpolation =
       to_air_interpolation(Inst.m_InputPSDeclSIV.InterpolationMode);
     uint32_t assigned_index;
@@ -394,7 +396,7 @@ void handle_signature_ps(
       break;
     case D3D10_SB_NAME_CLIP_DISTANCE:
       assigned_index = func_signature.DefineInput(InputFragmentStageIn{
-        .user = std::format("SV_ClipDistance{}", reg),
+        .user = std::format("SV_ClipDistance{}", sig.semanticIndex()),
         .type = msl_float4,
         .interpolation = interpolation,
         .pull_mode = false
@@ -402,7 +404,7 @@ void handle_signature_ps(
       break;
     case D3D10_SB_NAME_CULL_DISTANCE:
       assigned_index = func_signature.DefineInput(InputFragmentStageIn{
-        .user = std::format("SV_CullDistance{}", reg),
+        .user = std::format("SV_CullDistance{}", sig.semanticIndex()),
         .type = msl_float4,
         .interpolation = interpolation,
         .pull_mode = false
@@ -870,6 +872,7 @@ void handle_signature_ds(
     unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
     auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
     auto siv = Inst.m_OutputDeclSIV.Name;
+    auto sig = findOutputElement([=](Signature &sig) { return (sig.reg() == reg) && ((sig.mask() & mask) != 0); });
     switch (siv) {
     case D3D10_SB_NAME_CLIP_DISTANCE: {
       for (unsigned i = 0; i < 4; i++) {
@@ -881,7 +884,7 @@ void handle_signature_ds(
       }
       auto const mesh_vertex_data_index = num_mesh_vertex_data++;
       func_signature.DefineMeshVertexOutput(OutputMeshData{
-        .user = std::format("SV_ClipDistance{}", reg),
+        .user = std::format("SV_ClipDistance{}", sig.semanticIndex()),
         .type = msl_float4,
         .index = mesh_vertex_data_index
       });
@@ -901,7 +904,7 @@ void handle_signature_ds(
       }
       auto const mesh_vertex_data_index = num_mesh_vertex_data++;
       func_signature.DefineMeshVertexOutput(OutputMeshData{
-        .user = std::format("SV_CullDistance{}", reg),
+        .user = std::format("SV_CullDistance{}", sig.semanticIndex()),
         .type = msl_float4,
         .index = mesh_vertex_data_index
       });
@@ -1132,6 +1135,7 @@ handle_signature_gs(
     unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
     auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
     auto siv = Inst.m_OutputDeclSIV.Name;
+    auto sig = findOutputElement([=](Signature &sig) { return (sig.reg() == reg) && ((sig.mask() & mask) != 0); });
     switch (siv) {
     case D3D10_SB_NAME_CLIP_DISTANCE: {
       for (unsigned i = 0; i < 4; i++) {
@@ -1141,7 +1145,7 @@ handle_signature_gs(
       }
       auto const mesh_vertex_data_index = num_mesh_vertex_data++;
       func_signature.DefineMeshVertexOutput(OutputMeshData{
-        .user = std::format("SV_ClipDistance{}", reg),
+        .user = std::format("SV_ClipDistance{}", sig.semanticIndex()),
         .type = msl_float4,
         .index = mesh_vertex_data_index
       });
@@ -1159,7 +1163,7 @@ handle_signature_gs(
       }
       auto const mesh_vertex_data_index = num_mesh_vertex_data++;
       func_signature.DefineMeshVertexOutput(OutputMeshData{
-        .user = std::format("SV_CullDistance{}", reg),
+        .user = std::format("SV_CullDistance{}", sig.semanticIndex()),
         .type = msl_float4,
         .index = mesh_vertex_data_index
       });

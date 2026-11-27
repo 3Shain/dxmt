@@ -116,8 +116,7 @@ get_max_potential_workload_count(uint32_t max_tess_factor, SM50ShaderInternal *p
   case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_TRI:
     return std::ceil((max_tess_factor - 1) / 4.0) * 3 + (max_tess_factor & 1);
   case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_QUAD:
-    return std::ceil((max_tess_factor - 1) / 4.0) * 4 + (max_tess_factor & 1);
-    ;
+    return max_tess_factor + ((max_tess_factor & 1) == 0);
   }
 }
 
@@ -275,7 +274,7 @@ convert_dxbc_vertex_hull_shader(
 
   uint32_t max_workload_count = get_max_potential_workload_count(factor_int, pHullStage);
 
-  func_signature.UseMaxMeshWorkgroupSize(max_workload_count);
+  func_signature.UseMaxMeshWorkgroupSize(max_workload_count * patch_per_group);
 
   constexpr uint32_t size_workload_info = sizeof(TessMeshWorkload);
 
@@ -283,7 +282,7 @@ convert_dxbc_vertex_hull_shader(
       context,
       {hs_output_per_group_type, hs_pcout_per_group_scaler_type, types._int,
        llvm::ArrayType::get(types._int, max_workload_count * patch_per_group * size_workload_info / 4)},
-      "payload"
+      "payload", true
   );
   uint32_t payload_struct_size = module.getDataLayout().getTypeAllocSize(payload_struct_type);
 
@@ -910,7 +909,7 @@ convert_dxbc_tesselator_domain_shader(
       context,
       {hs_output_per_group_type, hs_pcout_per_group_scaler_type, types._int,
        llvm::ArrayType::get(types._int, max_workload_count * patch_per_group * size_workload_info / 4)},
-      "payload"
+      "payload", true
   );
   uint32_t payload_struct_size = module.getDataLayout().getTypeAllocSize(payload_struct_type);
 

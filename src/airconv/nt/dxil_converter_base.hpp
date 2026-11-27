@@ -42,6 +42,7 @@ private:
   const EntryPoint &entry;
 
   const llvm::Function *pcf_ = nullptr;
+  uint32_t output_control_point_count_ = 0;
   llvm::DenseMap<const llvm::Value *, llvm::Value *> value_map_;
   llvm::DenseMap<const llvm::BasicBlock *, llvm::BasicBlock *> block_map_;
   llvm::DenseMap<llvm::Type *, llvm::Type *> type_map_;

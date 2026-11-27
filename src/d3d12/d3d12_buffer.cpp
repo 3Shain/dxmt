@@ -51,6 +51,9 @@ public:
       desc_.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
     }
 
+    if (desc_.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)
+      return E_INVALIDARG;
+
     if (pHeap) {
       auto size_and_align = device_->GetMTLDevice().heapBufferSizeAndAlign(desc_.Width, {});
       if (size_and_align.size + Offset > pHeap->GetDesc().SizeInBytes)
@@ -244,8 +247,7 @@ public:
 
   virtual HRESULT STDMETHODCALLTYPE
   CreateDepthStencilView(const D3D12_DEPTH_STENCIL_VIEW_DESC *pDesc, D3D12_CPU_DESCRIPTOR_HANDLE Descriptor) {
-    IMPLEMENT_ME
-    return S_OK;
+    return E_INVALIDARG;
   };
 
   virtual void STDMETHODCALLTYPE GetResourceTiling(
