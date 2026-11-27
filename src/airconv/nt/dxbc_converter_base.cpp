@@ -1492,10 +1492,12 @@ Converter::operator()(const InstStoreUAVTyped &store) {
     return;
   llvm::Value *Address = nullptr;
   llvm::Value *ArrayIndex = nullptr;
+  llvm::Value *OOB = nullptr;
 
   switch (Tex->Logical) {
   case Texture::texture_buffer:
     Address = LoadOperand(store.src_address, kMaskComponentX);
+    OOB = ir.CreateICmpUGE(Address, DecodeTextureBufferElement(Tex->Metadata));
     Address = ir.CreateAdd(Address, DecodeTextureBufferOffset(Tex->Metadata));
     break;
   case Texture::texture1d:
@@ -1522,6 +1524,9 @@ Converter::operator()(const InstStoreUAVTyped &store) {
   }
 
   auto Value = LoadOperand(store.src, kMaskAll);
+
+  if (OOB)
+    Address = ir.CreateSelect(OOB, llvm::ConstantInt::getAllOnesValue(Address->getType()), Address);
 
   air.CreateWrite(Tex->Texture, Tex->Handle, Address, ArrayIndex, nullptr, ir.getInt32(0), Value, Tex->GlobalCoherent);
 }
